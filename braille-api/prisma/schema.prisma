@@ -1,14 +1,97 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
+// -------------------------------------
+// CONFIGURAÇÕES DO PRISMA
+// -------------------------------------
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// -------------------------------------
+// MODELOS DO BANCO DE DADOS
+// -------------------------------------
+
+// 1. Controle de Acesso e Perfis
+enum Role {
+  ADMIN
+  SECRETARIA
+  COMUNICACAO
+}
+
+model User {
+  id        String   @id @default(uuid())
+  nome      String
+  email     String   @unique
+  senha     String   
+  role      Role     @default(SECRETARIA)
+  
+  noticias  Noticia[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 2. Cadastro de Alunos/Assistidos
+model Aluno {
+  id                  String   @id @default(uuid())
+  nomeCompleto        String
+  cpf                 String   @unique
+  dataNascimento      DateTime
+  telefone            String?
+  contatoEmergencia   String   
+  
+  tipoDeficiencia     String   
+  leBraille           Boolean  @default(false)
+  usaCaoGuia          Boolean  @default(false)
+  observacoesMedicas  String?  @db.Text
+
+  cep                 String?
+  logradouro          String?
+  bairro              String?
+  cidade              String?
+  estado              String?
+
+  statusAtivo         Boolean  @default(true) 
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// 3. Área Pública: Site Institucional (Notícias)
+model Noticia {
+  id              String   @id @default(uuid())
+  titulo          String
+  slug            String   @unique 
+  conteudo        String   @db.Text
+  
+  imagemUrl       String?
+  imagemAltText   String?  
+
+  publicado       Boolean  @default(false)
+  
+  autorId         String
+  autor           User     @relation(fields: [autorId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// 4. Área Pública: Agenda / Eventos
+model Evento {
+  id              String   @id @default(uuid())
+  titulo          String
+  descricao       String   @db.Text
+  dataEvento      DateTime
+  local           String
+  
+  imagemUrl       String?
+  imagemAltText   String?
+
+  linkInscricao   String?  
+  publicado       Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
