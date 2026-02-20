@@ -96,3 +96,11 @@ model Evento {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model Comunicado {
+  id        String   @id @default(uuid())
+  titulo    String
+  conteudo  String
+  fixado    Boolean  @default(false) // Para prender a notícia no topo
+  criadoEm  DateTime @default(now())
+}
