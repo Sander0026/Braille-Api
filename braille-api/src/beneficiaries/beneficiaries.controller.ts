@@ -1,34 +1,25 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
-import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard';
 
+@ApiTags('Alunos (Beneficiários)')
+@ApiBearerAuth() // 🔒 Diz ao Swagger que esta rota precisa do cadeado
+@UseGuards(AuthGuard) // 👮 O nosso segurança trancando a porta!
 @Controller('beneficiaries')
 export class BeneficiariesController {
   constructor(private readonly beneficiariesService: BeneficiariesService) {}
 
   @Post()
+  @ApiOperation({ summary: 'Cadastrar um novo aluno' })
   create(@Body() createBeneficiaryDto: CreateBeneficiaryDto) {
     return this.beneficiariesService.create(createBeneficiaryDto);
   }
 
   @Get()
+  @ApiOperation({ summary: 'Listar todos os alunos' })
   findAll() {
     return this.beneficiariesService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.beneficiariesService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateBeneficiaryDto: UpdateBeneficiaryDto) {
-    return this.beneficiariesService.update(+id, updateBeneficiaryDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.beneficiariesService.remove(+id);
   }
 }
