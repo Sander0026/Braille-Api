@@ -1,26 +1,41 @@
-import { Injectable } from '@nestjs/common';
-import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { PrismaClient } from '.prisma/client';
+import * as bcrypt from 'bcrypt';
+import { LoginDto } from './dto/login.dto';
+
+const prisma = new PrismaClient();
 
 @Injectable()
 export class AuthService {
-  create(createAuthDto: CreateAuthDto) {
-    return 'This action adds a new auth';
-  }
+  constructor(private jwtService: JwtService) {}
 
-  findAll() {
-    return `This action returns all auth`;
-  }
+  async login(loginDto: LoginDto) {
+    // 1. Busca o usuário no banco pelo e-mail
+    const user = await prisma.user.findUnique({
+      where: { email: loginDto.email },
+    });
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
+    // 2. Se não achar o usuário, ou se a senha estiver errada, bloqueia!
+    if (!user) {
+      throw new UnauthorizedException('E-mail ou senha incorretos');
+    }
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
+    const isPasswordValid = await bcrypt.compare(loginDto.senha, user.senha);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('E-mail ou senha incorretos');
+    }
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+    // 3. Se deu tudo certo, monta o crachá (Payload do JWT)
+    const payload = { sub: user.id, nome: user.nome, role: user.role };
+
+    // 4. Retorna o Token para o Frontend
+    return {
+      access_token: await this.jwtService.signAsync(payload),
+      usuario: {
+        nome: user.nome,
+        role: user.role,
+      }
+    };
   }
 }

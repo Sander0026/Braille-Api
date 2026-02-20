@@ -1,26 +1,38 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
-import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 @Injectable()
 export class BeneficiariesService {
-  create(createBeneficiaryDto: CreateBeneficiaryDto) {
-    return 'This action adds a new beneficiary';
+  async create(createBeneficiaryDto: CreateBeneficiaryDto) {
+    // 1. Verifica se já existe alguém com esse CPF
+    const alunoExiste = await prisma.aluno.findUnique({
+      where: { cpf: createBeneficiaryDto.cpf },
+    });
+
+    if (alunoExiste) {
+      throw new ConflictException('Já existe um aluno cadastrado com este CPF.');
+    }
+
+    // 2. Salva no banco de dados
+    const novoAluno = await prisma.aluno.create({
+      data: {
+        nomeCompleto: createBeneficiaryDto.nomeCompleto,
+        cpf: createBeneficiaryDto.cpf,
+        dataNascimento: new Date(createBeneficiaryDto.dataNascimento),
+        contatoEmergencia: createBeneficiaryDto.contatoEmergencia,
+        tipoDeficiencia: createBeneficiaryDto.tipoDeficiencia,
+        leBraille: createBeneficiaryDto.leBraille ?? false,
+        usaCaoGuia: createBeneficiaryDto.usaCaoGuia ?? false,
+      },
+    });
+
+    return novoAluno;
   }
 
-  findAll() {
-    return `This action returns all beneficiaries`;
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} beneficiary`;
-  }
-
-  update(id: number, updateBeneficiaryDto: UpdateBeneficiaryDto) {
-    return `This action updates a #${id} beneficiary`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} beneficiary`;
+  async findAll() {
+    return prisma.aluno.findMany(); // Retorna todos os alunos do banco
   }
 }
