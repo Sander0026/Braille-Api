@@ -48,7 +48,7 @@ model Aluno {
   contatoEmergencia   String
   fotoPerfil          String? 
   laudoMedico         String? 
-   turmas             Turma[]  // Relação com Turmas 
+  turmas             Turma[]  // Relação com Turmas 
   
   tipoDeficiencia     String   
   leBraille           Boolean  @default(false)
