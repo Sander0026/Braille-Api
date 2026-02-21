@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -7,9 +9,21 @@ import { BeneficiariesModule } from './beneficiaries/beneficiaries.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { ComunicadosModule } from './comunicados/comunicados.module';
 import { TurmasModule } from './turmas/turmas.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
-  imports: [AuthModule, UsersModule, BeneficiariesModule, AppointmentsModule, ComunicadosModule, TurmasModule],
+  imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
+    AuthModule, 
+    UsersModule, 
+    BeneficiariesModule, 
+    AppointmentsModule, 
+    ComunicadosModule, 
+    TurmasModule, UploadsModule, 
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

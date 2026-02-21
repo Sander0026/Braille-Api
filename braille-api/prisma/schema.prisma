@@ -44,7 +44,8 @@ model Aluno {
   cpf                 String   @unique
   dataNascimento      DateTime
   telefone            String?
-  contatoEmergencia   String   
+  contatoEmergencia   String
+  fotoPerfil          String?   
   
   tipoDeficiencia     String   
   leBraille           Boolean  @default(false)
