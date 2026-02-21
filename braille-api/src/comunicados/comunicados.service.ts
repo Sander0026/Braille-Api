@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
 import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
 import { PrismaClient } from '@prisma/client';
+import { QueryComunicadoDto } from './dto/query-comunicado.dto';
 
 const prisma = new PrismaClient();
 
@@ -17,14 +18,32 @@ export class ComunicadosService {
     });
   }
 
-  async findAll() {
-    // Retorna os fixados primeiro, e depois ordena pelos mais recentes
-    return prisma.comunicado.findMany({
-      orderBy: [
-        { fixado: 'desc' },
-        { criadoEm: 'desc' },
-      ],
-    });
+  async findAll(query: QueryComunicadoDto) {
+    const { page = 1, limit = 10, titulo } = query;
+    const skip = (page - 1) * limit;
+
+    const whereCondicao: any = {};
+    if (titulo) {
+      whereCondicao.titulo = { contains: titulo, mode: 'insensitive' };
+    }
+
+    const [comunicados, total] = await Promise.all([
+      prisma.comunicado.findMany({
+        where: whereCondicao,
+        skip,
+        take: limit,
+        orderBy: [
+          { fixado: 'desc' },
+          { criadoEm: 'desc' },
+        ],
+      }),
+      prisma.comunicado.count({ where: whereCondicao }),
+    ]);
+
+    return {
+      data: comunicados,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
   }
 
   async update(id: string, updateComunicadoDto: UpdateComunicadoDto) {

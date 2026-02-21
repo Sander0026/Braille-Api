@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { ComunicadosService } from './comunicados.service';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
 import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
+import { QueryComunicadoDto } from './dto/query-comunicado.dto';
 
 @ApiTags('Comunicados (Mural)')
 @Controller('comunicados')
@@ -22,8 +23,8 @@ export class ComunicadosController {
   // 👇 ROTA PÚBLICA (Qualquer um pode ver)
   @Get()
   @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
-  findAll() {
-    return this.comunicadosService.findAll();
+  findAll(@Query() query: QueryComunicadoDto) {
+    return this.comunicadosService.findAll(query);
   }
 
   // 👇 ROTA PROTEGIDA (Precisa de login)

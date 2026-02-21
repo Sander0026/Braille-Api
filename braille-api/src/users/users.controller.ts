@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -6,6 +6,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard'; 
 import { Roles } from '../auth/roles.decorator';
+import { QueryUserDto } from './dto/rc/users/dto/query-user.dto';
 
 @ApiTags('Usuários do Sistema (Staff)')
 @ApiBearerAuth() // Cadeado do Swagger
@@ -24,8 +25,8 @@ export class UsersController {
 
   @Get()
   @ApiOperation({ summary: 'Listar todos os usuários da instituição' })
-  findAll() {
-    return this.usersService.findAll();
+  findAll(@Query() query: QueryUserDto) {
+    return this.usersService.findAll(query);
   }
 
   @Patch(':id')

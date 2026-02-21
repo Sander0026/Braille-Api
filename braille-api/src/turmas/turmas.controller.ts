@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { TurmasService } from './turmas.service';
 import { CreateTurmaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
@@ -6,6 +6,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { QueryTurmaDto } from './dto/query-turma.dto';
 
 @ApiTags('Turmas e Oficinas')
 @ApiBearerAuth()
@@ -23,8 +24,8 @@ export class TurmasController {
 
   @Get()
   @ApiOperation({ summary: 'Listar todas as turmas ativas' })
-  findAll() {
-    return this.turmasService.findAll();
+  findAll(@Query() query: QueryTurmaDto) {
+    return this.turmasService.findAll(query);
   }
 
   @Get(':id')
