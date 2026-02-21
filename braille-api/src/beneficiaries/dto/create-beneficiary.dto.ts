@@ -40,4 +40,9 @@ export class CreateBeneficiaryDto {
   @IsString()
   @IsOptional()
   fotoPerfil?: string;
+
+  @ApiProperty({ required: false, description: 'URL do arquivo PDF do laudo médico' })
+  @IsString()
+  @IsOptional()
+  laudoMedico?: string;
 }
