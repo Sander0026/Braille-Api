@@ -14,7 +14,7 @@ Este cronograma detalha as entregas semanais até a data final do projeto (02/06
 | Data Entrega | Tarefa / Entregável | Status |
 | :--- | :--- | :---: |
 | **17/02/2026** | **Configuração do Ambiente**<br>- Criar repositório Git<br>- Inicializar NestJS (Back) e Angular (Front)<br>- Configurar PostgreSQL no Neon.tech | [X] |
-| **24/02/2026** | **Modelagem de Dados & Auth**<br>- Criar tabelas `Users` e `Beneficiaries`<br>- Implementar Login com JWT (NestJS)<br>- Definir Roles (Admin/Voluntário) | [ ] |
+| **24/02/2026** | **Modelagem de Dados & Auth**<br>- Criar tabelas `Users` e `Beneficiaries`<br>- Implementar Login com JWT (NestJS)<br>- Definir Roles (Admin/Voluntário) | [X] |
 | **03/03/2026** | **Design System Acessível**<br>- Configurar Tailwind CSS (Alto Contraste)<br>- Instalar `@angular/cdk`<br>- Criar componentes base (Botão, Input) com `aria-label` | [ ] |
 
 ## ⚙️ FASE 2: Backend Core e Lógica de Negócio
