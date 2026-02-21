@@ -2,6 +2,7 @@ import { Injectable, ConflictException, NotFoundException } from '@nestjs/common
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaClient } from '@prisma/client';
+import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
 
 // 👇 O Prisma v5 resolve tudo sozinho apenas com os parênteses vazios!
 const prisma = new PrismaClient();
@@ -30,11 +31,39 @@ export class BeneficiariesService {
     });
   }
 
-  async findAll() {
-    // Retorna apenas os alunos que estão ATIVOS
-    return prisma.aluno.findMany({
-      where: { statusAtivo: true },
-    });
+  async findAll(query: QueryBeneficiaryDto) {
+    // 1. Pega os valores da URL (ou usa os padrões 1 e 10)
+    const { page = 1, limit = 10, nome } = query;
+    
+    // 2. Calcula quantos registros pular (ex: página 2 pula os 10 primeiros)
+    const skip = (page - 1) * limit;
+
+    // 3. Monta o filtro: Só traz os ativos. Se mandou nome, busca no nomeCompleto ignorando maiúsculas/minúsculas.
+    const whereCondicao: any = { statusAtivo: true };
+    if (nome) {
+      whereCondicao.nomeCompleto = { contains: nome, mode: 'insensitive' };
+    }
+
+    // 4. Executa duas buscas simultâneas no banco (os alunos da página + o total geral)
+    const [alunos, total] = await Promise.all([
+      prisma.aluno.findMany({
+        where: whereCondicao,
+        skip,
+        take: limit,
+        orderBy: { nomeCompleto: 'asc' }, // Ordena por ordem alfabética!
+      }),
+      prisma.aluno.count({ where: whereCondicao }),
+    ]);
+
+    // 5. Devolve os dados formatados para o Frontend
+    return {
+      data: alunos,
+      meta: {
+        total,
+        page,
+        lastPage: Math.ceil(total / limit), // Calcula o total de páginas
+      },
+    };
   }
 
   async update(id: string, updateBeneficiaryDto: UpdateBeneficiaryDto) {

@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
+import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
 
 @ApiTags('Alunos (Beneficiários)')
 @ApiBearerAuth()
@@ -19,9 +20,9 @@ export class BeneficiariesController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar todos os alunos ativos' })
-  findAll() {
-    return this.beneficiariesService.findAll();
+  @ApiOperation({ summary: 'Listar todos os alunos (Com paginação e filtros)' })
+  findAll(@Query() query: QueryBeneficiaryDto) {
+    return this.beneficiariesService.findAll(query);
   }
 
   @Patch(':id')
