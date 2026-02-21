@@ -9,23 +9,28 @@ import { Roles } from '../auth/roles.decorator';
 
 @ApiTags('Turmas e Oficinas')
 @ApiBearerAuth()
-@UseGuards(AuthGuard, RolesGuard) // Ativa a verificação de Token e de Perfis
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('turmas')
 export class TurmasController {
   constructor(private readonly turmasService: TurmasService) {}
 
   @Post()
-  @Roles('ADMIN', 'SECRETARIA') // 👈 Só a gestão pode criar turmas
+  @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Criar uma nova turma' })
   create(@Body() createTurmaDto: CreateTurmaDto) {
     return this.turmasService.create(createTurmaDto);
   }
 
   @Get()
-  // 👈 Sem o @Roles() aqui, qualquer um logado (Admin, Secretaria, Professor) pode ver a lista
   @ApiOperation({ summary: 'Listar todas as turmas ativas' })
   findAll() {
     return this.turmasService.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Buscar uma turma específica e ver seus alunos' })
+  findOne(@Param('id') id: string) {
+    return this.turmasService.findOne(id);
   }
 
   @Patch(':id')
@@ -40,5 +45,21 @@ export class TurmasController {
   @ApiOperation({ summary: 'Inativar uma turma' })
   remove(@Param('id') id: string) {
     return this.turmasService.remove(id);
+  }
+
+  // ROTAS DE MATRÍCULA
+
+  @Post(':id/alunos/:alunoId')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Matricular um aluno existente em uma turma' })
+  addAluno(@Param('id') id: string, @Param('alunoId') alunoId: string) {
+    return this.turmasService.addAluno(id, alunoId);
+  }
+
+  @Delete(':id/alunos/:alunoId')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Remover (desmatricular) um aluno de uma turma' })
+  removeAluno(@Param('id') id: string, @Param('alunoId') alunoId: string) {
+    return this.turmasService.removeAluno(id, alunoId);
   }
 }
