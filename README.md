@@ -7,6 +7,7 @@ Este cronograma detalha as entregas semanais até a data final do projeto (02/06
 - [x] ✅ Concluído
 - [~] 🚧 Em Andamento
 
+
 ---
 
 ## 🏗️ FASE 1: Fundação e Estrutura (Backend & Infra)
