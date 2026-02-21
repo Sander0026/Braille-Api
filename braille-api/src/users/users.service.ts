@@ -3,6 +3,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { QueryUserDto } from './dto/rc/users/dto/query-user.dto';
+
 
 const prisma = new PrismaClient();
 
@@ -31,10 +33,30 @@ export class UsersService {
     });
   }
 
-  async findAll() {
-    return prisma.user.findMany({
-      select: { id: true, nome: true, email: true, role: true }
-    });
+  async findAll(query: QueryUserDto) {
+    const { page = 1, limit = 10, nome } = query;
+    const skip = (page - 1) * limit;
+
+    const whereCondicao: any = {};
+    if (nome) {
+      whereCondicao.nome = { contains: nome, mode: 'insensitive' };
+    }
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where: whereCondicao,
+        skip,
+        take: limit,
+        select: { id: true, nome: true, email: true, role: true },
+        orderBy: { nome: 'asc' },
+      }),
+      prisma.user.count({ where: whereCondicao }),
+    ]);
+
+    return {
+      data: users,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
