@@ -29,6 +29,7 @@ model User {
   senha     String   
   role      Role     @default(SECRETARIA)
   fotoPerfil  String?
+  statusAtivo Boolean  @default(true)
   turmas    Turma[]  // Relação com Turmas
   
   noticias  Noticia[]
