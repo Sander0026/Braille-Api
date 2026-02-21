@@ -4,11 +4,15 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard'; 
+import { Roles } from '../auth/roles.decorator';
 
 @ApiTags('Usuários do Sistema (Staff)')
 @ApiBearerAuth() // Cadeado do Swagger
+@UseGuards(AuthGuard, RolesGuard) // Aplica os guards de autenticação e autorização para todas as rotas desse controller
+@Roles('ADMIN') // Somente quem tem a role ADMIN pode acessar as rotas desse controller
 @UseGuards(AuthGuard) // Bloqueia quem não tem Token
-@Controller('users')
+@Controller('users') // Rota base para usuários
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
