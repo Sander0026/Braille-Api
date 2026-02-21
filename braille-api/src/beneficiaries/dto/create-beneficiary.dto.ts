@@ -35,4 +35,9 @@ export class CreateBeneficiaryDto {
   @IsOptional()
   @IsBoolean()
   usaCaoGuia?: boolean;
+
+  @ApiProperty({ required: false, description: 'URL da foto de perfil' })
+  @IsString()
+  @IsOptional()
+  fotoPerfil?: string;
 }
