@@ -37,7 +37,8 @@ export class UsersService {
     const { page = 1, limit = 10, nome } = query;
     const skip = (page - 1) * limit;
 
-    const whereCondicao: any = {};
+    // 👇 Agora só busca usuários ATIVOS
+    const whereCondicao: any = { statusAtivo: true }; 
     if (nome) {
       whereCondicao.nome = { contains: nome, mode: 'insensitive' };
     }
@@ -47,7 +48,7 @@ export class UsersService {
         where: whereCondicao,
         skip,
         take: limit,
-        select: { id: true, nome: true, email: true, role: true },
+        select: { id: true, nome: true, email: true, role: true, fotoPerfil: true },
         orderBy: { nome: 'asc' },
       }),
       prisma.user.count({ where: whereCondicao }),
@@ -82,8 +83,10 @@ export class UsersService {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
-    return prisma.user.delete({
+    // 👇 Muda de prisma.user.delete para prisma.user.update
+    return prisma.user.update({
       where: { id },
+      data: { statusAtivo: false }, // Faz o Soft Delete
     });
   }
 }
