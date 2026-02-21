@@ -28,13 +28,13 @@ model User {
   email     String   @unique
   senha     String   
   role      Role     @default(SECRETARIA)
+  fotoPerfil  String?
+  turmas    Turma[]  // Relação com Turmas
   
   noticias  Noticia[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  turmas    Turma[]  // Relação com Turmas
 }
 
 // 2. Cadastro de Alunos/Assistidos
@@ -45,7 +45,9 @@ model Aluno {
   dataNascimento      DateTime
   telefone            String?
   contatoEmergencia   String
-  fotoPerfil          String?   
+  fotoPerfil          String? 
+  laudoMedico         String? 
+   turmas             Turma[]  // Relação com Turmas 
   
   tipoDeficiencia     String   
   leBraille           Boolean  @default(false)
@@ -62,8 +64,6 @@ model Aluno {
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-
-  turmas              Turma[]  // Relação com Turmas
 
 }
 
