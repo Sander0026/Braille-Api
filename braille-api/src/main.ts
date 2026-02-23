@@ -6,6 +6,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors();
+
   // 1. Ativar Validação Global (Impede dados lixo no banco)
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true, // Remove campos que não estão no DTO
