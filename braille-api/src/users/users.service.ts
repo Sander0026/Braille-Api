@@ -79,7 +79,7 @@ export class UsersService {
         ...updateUserDto,
         role: updateUserDto.role as any,
       },
-      select: { id: true, nome: true, email: true, role: true, updatedAt: true }
+      select: { id: true, nome: true, email: true, role: true, atualizadoEm: true }
     });
   }
 

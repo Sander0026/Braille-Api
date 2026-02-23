@@ -1,48 +1,125 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsDateString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum, IsDateString } from 'class-validator';
+import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade } from '@prisma/client';
 
 export class CreateBeneficiaryDto {
-  @ApiProperty({ example: 'João da Silva' })
-  @IsString()
-  @IsNotEmpty({ message: 'O nome completo é obrigatório' })
-  nomeCompleto: string;
-
-  @ApiProperty({ example: '12345678901' })
-  @IsString()
-  @IsNotEmpty({ message: 'O CPF é obrigatório' })
-  cpf: string;
-
-  @ApiProperty({ example: '1990-05-20T00:00:00Z' })
-  @IsDateString({}, { message: 'Data de nascimento inválida' })
-  dataNascimento: string;
-
-  @ApiProperty({ example: 'Maria (Mãe) - 27999999999' })
-  @IsString()
-  @IsNotEmpty({ message: 'Contato de emergência é vital' })
-  contatoEmergencia: string;
-
-  @ApiProperty({ example: 'Cegueira Total' })
+  @ApiProperty({ description: 'Nome completo do beneficiário' })
   @IsString()
   @IsNotEmpty()
-  tipoDeficiencia: string;
+  nomeCompleto: string;
 
-  @ApiProperty({ example: true, required: false })
-  @IsOptional()
-  @IsBoolean()
-  leBraille?: boolean;
+  @ApiProperty({ description: 'Data de nascimento no formato ISO (YYYY-MM-DD)' })
+  @IsDateString()
+  @IsNotEmpty()
+  dataNascimento: string;
 
-  @ApiProperty({ example: false, required: false })
-  @IsOptional()
-  @IsBoolean()
-  usaCaoGuia?: boolean;
+  @ApiProperty({ description: 'CPF ou RG' })
+  @IsString()
+  @IsNotEmpty()
+  cpfRg: string;
 
-  @ApiProperty({ required: false, description: 'URL da foto de perfil' })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  fotoPerfil?: string;
+  genero?: string;
 
-  @ApiProperty({ required: false, description: 'URL do arquivo PDF do laudo médico' })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  laudoMedico?: string;
+  estadoCivil?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  endereco?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  pontoReferencia?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  telefoneContato?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  email?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  contatoEmergencia?: string;
+
+  @ApiPropertyOptional({ enum: TipoDeficiencia })
+  @IsEnum(TipoDeficiencia)
+  @IsOptional()
+  tipoDeficiencia?: TipoDeficiencia;
+
+  @ApiPropertyOptional({ enum: CausaDeficiencia })
+  @IsEnum(CausaDeficiencia)
+  @IsOptional()
+  causaDeficiencia?: CausaDeficiencia;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  idadeOcorrencia?: string;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  possuiLaudo?: boolean;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  tecAssistivas?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  escolaridade?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  profissao?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  rendaFamiliar?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  beneficiosGov?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  composicaoFamiliar?: string;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  precisaAcompanhante?: boolean;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  acompOftalmologico?: boolean;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  outrasComorbidades?: string;
+
+  @ApiPropertyOptional({ enum: PreferenciaAcessibilidade })
+  @IsEnum(PreferenciaAcessibilidade)
+  @IsOptional()
+  prefAcessibilidade?: PreferenciaAcessibilidade;
 }
