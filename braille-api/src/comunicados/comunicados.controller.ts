@@ -24,7 +24,7 @@ export class ComunicadosController {
   @Get()
   @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
   findAll(@Query() query: QueryComunicadoDto) {
-    return this.comunicadosService.findAll(query);
+    return this.comunicadosService.findAll();
   }
 
   // 👇 ROTA PROTEGIDA (Precisa de login)

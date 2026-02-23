@@ -1,19 +1,26 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsBoolean, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsEnum } from 'class-validator';
+import { CategoriaComunicado } from '@prisma/client'; // 👈 Importamos as categorias do banco
 
 export class CreateComunicadoDto {
-  @ApiProperty({ example: 'Festa de Fim de Ano' })
+  @ApiProperty({ description: 'Título do comunicado ou notícia' })
   @IsString()
-  @IsNotEmpty({ message: 'O título é obrigatório' })
+  @IsNotEmpty()
   titulo: string;
 
-  @ApiProperty({ example: 'Nossa festa será no dia 20...' })
+  @ApiProperty({ description: 'Conteúdo completo' })
   @IsString()
-  @IsNotEmpty({ message: 'O conteúdo não pode ser vazio' })
+  @IsNotEmpty()
   conteudo: string;
 
-  @ApiProperty({ example: true, required: false, description: 'Fixar no topo?' })
+  // 👇 O CAMPO NOVO QUE A COORDENADORA PEDIU!
+  @ApiPropertyOptional({ enum: CategoriaComunicado, description: 'Classificação para o Portal Institucional' })
+  @IsEnum(CategoriaComunicado)
   @IsOptional()
+  categoria?: CategoriaComunicado;
+
+  @ApiPropertyOptional({ description: 'Se verdadeiro, fixa no topo do mural' })
   @IsBoolean()
+  @IsOptional()
   fixado?: boolean;
 }
