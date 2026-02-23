@@ -8,6 +8,6 @@ export class LoginDto {
 
   @ApiProperty({ description: 'Senha de acesso', example: 'Admin123!' })
   @IsNotEmpty({ message: 'A senha é obrigatória' })
-  @MinLength(6, { message: 'A senha deve ter no mínimo 6 caracteres' })
+  @MinLength(8, { message: 'A senha deve ter no mínimo 8 caracteres' })
   senha: string;
 }

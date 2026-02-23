@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsNotEmpty, IsStrongPassword } from 'class-validator';
 import { Role } from '@prisma/client';
 
 export class CreateUserDto {
@@ -8,21 +8,27 @@ export class CreateUserDto {
   @IsNotEmpty()
   nome: string;
 
-  // 👇 O novo campo obrigatório
   @ApiProperty({ description: 'Nome de usuário para login (único)' })
   @IsString()
   @IsNotEmpty()
   username: string; 
 
-  // 👇 O email agora é opcional
   @ApiPropertyOptional({ description: 'E-mail do usuário' })
   @IsEmail()
   @IsOptional()
   email?: string; 
 
-  @ApiProperty({ description: 'Senha de acesso' })
+  @ApiProperty({ description: 'Senha forte de acesso' })
   @IsString()
-  @MinLength(6)
+  @IsStrongPassword({
+    minLength: 8,
+    minLowercase: 1,
+    minUppercase: 1,
+    minNumbers: 1,
+    minSymbols: 1,
+  }, {
+    message: 'A senha deve ter pelo menos 8 caracteres, contendo letras maiúsculas, minúsculas, números e caracteres especiais (ex: !@#$%).'
+  })
   senha: string;
 
   @ApiPropertyOptional({ enum: Role, description: 'Perfil de acesso' })
