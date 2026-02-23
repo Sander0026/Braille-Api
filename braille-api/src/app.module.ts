@@ -23,7 +23,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     BeneficiariesModule, 
     AppointmentsModule, 
     ComunicadosModule, 
-    TurmasModule, UploadsModule, DashboardModule, 
+    TurmasModule, UploadsModule, DashboardModule,  
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -8,12 +8,20 @@ const prisma = new PrismaClient();
 
 @Injectable()
 export class ComunicadosService {
-  async create(createComunicadoDto: CreateComunicadoDto) {
+  async create(createComunicadoDto: any) {
+    const admin = await prisma.user.findFirst({ where: { username: 'admin' } });
+
+    // 👇 A TRAVA DE SEGURANÇA PARA O TYPESCRIPT:
+    if (!admin) {
+      throw new NotFoundException('Administrador principal não encontrado para assinar o comunicado.');
+    }
+
     return prisma.comunicado.create({
       data: {
         titulo: createComunicadoDto.titulo,
         conteudo: createComunicadoDto.conteudo,
-        fixado: createComunicadoDto.fixado ?? false,
+        fixado: createComunicadoDto.fixado || false,
+        autorId: admin.id, // Agora o TS sabe que é 100% seguro usar o .id
       },
     });
   }

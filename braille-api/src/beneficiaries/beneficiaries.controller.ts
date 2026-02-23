@@ -26,7 +26,7 @@ export class BeneficiariesController {
   @Get()
   @ApiOperation({ summary: 'Listar todos os alunos (Com paginação e filtros)' })
   findAll(@Query() query: QueryBeneficiaryDto) {
-    return this.beneficiariesService.findAll(query);
+    return this.beneficiariesService.findAll();
   }
 
   @Patch(':id')
