@@ -6,7 +6,7 @@ export class LoginDto {
   @IsNotEmpty({ message: 'O nome de usuário é obrigatório' })
   username: string;
 
-  @ApiProperty({ description: 'Senha de acesso', example: 'Senha123!' })
+  @ApiProperty({ description: 'Senha de acesso', example: 'Admin123!' })
   @IsNotEmpty({ message: 'A senha é obrigatória' })
   @MinLength(6, { message: 'A senha deve ter no mínimo 6 caracteres' })
   senha: string;
