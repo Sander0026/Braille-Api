@@ -10,6 +10,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
 import { ComunicadosModule } from './comunicados/comunicados.module';
 import { TurmasModule } from './turmas/turmas.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { UploadsModule } from './uploads/uploads.module';
     BeneficiariesModule, 
     AppointmentsModule, 
     ComunicadosModule, 
-    TurmasModule, UploadsModule, 
+    TurmasModule, UploadsModule, DashboardModule, 
   ],
   controllers: [AppController],
   providers: [AppService],
