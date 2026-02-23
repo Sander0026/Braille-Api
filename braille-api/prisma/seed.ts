@@ -4,22 +4,24 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Criptografa a senha antes de salvar
-  const senhaCriptografada = await bcrypt.hash('senha123', 10);
+  // 1. Gera a senha criptografada antes de salvar no banco
+  const hashedPassword = await bcrypt.hash('Admin123!', 10);
 
-  // O 'upsert' cria o usuário se ele não existir, ou ignora se já estiver lá
+  // 2. Cria ou atualiza o usuário Admin usando o username
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@brailli.com' },
+    where: { username: 'admin' },
     update: {},
     create: {
-      nome: 'Administrador Brailli',
-      email: 'admin@brailli.com',
-      senha: senhaCriptografada,
+      nome: 'Administrador do Sistema',
+      username: 'admin',
+      email: 'admin@braille.com',
+      senha: hashedPassword,
       role: 'ADMIN',
+      statusAtivo: true,
     },
   });
 
-  console.log('✅ Usuário Admin criado com sucesso:', admin.email);
+  console.log('🌱 Seed executado com sucesso! Usuário criado:', admin.username);
 }
 
 main()

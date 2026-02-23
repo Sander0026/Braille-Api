@@ -11,26 +11,30 @@ const prisma = new PrismaClient();
 @Injectable()
 export class UsersService {
   async create(createUserDto: CreateUserDto) {
-    const emailExiste = await prisma.user.findUnique({
-      where: { email: createUserDto.email },
-    });
+    
+    const { nome, username, email, senha, role, fotoPerfil } = createUserDto;
 
-    if (emailExiste) {
-      throw new ConflictException('Este e-mail já está cadastrado.');
+    const userExists = await prisma.user.findUnique({ where: { username } });
+    if (userExists) {
+      throw new ConflictException('Este nome de usuário já está em uso.');
     }
 
-    const senhaCriptografada = await bcrypt.hash(createUserDto.senha, 10);
+    const hashedPassword = await bcrypt.hash(senha, 10);
 
-    return prisma.user.create({
+    const user = await prisma.user.create({
       data: {
-        nome: createUserDto.nome,
-        email: createUserDto.email,
-        senha: senhaCriptografada,
-        // 👇 Dizemos ao TypeScript para ignorar a tipagem estrita aqui
-        role: createUserDto.role as any, 
+        nome,
+        username, 
+        email,
+        senha: hashedPassword,
+        role,
+        fotoPerfil,
       },
-      select: { id: true, nome: true, email: true, role: true, createdAt: true }
     });
+
+    // Retorna o usuário sem a senha
+    const { senha: _, ...result } = user;
+    return result;
   }
 
   async findAll(query: QueryUserDto) {

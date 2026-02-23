@@ -1,28 +1,36 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsNotEmpty } from 'class-validator';
+import { Role } from '@prisma/client';
 
 export class CreateUserDto {
-  @ApiProperty({ example: 'Maria da Silva' })
-  @IsString()
-  @IsNotEmpty({ message: 'O nome é obrigatório' })
-  nome: string;
-
-  @ApiProperty({ example: 'maria@brailli.com' })
-  @IsEmail({}, { message: 'Formato de e-mail inválido' })
-  @IsNotEmpty({ message: 'O e-mail é obrigatório' })
-  email: string;
-
-  @ApiProperty({ example: 'senha123' })
-  @IsString()
-  @MinLength(6, { message: 'A senha deve ter no mínimo 6 caracteres' })
-  senha: string;
-
-  @ApiProperty({ example: 'SECRETARIA', description: 'ADMIN, SECRETARIA ou PROFESSOR' })
+  @ApiProperty({ description: 'Nome completo do usuário' })
   @IsString()
   @IsNotEmpty()
-  role: string;
+  nome: string;
 
-  @ApiProperty({ required: false, description: 'URL da foto de perfil do usuário' })
+  // 👇 O novo campo obrigatório
+  @ApiProperty({ description: 'Nome de usuário para login (único)' })
+  @IsString()
+  @IsNotEmpty()
+  username: string; 
+
+  // 👇 O email agora é opcional
+  @ApiPropertyOptional({ description: 'E-mail do usuário' })
+  @IsEmail()
+  @IsOptional()
+  email?: string; 
+
+  @ApiProperty({ description: 'Senha de acesso' })
+  @IsString()
+  @MinLength(6)
+  senha: string;
+
+  @ApiPropertyOptional({ enum: Role, description: 'Perfil de acesso' })
+  @IsEnum(Role)
+  @IsOptional()
+  role?: Role;
+
+  @ApiPropertyOptional({ description: 'URL da foto de perfil' })
   @IsString()
   @IsOptional()
   fotoPerfil?: string;

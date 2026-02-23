@@ -13,17 +13,17 @@ export class AuthService {
   async login(loginDto: LoginDto) {
     // 1. Busca o usuário no banco pelo e-mail
     const user = await prisma.user.findUnique({
-      where: { email: loginDto.email },
+      where: { username: loginDto.username },
     });
 
     // 2. Se não achar o usuário, ou se a senha estiver errada, bloqueia!
     if (!user) {
-      throw new UnauthorizedException('E-mail ou senha incorretos');
+      throw new UnauthorizedException('Nome de usuário ou senha incorretos');
     }
 
     const isPasswordValid = await bcrypt.compare(loginDto.senha, user.senha);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('E-mail ou senha incorretos');
+      throw new UnauthorizedException('Nome de usuário ou senha incorretos');
     }
 
     // 3. Se deu tudo certo, monta o crachá (Payload do JWT)
