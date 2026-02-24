@@ -28,10 +28,13 @@ export class CreateBeneficiaryDto {
   @IsOptional()
   estadoCivil?: string;
 
-  @ApiPropertyOptional()
-  @IsString()
-  @IsOptional()
-  endereco?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() cep?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() rua?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() numero?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() complemento?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() bairro?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() cidade?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() uf?: string;
 
   @ApiPropertyOptional()
   @IsString()

@@ -22,6 +22,7 @@ export class ComunicadosService {
         categoria: createComunicadoDto.categoria, 
         fixado: createComunicadoDto.fixado || false,
         autorId: admin.id, 
+        imagemCapa: createComunicadoDto.imagemCapa, //
       },
     });
   }
@@ -58,6 +59,7 @@ export class ComunicadosService {
         conteudo: updateComunicadoDto.conteudo,
         categoria: updateComunicadoDto.categoria, 
         fixado: updateComunicadoDto.fixado,
+        imagemCapa: updateComunicadoDto.imagemCapa, 
       }
     });
   }

@@ -12,6 +12,8 @@ import { TurmasModule } from './turmas/turmas.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { FrequenciasModule } from './frequencias/frequencias.module';
+import { InscricoesModule } from './inscricoes/inscricoes.module';
+import { ContatosModule } from './contatos/contatos.module';
 
 @Module({
   imports: [
@@ -24,7 +26,7 @@ import { FrequenciasModule } from './frequencias/frequencias.module';
     BeneficiariesModule, 
     AppointmentsModule, 
     ComunicadosModule, 
-    TurmasModule, UploadsModule, DashboardModule, FrequenciasModule,  
+    TurmasModule, UploadsModule, DashboardModule, FrequenciasModule, InscricoesModule, ContatosModule,  
   ],
   controllers: [AppController],
   providers: [AppService],
