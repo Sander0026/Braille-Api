@@ -9,11 +9,11 @@ import { BeneficiariesModule } from './beneficiaries/beneficiaries.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { ComunicadosModule } from './comunicados/comunicados.module';
 import { TurmasModule } from './turmas/turmas.module';
-import { UploadsModule } from './uploads/uploads.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { FrequenciasModule } from './frequencias/frequencias.module';
 import { InscricoesModule } from './inscricoes/inscricoes.module';
 import { ContatosModule } from './contatos/contatos.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -26,7 +26,7 @@ import { ContatosModule } from './contatos/contatos.module';
     BeneficiariesModule, 
     AppointmentsModule, 
     ComunicadosModule, 
-    TurmasModule, UploadsModule, DashboardModule, FrequenciasModule, InscricoesModule, ContatosModule,  
+    TurmasModule, DashboardModule, FrequenciasModule, InscricoesModule, ContatosModule, UploadModule,  
   ],
   controllers: [AppController],
   providers: [AppService],
