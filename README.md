@@ -7,7 +7,6 @@ Este cronograma detalha as entregas semanais até a data final do projeto (02/06
 - [x] ✅ Concluído
 - [~] 🚧 Em Andamento
 
-
 ---
 
 ## 🏗️ FASE 1: Fundação e Estrutura (Backend & Infra)
@@ -16,13 +15,13 @@ Este cronograma detalha as entregas semanais até a data final do projeto (02/06
 | :--- | :--- | :---: |
 | **17/02/2026** | **Configuração do Ambiente**<br>- Criar repositório Git<br>- Inicializar NestJS (Back) e Angular (Front)<br>- Configurar PostgreSQL no Neon.tech | [X] |
 | **24/02/2026** | **Modelagem de Dados & Auth**<br>- Criar tabelas `Users` e `Beneficiaries`<br>- Implementar Login com JWT (NestJS)<br>- Definir Roles (Admin/Voluntário) | [X] |
-| **03/03/2026** | **Design System Acessível**<br>- Configurar Tailwind CSS (Alto Contraste)<br>- Instalar `@angular/cdk`<br>- Criar componentes base (Botão, Input) com `aria-label` | [ ] |
+| **03/03/2026** | **CRUD de Beneficiários**<br>- Criar API para cadastro de deficientes visuais<br>- Validar campos (nível de visão, emergência)<br>- Documentar rotas no Swagger | [X] |
 
 ## ⚙️ FASE 2: Backend Core e Lógica de Negócio
 
 | Data Entrega | Tarefa / Entregável | Status |
 | :--- | :--- | :---: |
-| **10/03/2026** | **CRUD de Beneficiários**<br>- Criar API para cadastro de deficientes visuais<br>- Validar campos (nível de visão, emergência)<br>- Documentar rotas no Swagger | [ ] |
+| **10/03/2026** |  **Design System Acessível**<br>- Configurar Tailwind CSS (Alto Contraste)<br>- Instalar `@angular/cdk`<br>- Criar componentes base (Botão, Input) com `aria-label` | [ ] |
 | **17/03/2026** | **Gestão de Atendimentos**<br>- Criar tabela `Appointments`<br>- Relacionar Beneficiário <-> Atendimento<br>- Rota de histórico por usuário | [ ] |
 | **24/03/2026** | **Segurança e Validação**<br>- Implementar `Class-Validator`<br>- Tratamento de erros global (Exception Filters)<br>- Testes unitários básicos das rotas principais | [ ] |
 
