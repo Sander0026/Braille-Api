@@ -95,6 +95,7 @@ model Aluno {
   causaDeficiencia  CausaDeficiencia?
   idadeOcorrencia   String?
   possuiLaudo       Boolean  @default(false)
+  laudoUrl          String?  // URL da imagem do laudo no Cloudinary
   tecAssistivas     String?  // Ex: Bengala, cão-guia, NVDA
 
   // 4. Situação Socioeconômica

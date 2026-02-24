@@ -76,6 +76,11 @@ export class CreateBeneficiaryDto {
   @IsOptional()
   possuiLaudo?: boolean;
 
+  @ApiPropertyOptional({ description: 'URL da imagem do laudo médico no Cloudinary' })
+  @IsString()
+  @IsOptional()
+  laudoUrl?: string;
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
