@@ -1,18 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateTurmaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { QueryTurmaDto } from './dto/query-turma.dto';
-
-const prisma = new PrismaClient();
 
 @Injectable()
 export class TurmasService {
+  constructor(private prisma: PrismaService) { }
+
   async create(createTurmaDto: CreateTurmaDto) {
-    const professor = await prisma.user.findUnique({ where: { id: createTurmaDto.professorId } });
+    const professor = await this.prisma.user.findUnique({ where: { id: createTurmaDto.professorId } });
     if (!professor) throw new NotFoundException('Professor não encontrado.');
 
-    return prisma.turma.create({
+    return this.prisma.turma.create({
       data: createTurmaDto,
     });
   }
@@ -27,7 +27,7 @@ export class TurmasService {
     }
 
     const [turmas, total] = await Promise.all([
-      prisma.turma.findMany({
+      this.prisma.turma.findMany({
         where: whereCondicao,
         skip,
         take: limit,
@@ -37,7 +37,7 @@ export class TurmasService {
         },
         orderBy: { nome: 'asc' },
       }),
-      prisma.turma.count({ where: whereCondicao }),
+      this.prisma.turma.count({ where: whereCondicao }),
     ]);
 
     return {
@@ -47,20 +47,20 @@ export class TurmasService {
   }
 
   async update(id: string, updateTurmaDto: UpdateTurmaDto) {
-    const turma = await prisma.turma.findUnique({ where: { id } });
+    const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
 
-    return prisma.turma.update({
+    return this.prisma.turma.update({
       where: { id },
       data: updateTurmaDto,
     });
   }
 
   async remove(id: string) {
-    const turma = await prisma.turma.findUnique({ where: { id } });
+    const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
 
-    return prisma.turma.update({
+    return this.prisma.turma.update({
       where: { id },
       data: { statusAtivo: false },
     });
@@ -69,18 +69,17 @@ export class TurmasService {
   //  MÉTODOS DE MATRÍCULA 
 
   async addAluno(turmaId: string, alunoId: string) {
-    const turma = await prisma.turma.findUnique({ where: { id: turmaId } });
+    const turma = await this.prisma.turma.findUnique({ where: { id: turmaId } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
 
-    const aluno = await prisma.aluno.findUnique({ where: { id: alunoId } });
+    const aluno = await this.prisma.aluno.findUnique({ where: { id: alunoId } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
-    // O Prisma faz o "vínculo" automaticamente na tabela intermediária invisível
-    return prisma.turma.update({
+    return this.prisma.turma.update({
       where: { id: turmaId },
       data: {
         alunos: {
-          connect: { id: alunoId }, // Conecta o aluno à turma
+          connect: { id: alunoId },
         },
       },
       include: { alunos: { select: { id: true, nomeCompleto: true } } },
@@ -88,12 +87,11 @@ export class TurmasService {
   }
 
   async removeAluno(turmaId: string, alunoId: string) {
-    // O Prisma desfaz o "vínculo" sem apagar o aluno do sistema
-    return prisma.turma.update({
+    return this.prisma.turma.update({
       where: { id: turmaId },
       data: {
         alunos: {
-          disconnect: { id: alunoId }, // Desconecta o aluno da turma
+          disconnect: { id: alunoId },
         },
       },
       include: { alunos: { select: { id: true, nomeCompleto: true } } },
@@ -101,11 +99,11 @@ export class TurmasService {
   }
 
   async findOne(id: string) {
-    const turma = await prisma.turma.findUnique({
+    const turma = await this.prisma.turma.findUnique({
       where: { id },
       include: {
         professor: { select: { id: true, nome: true, email: true } },
-        alunos: { select: { id: true, nomeCompleto: true } }, // Traz os alunos daquela turma
+        alunos: { select: { id: true, nomeCompleto: true } },
       },
     });
 

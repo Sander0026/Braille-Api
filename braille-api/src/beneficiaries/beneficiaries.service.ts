@@ -1,15 +1,14 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class BeneficiariesService {
-  
+  constructor(private prisma: PrismaService) { }
+
   async create(createBeneficiaryDto: CreateBeneficiaryDto) {
-    const beneficiarioExiste = await prisma.aluno.findUnique({
+    const beneficiarioExiste = await this.prisma.aluno.findUnique({
       where: { cpfRg: createBeneficiaryDto.cpfRg }
     });
 
@@ -22,20 +21,20 @@ export class BeneficiariesService {
       dataNascimento: new Date(createBeneficiaryDto.dataNascimento)
     };
 
-    return prisma.aluno.create({
+    return this.prisma.aluno.create({
       data: dadosParaSalvar
     });
   }
 
   async findAll() {
-    return prisma.aluno.findMany({
+    return this.prisma.aluno.findMany({
       where: { statusAtivo: true },
       orderBy: { nomeCompleto: 'asc' }
     });
   }
 
   async findOne(id: string) {
-    const beneficiario = await prisma.aluno.findUnique({
+    const beneficiario = await this.prisma.aluno.findUnique({
       where: { id },
       include: { matriculas: true }
     });
@@ -48,12 +47,12 @@ export class BeneficiariesService {
     await this.findOne(id);
 
     let dadosParaAtualizar: any = { ...updateBeneficiaryDto };
-    
+
     if (updateBeneficiaryDto.dataNascimento) {
       dadosParaAtualizar.dataNascimento = new Date(updateBeneficiaryDto.dataNascimento);
     }
 
-    return prisma.aluno.update({
+    return this.prisma.aluno.update({
       where: { id },
       data: dadosParaAtualizar
     });
@@ -61,7 +60,7 @@ export class BeneficiariesService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return prisma.aluno.update({
+    return this.prisma.aluno.update({
       where: { id },
       data: { statusAtivo: false }
     });

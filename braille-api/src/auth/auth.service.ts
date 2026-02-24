@@ -1,18 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaClient } from '.prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
 
-const prisma = new PrismaClient();
-
 @Injectable()
 export class AuthService {
-  constructor(private jwtService: JwtService) {}
+  constructor(
+    private jwtService: JwtService,
+    private prisma: PrismaService,
+  ) { }
 
   async login(loginDto: LoginDto) {
     // 1. Busca o usuário no banco pelo e-mail
-    const user = await prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { username: loginDto.username },
     });
 
@@ -39,8 +40,8 @@ export class AuthService {
     };
   }
 
-  async trocarSenha(userId: string, trocarSenhaDto: any) { // Usamos any aqui temporariamente ou importe o DTO
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+  async trocarSenha(userId: string, trocarSenhaDto: any) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) {
       throw new NotFoundException('Usuário não encontrado.');
@@ -56,7 +57,7 @@ export class AuthService {
     const novaSenhaHashed = await bcrypt.hash(trocarSenhaDto.novaSenha, 10);
 
     // 3. Salva no banco de dados
-    await prisma.user.update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: { senha: novaSenhaHashed },
     });

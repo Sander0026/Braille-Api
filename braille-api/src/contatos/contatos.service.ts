@@ -1,21 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateContatoDto } from './dto/create-contato.dto';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ContatosService {
+  constructor(private prisma: PrismaService) { }
+
   async create(createContatoDto: CreateContatoDto) {
-    return prisma.mensagemContato.create({ data: createContatoDto });
+    return this.prisma.mensagemContato.create({ data: createContatoDto });
   }
 
   async findAll() {
-    return prisma.mensagemContato.findMany({ orderBy: { criadoEm: 'desc' } });
+    return this.prisma.mensagemContato.findMany({ orderBy: { criadoEm: 'desc' } });
   }
 
   async findOne(id: string) {
-    const mensagem = await prisma.mensagemContato.findUnique({ where: { id } });
+    const mensagem = await this.prisma.mensagemContato.findUnique({ where: { id } });
     if (!mensagem) throw new NotFoundException('Mensagem não encontrada');
     return mensagem;
   }
@@ -23,7 +23,7 @@ export class ContatosService {
   // Marca a mensagem como lida
   async marcarComoLida(id: string) {
     await this.findOne(id);
-    return prisma.mensagemContato.update({
+    return this.prisma.mensagemContato.update({
       where: { id },
       data: { lida: true }
     });
@@ -31,6 +31,6 @@ export class ContatosService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return prisma.mensagemContato.delete({ where: { id } });
+    return this.prisma.mensagemContato.delete({ where: { id } });
   }
 }

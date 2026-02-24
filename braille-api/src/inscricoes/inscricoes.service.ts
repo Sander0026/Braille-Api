@@ -1,13 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateInscricaoDto } from './dto/create-inscricoe.dto';
-import { PrismaClient, StatusInscricao } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { PrismaService } from '../prisma/prisma.service';
+import { StatusInscricao } from '@prisma/client';
 
 @Injectable()
 export class InscricoesService {
+  constructor(private prisma: PrismaService) { }
+
   async create(createInscricaoDto: CreateInscricaoDto) {
-    return prisma.inscricao.create({
+    return this.prisma.inscricao.create({
       data: {
         ...createInscricaoDto,
         dataNascimento: new Date(createInscricaoDto.dataNascimento)
@@ -16,13 +17,13 @@ export class InscricoesService {
   }
 
   async findAll() {
-    return prisma.inscricao.findMany({
+    return this.prisma.inscricao.findMany({
       orderBy: { criadoEm: 'desc' }
     });
   }
 
   async findOne(id: string) {
-    const inscricao = await prisma.inscricao.findUnique({ where: { id } });
+    const inscricao = await this.prisma.inscricao.findUnique({ where: { id } });
     if (!inscricao) throw new NotFoundException('Inscrição não encontrada');
     return inscricao;
   }
@@ -30,7 +31,7 @@ export class InscricoesService {
   // A secretaria usa isso para aprovar ou rejeitar, e colocar uma observação
   async updateStatus(id: string, status: StatusInscricao, observacoesAdmin?: string) {
     await this.findOne(id);
-    return prisma.inscricao.update({
+    return this.prisma.inscricao.update({
       where: { id },
       data: { status, observacoesAdmin }
     });
@@ -38,6 +39,6 @@ export class InscricoesService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return prisma.inscricao.delete({ where: { id } });
+    return this.prisma.inscricao.delete({ where: { id } });
   }
 }

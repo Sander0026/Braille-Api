@@ -1,20 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class DashboardService {
+  constructor(private prisma: PrismaService) { }
+
   async getEstatisticas() {
     // Dispara todas as contagens simultaneamente para maior performance
     const [totalAlunos, totalTurmas, totalUsuarios, totalComunicados] = await Promise.all([
-      prisma.aluno.count({ where: { statusAtivo: true } }),
-      prisma.turma.count({ where: { statusAtivo: true } }),
-      prisma.user.count({ where: { statusAtivo: true } }),
-      prisma.comunicado.count(), // Conta todos os comunicados
+      this.prisma.aluno.count({ where: { statusAtivo: true } }),
+      this.prisma.turma.count({ where: { statusAtivo: true } }),
+      this.prisma.user.count({ where: { statusAtivo: true } }),
+      this.prisma.comunicado.count(),
     ]);
 
-    // Retorna um objeto pronto para o Angular desenhar os "Cards" na tela
     return {
       alunosAtivos: totalAlunos,
       turmasAtivas: totalTurmas,

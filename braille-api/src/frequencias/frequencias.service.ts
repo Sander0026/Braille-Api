@@ -1,19 +1,18 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class FrequenciasService {
-  
+  constructor(private prisma: PrismaService) { }
+
   async create(createFrequenciaDto: CreateFrequenciaDto) {
     // 1. Converte a data enviada pelo frontend
     const dataConvertida = new Date(createFrequenciaDto.dataAula);
 
     // 2. Trava de Segurança: Verifica se a chamada já foi feita hoje para este aluno nesta turma
-    const chamadaExistente = await prisma.frequencia.findFirst({
+    const chamadaExistente = await this.prisma.frequencia.findFirst({
       where: {
         alunoId: createFrequenciaDto.alunoId,
         turmaId: createFrequenciaDto.turmaId,
@@ -26,7 +25,7 @@ export class FrequenciasService {
     }
 
     // 3. Salva no banco de dados
-    return prisma.frequencia.create({
+    return this.prisma.frequencia.create({
       data: {
         ...createFrequenciaDto,
         dataAula: dataConvertida,
@@ -35,17 +34,17 @@ export class FrequenciasService {
   }
 
   async findAll() {
-    return prisma.frequencia.findMany({
+    return this.prisma.frequencia.findMany({
       include: {
-        aluno: { select: { nomeCompleto: true } }, // Traz o nome do aluno junto
-        turma: { select: { nome: true } }          // Traz o nome da oficina junto
+        aluno: { select: { nomeCompleto: true } },
+        turma: { select: { nome: true } }
       },
-      orderBy: { dataAula: 'desc' } // Mostra as chamadas mais recentes primeiro
+      orderBy: { dataAula: 'desc' }
     });
   }
 
   async findOne(id: string) {
-    const frequencia = await prisma.frequencia.findUnique({
+    const frequencia = await this.prisma.frequencia.findUnique({
       where: { id },
       include: { aluno: true, turma: true }
     });
@@ -55,15 +54,15 @@ export class FrequenciasService {
   }
 
   async update(id: string, updateFrequenciaDto: UpdateFrequenciaDto) {
-    await this.findOne(id); // Verifica se existe antes de atualizar
+    await this.findOne(id);
 
     let dadosParaAtualizar: any = { ...updateFrequenciaDto };
-    
+
     if (updateFrequenciaDto.dataAula) {
       dadosParaAtualizar.dataAula = new Date(updateFrequenciaDto.dataAula);
     }
 
-    return prisma.frequencia.update({
+    return this.prisma.frequencia.update({
       where: { id },
       data: dadosParaAtualizar
     });
@@ -71,6 +70,6 @@ export class FrequenciasService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return prisma.frequencia.delete({ where: { id } }); // Apaga o registro
+    return this.prisma.frequencia.delete({ where: { id } });
   }
 }
