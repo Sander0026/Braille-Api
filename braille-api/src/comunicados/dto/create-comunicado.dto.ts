@@ -23,4 +23,9 @@ export class CreateComunicadoDto {
   @IsBoolean()
   @IsOptional()
   fixado?: boolean;
+
+  @ApiPropertyOptional({ description: 'URL da imagem de capa' })
+  @IsString()
+  @IsOptional()
+  imagemCapa?: string;
 }
