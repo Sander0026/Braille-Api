@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, IsOptional } from 'class-validator';
 
 export class CreateTurmaDto {
   @ApiProperty({ example: 'Braille Básico - Turma A' })
@@ -7,10 +7,15 @@ export class CreateTurmaDto {
   @IsNotEmpty({ message: 'O nome da turma é obrigatório' })
   nome: string;
 
-  @ApiProperty({ example: 'Segundas e Quartas, 14h às 16h' })
+  @ApiProperty({ example: 'Oficina introdutória', required: false })
   @IsString()
-  @IsNotEmpty({ message: 'O horário é obrigatório' })
-  horario: string;
+  @IsOptional()
+  descricao?: string;
+
+  @ApiProperty({ example: 'Segundas e Quartas, 14h às 16h', required: false })
+  @IsString()
+  @IsOptional()
+  horario?: string;
 
   @ApiProperty({ example: 'uuid-do-professor-aqui', description: 'ID do professor responsável' })
   @IsUUID(4, { message: 'O ID do professor deve ser um UUID válido' })
