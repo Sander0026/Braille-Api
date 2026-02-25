@@ -81,6 +81,11 @@ export class CreateBeneficiaryDto {
   @IsOptional()
   laudoUrl?: string;
 
+  @ApiPropertyOptional({ description: 'URL da foto de perfil no Cloudinary' })
+  @IsString()
+  @IsOptional()
+  fotoPerfil?: string;
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()

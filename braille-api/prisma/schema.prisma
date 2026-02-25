@@ -73,6 +73,7 @@ model Aluno {
   // 1. Dados Identificadores
   nomeCompleto      String
   dataNascimento    DateTime
+  fotoPerfil        String?
   cpfRg             String   @unique
   genero            String?
   estadoCivil       String?
