@@ -5,7 +5,7 @@ import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
-import { RolesGuard } from '../auth/roles.guard';   
+import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 
 @ApiTags('Alunos (Beneficiários)')
@@ -14,7 +14,7 @@ import { Roles } from '../auth/roles.decorator';
 @UseGuards(AuthGuard)
 @Controller('beneficiaries')
 export class BeneficiariesController {
-  constructor(private readonly beneficiariesService: BeneficiariesService) {}
+  constructor(private readonly beneficiariesService: BeneficiariesService) { }
 
   @Post()
   @Roles('ADMIN', 'SECRETARIA')
@@ -26,7 +26,13 @@ export class BeneficiariesController {
   @Get()
   @ApiOperation({ summary: 'Listar todos os alunos (Com paginação e filtros)' })
   findAll(@Query() query: QueryBeneficiaryDto) {
-    return this.beneficiariesService.findAll();
+    return this.beneficiariesService.findAll(query);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Buscar aluno por ID' })
+  findOne(@Param('id') id: string) {
+    return this.beneficiariesService.findOne(id);
   }
 
   @Patch(':id')

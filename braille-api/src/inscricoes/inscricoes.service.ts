@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateInscricaoDto } from './dto/create-inscricoe.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { StatusInscricao } from '@prisma/client';
+import { QueryInscricaoDto } from './dto/query-inscricao.dto';
 
 @Injectable()
 export class InscricoesService {
@@ -11,15 +12,32 @@ export class InscricoesService {
     return this.prisma.inscricao.create({
       data: {
         ...createInscricaoDto,
-        dataNascimento: new Date(createInscricaoDto.dataNascimento)
-      }
+        dataNascimento: new Date(createInscricaoDto.dataNascimento),
+      },
     });
   }
 
-  async findAll() {
-    return this.prisma.inscricao.findMany({
-      orderBy: { criadoEm: 'desc' }
-    });
+  async findAll(query: QueryInscricaoDto) {
+    const { page = 1, limit = 20, status } = query;
+    const skip = (page - 1) * limit;
+
+    const whereCondicao: any = {};
+    if (status) whereCondicao.status = status;
+
+    const [inscricoes, total] = await Promise.all([
+      this.prisma.inscricao.findMany({
+        where: whereCondicao,
+        skip,
+        take: limit,
+        orderBy: { criadoEm: 'desc' },
+      }),
+      this.prisma.inscricao.count({ where: whereCondicao }),
+    ]);
+
+    return {
+      data: inscricoes,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
   }
 
   async findOne(id: string) {
@@ -33,7 +51,7 @@ export class InscricoesService {
     await this.findOne(id);
     return this.prisma.inscricao.update({
       where: { id },
-      data: { status, observacoesAdmin }
+      data: { status, observacoesAdmin },
     });
   }
 

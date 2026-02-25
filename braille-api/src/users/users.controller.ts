@@ -4,9 +4,9 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
-import { RolesGuard } from '../auth/roles.guard'; 
+import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { QueryUserDto } from './dto/rc/users/dto/query-user.dto';
+import { QueryUserDto } from './dto/query-user.dto';
 
 @ApiTags('Usuários do Sistema (Staff)')
 @ApiBearerAuth() // Cadeado do Swagger
@@ -15,7 +15,7 @@ import { QueryUserDto } from './dto/rc/users/dto/query-user.dto';
 @UseGuards(AuthGuard) // Bloqueia quem não tem Token
 @Controller('users') // Rota base para usuários
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   @Post()
   @ApiOperation({ summary: 'Cadastrar um novo usuário (Secretaria, Prof, etc)' })

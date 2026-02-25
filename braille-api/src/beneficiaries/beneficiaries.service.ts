@@ -2,6 +2,7 @@ import { Injectable, ConflictException, NotFoundException } from '@nestjs/common
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
 
 @Injectable()
 export class BeneficiariesService {
@@ -26,11 +27,39 @@ export class BeneficiariesService {
     });
   }
 
-  async findAll() {
-    return this.prisma.aluno.findMany({
-      where: { statusAtivo: true },
-      orderBy: { nomeCompleto: 'asc' }
-    });
+  async findAll(query: QueryBeneficiaryDto) {
+    const { page = 1, limit = 10, nome } = query;
+    const skip = (page - 1) * limit;
+
+    const whereCondicao: any = { statusAtivo: true };
+    if (nome) {
+      whereCondicao.nomeCompleto = { contains: nome, mode: 'insensitive' };
+    }
+
+    const [alunos, total] = await Promise.all([
+      this.prisma.aluno.findMany({
+        where: whereCondicao,
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          nomeCompleto: true,
+          cpfRg: true,
+          dataNascimento: true,
+          telefoneContato: true,
+          tipoDeficiencia: true,
+          statusAtivo: true,
+          criadoEm: true,
+        },
+        orderBy: { nomeCompleto: 'asc' },
+      }),
+      this.prisma.aluno.count({ where: whereCondicao }),
+    ]);
+
+    return {
+      data: alunos,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
   }
 
   async findOne(id: string) {
