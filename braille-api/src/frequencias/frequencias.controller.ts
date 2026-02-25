@@ -25,6 +25,18 @@ export class FrequenciasController {
     return this.frequenciasService.findAll(query);
   }
 
+  @Get('resumo')
+  @ApiOperation({ summary: 'Listar resumo agrupado de chamadas por aula' })
+  findResumo(@Query() query: QueryFrequenciaDto) {
+    return this.frequenciasService.findResumo(query);
+  }
+
+  @Get('relatorio/turma/:turmaId/aluno/:alunoId')
+  @ApiOperation({ summary: 'Obter o relatório e cálculo de presenças de um aluno numa turma' })
+  getRelatorioAluno(@Param('turmaId') turmaId: string, @Param('alunoId') alunoId: string) {
+    return this.frequenciasService.getRelatorioAluno(turmaId, alunoId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Ver chamada específica' })
   findOne(@Param('id') id: string) {

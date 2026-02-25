@@ -58,6 +58,80 @@ export class FrequenciasService {
     };
   }
 
+  async findResumo(query: QueryFrequenciaDto) {
+    const { page = 1, limit = 20, turmaId } = query;
+    const skip = (page - 1) * limit;
+
+    const whereCondicao: any = {};
+    if (turmaId) whereCondicao.turmaId = turmaId;
+
+    const grouped = await this.prisma.frequencia.groupBy({
+      by: ['dataAula', 'turmaId'],
+      where: whereCondicao,
+      _count: { _all: true },
+      orderBy: { dataAula: 'desc' },
+    });
+
+    const total = grouped.length;
+    const paginatedGroup = grouped.slice(skip, skip + Number(limit));
+
+    const enrichedData = await Promise.all(
+      paginatedGroup.map(async (group) => {
+        const turma = await this.prisma.turma.findUnique({
+          where: { id: group.turmaId },
+          select: { nome: true },
+        });
+
+        const presentesCount = await this.prisma.frequencia.count({
+          where: {
+            dataAula: group.dataAula,
+            turmaId: group.turmaId,
+            presente: true,
+          },
+        });
+
+        return {
+          dataAula: group.dataAula,
+          turmaId: group.turmaId,
+          turmaNome: turma?.nome || 'Desconhecido',
+          totalAlunos: group._count._all,
+          presentes: presentesCount,
+          faltas: group._count._all - presentesCount,
+        };
+      })
+    );
+
+    return {
+      data: enrichedData,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
+  }
+
+  async getRelatorioAluno(turmaId: string, alunoId: string) {
+    const data = await this.prisma.frequencia.findMany({
+      where: { turmaId, alunoId },
+      orderBy: { dataAula: 'desc' },
+    });
+
+    const totais = data.reduce(
+      (acc, curr) => {
+        if (curr.presente) acc.presentes++;
+        else acc.faltas++;
+        return acc;
+      },
+      { presentes: 0, faltas: 0 }
+    );
+
+    return {
+      estatisticas: {
+        totalAulas: data.length,
+        ...totais,
+        taxaPresenca: data.length > 0 ? Math.round((totais.presentes / data.length) * 100) : 0,
+      },
+      historico: data,
+    };
+  }
+
   async findOne(id: string) {
     const frequencia = await this.prisma.frequencia.findUnique({
       where: { id },
