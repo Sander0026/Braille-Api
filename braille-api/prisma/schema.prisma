@@ -43,13 +43,6 @@ enum CategoriaComunicado {
   GERAL
 }
 
-enum StatusInscricao { 
-  PENDENTE
-  EM_ANALISE
-  APROVADA
-  REJEITADA
-}
-
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -170,20 +163,6 @@ model Comunicado {
   autor        User     @relation(fields: [autorId], references: [id])
 }
 
-// Tabela para Inscrições vindas do Site Público
-model Inscricao {
-  id               String          @id @default(uuid())
-  nomeCandidato    String
-  dataNascimento   DateTime
-  telefone         String
-  email            String?
-  deficiencia      String?         // Breve relato digitado pela pessoa
-  oficinaInteresse String          // Qual curso ela quer fazer
-  status           StatusInscricao @default(PENDENTE)
-  observacoesAdmin String?         // Anotações da secretaria
-  criadoEm         DateTime        @default(now())
-  atualizadoEm     DateTime        @updatedAt
-}
 
 // Tabela para o "Fale Conosco" do Site Público
 model MensagemContato {

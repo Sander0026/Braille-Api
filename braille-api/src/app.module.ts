@@ -10,7 +10,6 @@ import { ComunicadosModule } from './comunicados/comunicados.module';
 import { TurmasModule } from './turmas/turmas.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { FrequenciasModule } from './frequencias/frequencias.module';
-import { InscricoesModule } from './inscricoes/inscricoes.module';
 import { ContatosModule } from './contatos/contatos.module';
 import { UploadModule } from './upload/upload.module';
 
@@ -22,7 +21,7 @@ import { UploadModule } from './upload/upload.module';
     UsersModule,
     BeneficiariesModule,
     ComunicadosModule,
-    TurmasModule, DashboardModule, FrequenciasModule, InscricoesModule, ContatosModule, UploadModule,
+    TurmasModule, DashboardModule, FrequenciasModule, ContatosModule, UploadModule,
   ],
   controllers: [AppController],
   providers: [AppService],
