@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsNotEmpty, IsStrongPassword } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsNotEmpty, IsStrongPassword, IsBoolean } from 'class-validator';
 import { Role } from '@prisma/client';
 
 export class CreateUserDto {
@@ -8,15 +8,16 @@ export class CreateUserDto {
   @IsNotEmpty()
   nome: string;
 
+
   @ApiProperty({ description: 'Nome de usuário para login (único)' })
   @IsString()
   @IsNotEmpty()
-  username: string; 
+  username: string;
 
   @ApiPropertyOptional({ description: 'E-mail do usuário' })
   @IsEmail()
   @IsOptional()
-  email?: string; 
+  email?: string;
 
   @ApiProperty({ description: 'Senha forte de acesso' })
   @IsString()
@@ -40,4 +41,9 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   fotoPerfil?: string;
+
+  @ApiPropertyOptional({ description: 'Exige que o usuário troque de senha' })
+  @IsBoolean()
+  @IsOptional()
+  precisaTrocarSenha?: boolean;
 }
