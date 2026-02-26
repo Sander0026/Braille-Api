@@ -88,4 +88,20 @@ export class UsersService {
       data: { statusAtivo: false },
     });
   }
+
+  async resetPassword(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    const defaultPasswordHashed = await bcrypt.hash('Ilbes@123', 10);
+
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        senha: defaultPasswordHashed,
+        precisaTrocarSenha: true,
+      },
+      select: { id: true, nome: true, email: true, role: true, atualizadoEm: true }
+    });
+  }
 }

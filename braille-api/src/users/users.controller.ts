@@ -40,4 +40,10 @@ export class UsersController {
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
+
+  @Patch(':id/reset-password')
+  @ApiOperation({ summary: 'Forçar o reset de senha de um usuário através do painel Administrativo' })
+  resetPassword(@Param('id') id: string) {
+    return this.usersService.resetPassword(id);
+  }
 }

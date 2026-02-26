@@ -28,7 +28,7 @@ export class AuthService {
     }
 
     // 3. Se deu tudo certo, monta o crachá (Payload do JWT)
-    const payload = { sub: user.id, nome: user.nome, role: user.role };
+    const payload = { sub: user.id, nome: user.nome, role: user.role, precisaTrocarSenha: user.precisaTrocarSenha };
 
     // 4. Retorna o Token para o Frontend
     return {
@@ -36,6 +36,7 @@ export class AuthService {
       usuario: {
         nome: user.nome,
         role: user.role,
+        precisaTrocarSenha: user.precisaTrocarSenha
       }
     };
   }
@@ -56,10 +57,13 @@ export class AuthService {
     // 2. Criptografa a NOVA senha
     const novaSenhaHashed = await bcrypt.hash(trocarSenhaDto.novaSenha, 10);
 
-    // 3. Salva no banco de dados
+    // 3. Salva no banco de dados desativando a flag de exigência
     await this.prisma.user.update({
       where: { id: userId },
-      data: { senha: novaSenhaHashed },
+      data: {
+        senha: novaSenhaHashed,
+        precisaTrocarSenha: false // Se tinha block, remove!
+      },
     });
 
     return { message: 'Sua senha foi alterada com sucesso!' };
