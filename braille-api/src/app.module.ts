@@ -12,6 +12,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { FrequenciasModule } from './frequencias/frequencias.module';
 import { ContatosModule } from './contatos/contatos.module';
 import { UploadModule } from './upload/upload.module';
+import { SiteConfigModule } from './site-config/site-config.module';
+
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { UploadModule } from './upload/upload.module';
     BeneficiariesModule,
     ComunicadosModule,
     TurmasModule, DashboardModule, FrequenciasModule, ContatosModule, UploadModule,
+    SiteConfigModule,
+
   ],
   controllers: [AppController],
   providers: [AppService],

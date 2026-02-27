@@ -26,16 +26,39 @@ export class ComunicadosService {
     });
   }
 
-  async findAll() {
-    return this.prisma.comunicado.findMany({
-      include: {
-        autor: { select: { nome: true } }
-      },
-      orderBy: [
-        { fixado: 'desc' },
-        { criadoEm: 'desc' }
-      ]
-    });
+  async findAll(query: import('./dto/query-comunicado.dto').QueryComunicadoDto = {}) {
+    const { page = 1, limit = 10, titulo, categoria } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (titulo) {
+      where.titulo = { contains: titulo, mode: 'insensitive' };
+    }
+    if (categoria) {
+      where.categoria = categoria; // Enum CategoriaComunicado
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.comunicado.findMany({
+        where,
+        skip,
+        take: limit,
+        include: { autor: { select: { nome: true } } },
+        orderBy: [
+          { fixado: 'desc' },
+          { criadoEm: 'desc' },
+        ],
+      }),
+      this.prisma.comunicado.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async findOne(id: string) {

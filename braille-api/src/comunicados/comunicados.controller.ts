@@ -9,7 +9,7 @@ import { QueryComunicadoDto } from './dto/query-comunicado.dto';
 @ApiTags('Comunicados (Mural)')
 @Controller('comunicados')
 export class ComunicadosController {
-  constructor(private readonly comunicadosService: ComunicadosService) {}
+  constructor(private readonly comunicadosService: ComunicadosService) { }
 
   // 👇 ROTA PROTEGIDA (Precisa de login)
   @Post()
@@ -24,7 +24,7 @@ export class ComunicadosController {
   @Get()
   @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
   findAll(@Query() query: QueryComunicadoDto) {
-    return this.comunicadosService.findAll();
+    return this.comunicadosService.findAll(query);
   }
 
   // 👇 ROTA PROTEGIDA (Precisa de login)

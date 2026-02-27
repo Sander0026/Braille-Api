@@ -21,4 +21,9 @@ export class QueryComunicadoDto {
   @IsString()
   @IsOptional()
   titulo?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar por categoria' })
+  @IsString()
+  @IsOptional()
+  categoria?: string;
 }

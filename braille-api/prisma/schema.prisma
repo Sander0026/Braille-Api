@@ -173,6 +173,26 @@ model MensagemContato {
   telefone    String?
   assunto     String
   mensagem    String
-  lida        Boolean  @default(false) // Para a secretaria saber se já respondeu
+  lida        Boolean  @default(false)
   criadoEm    DateTime @default(now())
+}
+
+// ══════════════════ CMS — Configurações do Site ══════════════════
+
+// Configurações gerais: cor primária, logo, nome, slogan, stats
+model SiteConfig {
+  chave      String   @id              // "corPrimaria" | "logo" | "nomeInstituto" …
+  valor      String
+  tipo       String   @default("texto") // "texto" | "cor" | "url" | "numero"
+  descricao  String?
+  atualizadoEm DateTime @updatedAt
+}
+
+// Conteúdo editável das seções da home pública
+model ConteudoSecao {
+  secao    String  // "hero" | "missao" | "valores" | "oficinas" | "depoimentos" | "cta"
+  chave    String  // "titulo" | "descricao" | "card_0_titulo" …
+  valor    String  @db.Text
+
+  @@id([secao, chave])
 }
