@@ -1,14 +1,15 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Patch, Request} from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Patch, Get, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from './auth.guard';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
+import { AtualizarFotoDto } from './dto/atualizar-foto.dto';
 
-@ApiTags('Auth (Login)') // Fica bonitinho no Swagger
+@ApiTags('Auth (Login)')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -20,13 +21,29 @@ export class AuthController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard) // 👈 O Cadeado! Só entra com Token válido.
+  @UseGuards(AuthGuard)
+  @Get('me')
+  @ApiOperation({ summary: 'Retorna os dados do usuário logado (nome, role, fotoPerfil, etc.)' })
+  getMe(@Request() req) {
+    const userId = req.user.sub || req.user.id;
+    return this.authService.getMe(userId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
   @Patch('trocar-senha')
+  @ApiOperation({ summary: 'Trocar a própria senha (requer senha atual)' })
   trocarSenha(@Request() req, @Body() trocarSenhaDto: TrocarSenhaDto) {
-    // Quando usamos o AuthGuard, ele decodifica o Token e injeta os dados no "req.user"
-    // Geralmente o ID do usuário fica salvo no req.user.sub (que é o padrão do JWT)
-    const userId = req.user.sub || req.user.id; 
-    
+    const userId = req.user.sub || req.user.id;
     return this.authService.trocarSenha(userId, trocarSenhaDto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Patch('foto-perfil')
+  @ApiOperation({ summary: 'Atualizar a foto de perfil do usuário logado' })
+  atualizarFotoPerfil(@Request() req, @Body() dto: AtualizarFotoDto) {
+    const userId = req.user.sub || req.user.id;
+    return this.authService.atualizarFotoPerfil(userId, dto.fotoPerfil);
   }
 }

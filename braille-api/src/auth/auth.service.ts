@@ -68,4 +68,35 @@ export class AuthService {
 
     return { message: 'Sua senha foi alterada com sucesso!' };
   }
+
+  async getMe(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        nome: true,
+        username: true,
+        email: true,
+        role: true,
+        fotoPerfil: true,
+        statusAtivo: true,
+        criadoEm: true,
+      },
+    });
+
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    return user;
+  }
+
+  async atualizarFotoPerfil(userId: string, fotoPerfil: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { fotoPerfil },
+    });
+
+    return { message: 'Foto de perfil atualizada com sucesso!', fotoPerfil };
+  }
 }
