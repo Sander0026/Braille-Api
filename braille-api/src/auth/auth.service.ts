@@ -99,4 +99,30 @@ export class AuthService {
 
     return { message: 'Foto de perfil atualizada com sucesso!', fotoPerfil };
   }
+
+  async atualizarPerfil(userId: string, dto: { nome?: string; email?: string }) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Verifica se o e-mail já está em uso por outro usuário
+    if (dto.email && dto.email !== user.email) {
+      const emailEmUso = await this.prisma.user.findUnique({ where: { email: dto.email } });
+      if (emailEmUso) throw new Error('Este e-mail já está em uso por outro usuário.');
+    }
+
+    const atualizado = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.nome && { nome: dto.nome }),
+        ...(dto.email !== undefined && { email: dto.email }),
+      },
+      select: {
+        id: true, nome: true, username: true,
+        email: true, role: true, fotoPerfil: true,
+        statusAtivo: true, criadoEm: true,
+      },
+    });
+
+    return atualizado;
+  }
 }

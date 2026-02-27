@@ -5,6 +5,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { AuthGuard } from './auth.guard';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
 import { AtualizarFotoDto } from './dto/atualizar-foto.dto';
+import { AtualizarPerfilDto } from './dto/atualizar-perfil.dto';
 
 @ApiTags('Auth (Login)')
 @Controller('auth')
@@ -45,5 +46,14 @@ export class AuthController {
   atualizarFotoPerfil(@Request() req, @Body() dto: AtualizarFotoDto) {
     const userId = req.user.sub || req.user.id;
     return this.authService.atualizarFotoPerfil(userId, dto.fotoPerfil);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Patch('perfil')
+  @ApiOperation({ summary: 'Atualizar nome e e-mail do perfil do usuário logado' })
+  atualizarPerfil(@Request() req, @Body() dto: AtualizarPerfilDto) {
+    const userId = req.user.sub || req.user.id;
+    return this.authService.atualizarPerfil(userId, dto);
   }
 }
