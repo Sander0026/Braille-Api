@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Patch, Body, UseGuards, Param, UsePipes, ValidationPipe } from '@nestjs/common';
 import { SiteConfigService } from './site-config.service';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
@@ -31,6 +31,7 @@ export class SiteConfigController {
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
     @Patch()
+    @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
     @ApiOperation({ summary: 'Atualiza configurações gerais do site' })
     updateAll(@Body() body: Record<string, string>) {
         return this.service.updateMany(body);
@@ -39,6 +40,7 @@ export class SiteConfigController {
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
     @Patch('secoes/:secao')
+    @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
     @ApiOperation({ summary: 'Atualiza o conteúdo de uma seção' })
     updateSecao(@Param('secao') secao: string, @Body() body: Record<string, string>) {
         return this.service.updateSecao(secao, body);
