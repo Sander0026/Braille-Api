@@ -6,19 +6,19 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // 1. Prefixo global — todas as rotas ficam em /api/*
+  app.setGlobalPrefix('api');
+
   app.enableCors();
 
-  // 1. Ativar Validação Global (Impede dados lixo no banco)
+  // 2. Ativar Validação Global (Impede dados lixo no banco)
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true, // Remove campos que não estão no DTO
     forbidNonWhitelisted: true, // Dá erro se enviarem campos extras
     transform: true, // Converte tipos automaticamente (ex: string "1" vira number 1)
   }));
 
-  // 2. Configurar CORS (Para o Frontend Angular acessar)
-  app.enableCors();
-
-  // 3. Configurar Documentação Swagger
+  // 3. Configurar Documentação Swagger (em /docs para não conflitar com /api)
   const config = new DocumentBuilder()
     .setTitle('Braillix API')
     .setDescription('API de gestão para instituição de deficientes visuais')
@@ -26,11 +26,12 @@ async function bootstrap() {
     .addTag('beneficiaries')
     .addBearerAuth()
     .build();
-  
+
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  SwaggerModule.setup('docs', app, document);
 
   await app.listen(3000);
   console.log('🚀 Backend rodando em: http://localhost:3000/api');
+  console.log('📖 Swagger disponível em: http://localhost:3000/docs');
 }
 bootstrap();
