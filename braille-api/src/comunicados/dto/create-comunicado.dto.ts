@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsEnum } from 'class-validator';
-import { CategoriaComunicado } from '@prisma/client'; // 👈 Importamos as categorias do banco
+import { Transform } from 'class-transformer';
+import { CategoriaComunicado } from '@prisma/client';
 
 export class CreateComunicadoDto {
   @ApiProperty({ description: 'Título do comunicado ou notícia' })
@@ -20,6 +21,11 @@ export class CreateComunicadoDto {
   categoria?: CategoriaComunicado;
 
   @ApiPropertyOptional({ description: 'Se verdadeiro, fixa no topo do mural' })
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
+  })
   @IsBoolean()
   @IsOptional()
   fixado?: boolean;
