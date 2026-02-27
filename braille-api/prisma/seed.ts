@@ -1,3 +1,12 @@
+/*
+Comando para executar o seed:
+
+  npx prisma db seed
+
+  dentro da pasta raiz do projeto da api
+
+*/
+
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
