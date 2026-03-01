@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -8,8 +8,29 @@ import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
 export class FrequenciasService {
   constructor(private prisma: PrismaService) { }
 
+  /**
+   * Garante que dataAula seja hoje (UTC). Chamadas de datas anteriores
+   * são documentos imutáveis — não podem ser criadas nem alteradas.
+   */
+  private validarDataHoje(dataAula: Date): void {
+    const hoje = new Date();
+    const ehHoje =
+      dataAula.getUTCFullYear() === hoje.getUTCFullYear() &&
+      dataAula.getUTCMonth() === hoje.getUTCMonth() &&
+      dataAula.getUTCDate() === hoje.getUTCDate();
+
+    if (!ehHoje) {
+      throw new ForbiddenException(
+        'Chamadas de datas anteriores não podem ser criadas ou alteradas. A chamada só pode ser editada no próprio dia da aula.'
+      );
+    }
+  }
+
   async create(createFrequenciaDto: CreateFrequenciaDto) {
     const dataConvertida = new Date(createFrequenciaDto.dataAula);
+
+    // Regra de imutabilidade: chamada só pode ser criada no dia atual
+    this.validarDataHoje(dataConvertida);
 
     // Trava de Segurança: chamada já registrada para este aluno/turma/dia
     const chamadaExistente = await this.prisma.frequencia.findFirst({
@@ -142,7 +163,11 @@ export class FrequenciasService {
   }
 
   async update(id: string, updateFrequenciaDto: UpdateFrequenciaDto) {
-    await this.findOne(id);
+    const frequencia = await this.findOne(id);
+
+    // Regra de imutabilidade: só permite alterar chamadas do dia atual
+    this.validarDataHoje(frequencia.dataAula);
+
     const dadosParaAtualizar: any = { ...updateFrequenciaDto };
     if (updateFrequenciaDto.dataAula) {
       dadosParaAtualizar.dataAula = new Date(updateFrequenciaDto.dataAula);
@@ -151,7 +176,12 @@ export class FrequenciasService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const frequencia = await this.findOne(id);
+
+    // Regra de imutabilidade: só permite remover chamadas do dia atual
+    this.validarDataHoje(frequencia.dataAula);
+
     return this.prisma.frequencia.delete({ where: { id } });
+
   }
 }
