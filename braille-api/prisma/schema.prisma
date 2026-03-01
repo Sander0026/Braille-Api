@@ -119,13 +119,15 @@ model Aluno {
 }
 
 model Turma { // "Turma" serve perfeitamente para "Oficina"
-  id           String   @id @default(uuid())
-  nome         String   // Ex: Oficina de Braille, Oficina de Cerâmica
-  descricao    String?
-  horario      String?  // Ex: "Seg e Qua - 14h as 16h" (Atende o pedido da coordenadora)
-  statusAtivo  Boolean  @default(true)
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  id               String   @id @default(uuid())
+  nome             String   // Ex: Oficina de Braille, Oficina de Cerâmica
+  descricao        String?
+  horario          String?  // Ex: "Seg e Qua - 14h as 16h"
+  capacidadeMaxima Int?
+  statusAtivo      Boolean  @default(true)
+  excluido         Boolean  @default(false) // true = oculto de todas as abas, dados preservados
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
 
   // Relacionamentos
   professorId  String
@@ -133,6 +135,7 @@ model Turma { // "Turma" serve perfeitamente para "Oficina"
   alunos       Aluno[]
   frequencias  Frequencia[] 
 }
+
 
 // Tabela de Frequência (Chamada)
 model Frequencia {
