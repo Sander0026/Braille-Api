@@ -27,6 +27,13 @@ export class ComunicadosController {
     return this.comunicadosService.findAll(query);
   }
 
+  // 👇 ROTA PÚBLICA (Buscar comunicado específico por ID)
+  @Get(':id')
+  @ApiOperation({ summary: 'Obter um comunicado específico pelo ID (Rota Pública)' })
+  findOne(@Param('id') id: string) {
+    return this.comunicadosService.findOne(id);
+  }
+
   // 👇 ROTA PROTEGIDA (Precisa de login)
   @Patch(':id')
   @ApiBearerAuth()
