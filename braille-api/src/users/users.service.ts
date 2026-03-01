@@ -49,7 +49,7 @@ export class UsersService {
         where: whereCondicao,
         skip,
         take: limit,
-        select: { id: true, nome: true, email: true, role: true, fotoPerfil: true },
+        select: { id: true, nome: true, username: true, email: true, role: true, fotoPerfil: true, precisaTrocarSenha: true },
         orderBy: { nome: 'asc' },
       }),
       this.prisma.user.count({ where: whereCondicao }),
@@ -75,7 +75,7 @@ export class UsersService {
         ...updateUserDto,
         role: updateUserDto.role as any,
       },
-      select: { id: true, nome: true, email: true, role: true, atualizadoEm: true }
+      select: { id: true, nome: true, username: true, email: true, role: true, fotoPerfil: true, atualizadoEm: true }
     });
   }
 
