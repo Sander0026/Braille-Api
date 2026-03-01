@@ -21,7 +21,7 @@ async function main() {
     where: { username: 'admin' },
     update: {},
     create: {
-      nome: 'Administrador do Sistema',
+      nome: 'Suporte do Sistema',
       username: 'admin',
       email: 'admin@braille.com',
       senha: hashedPassword,
