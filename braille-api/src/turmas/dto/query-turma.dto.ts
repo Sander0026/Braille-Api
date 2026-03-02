@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsBoolean, IsUUID } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 export class QueryTurmaDto {
@@ -33,4 +33,9 @@ export class QueryTurmaDto {
   @IsBoolean()
   @IsOptional()
   excluido?: boolean;
+
+  @ApiPropertyOptional({ description: 'Filtrar as turmas pelo professor responsável' })
+  @IsUUID()
+  @IsOptional()
+  professorId?: string;
 }

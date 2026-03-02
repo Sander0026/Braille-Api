@@ -51,13 +51,14 @@ export class FrequenciasService {
   }
 
   async findAll(query: QueryFrequenciaDto) {
-    const { page = 1, limit = 20, turmaId, alunoId, dataAula } = query;
+    const { page = 1, limit = 20, turmaId, alunoId, dataAula, professorId } = query;
     const skip = (page - 1) * limit;
 
     const whereCondicao: any = {};
     if (turmaId) whereCondicao.turmaId = turmaId;
     if (alunoId) whereCondicao.alunoId = alunoId;
     if (dataAula) whereCondicao.dataAula = new Date(dataAula);
+    if (professorId) whereCondicao.turma = { professorId };
 
     const [frequencias, total] = await Promise.all([
       this.prisma.frequencia.findMany({
@@ -80,11 +81,12 @@ export class FrequenciasService {
   }
 
   async findResumo(query: QueryFrequenciaDto) {
-    const { page = 1, limit = 20, turmaId } = query;
+    const { page = 1, limit = 20, turmaId, professorId } = query;
     const skip = (page - 1) * limit;
 
     const whereCondicao: any = {};
     if (turmaId) whereCondicao.turmaId = turmaId;
+    if (professorId) whereCondicao.turma = { professorId };
 
     const grouped = await this.prisma.frequencia.groupBy({
       by: ['dataAula', 'turmaId'],

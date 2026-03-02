@@ -18,7 +18,7 @@ export class TurmasService {
   }
 
   async findAll(query: QueryTurmaDto) {
-    const { page = 1, limit = 10, nome } = query;
+    const { page = 1, limit = 10, nome, professorId } = query;
     const skip = (page - 1) * limit;
 
     // Monta o where dinamicamente baseado nos parâmetros de query
@@ -35,6 +35,10 @@ export class TurmasService {
 
     if (nome) {
       whereCondicao.nome = { contains: nome, mode: 'insensitive' };
+    }
+
+    if (professorId) {
+      whereCondicao.professorId = professorId;
     }
 
     const [turmas, total] = await Promise.all([
