@@ -1,0 +1,54 @@
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { ComunicadosService } from './comunicados.service';
+import { CreateComunicadoDto } from './dto/create-comunicado.dto';
+import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard';
+import { QueryComunicadoDto } from './dto/query-comunicado.dto';
+
+@ApiTags('Comunicados (Mural)')
+@Controller('comunicados')
+export class ComunicadosController {
+  constructor(private readonly comunicadosService: ComunicadosService) { }
+
+  // 👇 ROTA PROTEGIDA (Precisa de login)
+  @Post()
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Criar um novo comunicado' })
+  create(@Body() createComunicadoDto: CreateComunicadoDto) {
+    return this.comunicadosService.create(createComunicadoDto);
+  }
+
+  // 👇 ROTA PÚBLICA (Qualquer um pode ver)
+  @Get()
+  @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
+  findAll(@Query() query: QueryComunicadoDto) {
+    return this.comunicadosService.findAll(query);
+  }
+
+  // 👇 ROTA PÚBLICA (Buscar comunicado específico por ID)
+  @Get(':id')
+  @ApiOperation({ summary: 'Obter um comunicado específico pelo ID (Rota Pública)' })
+  findOne(@Param('id') id: string) {
+    return this.comunicadosService.findOne(id);
+  }
+
+  // 👇 ROTA PROTEGIDA (Precisa de login)
+  @Patch(':id')
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Editar um comunicado' })
+  update(@Param('id') id: string, @Body() updateComunicadoDto: UpdateComunicadoDto) {
+    return this.comunicadosService.update(id, updateComunicadoDto);
+  }
+
+  // 👇 ROTA PROTEGIDA (Precisa de login)
+  @Delete(':id')
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Excluir um comunicado' })
+  remove(@Param('id') id: string) {
+    return this.comunicadosService.remove(id);
+  }
+}
