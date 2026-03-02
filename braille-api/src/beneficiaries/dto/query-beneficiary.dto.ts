@@ -21,4 +21,9 @@ export class QueryBeneficiaryDto {
   @IsString()
   @IsOptional()
   nome?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar por alunos inativados logicamente (Lixeira Volátil)' })
+  @IsOptional()
+  @Type(() => Boolean)
+  inativos?: boolean;
 }

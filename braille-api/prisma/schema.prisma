@@ -111,6 +111,7 @@ model Aluno {
 
   // Controles do Sistema
   statusAtivo       Boolean  @default(true)
+  excluido          Boolean  @default(false)
   criadoEm          DateTime @default(now())
   atualizadoEm      DateTime @updatedAt
 
