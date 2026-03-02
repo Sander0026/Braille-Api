@@ -36,10 +36,14 @@ export class UsersService {
   }
 
   async findAll(query: QueryUserDto) {
-    const { page = 1, limit = 10, nome } = query;
+    const { page = 1, limit = 10, nome, inativos } = query;
     const skip = (page - 1) * limit;
 
-    const whereCondicao: any = { statusAtivo: true };
+    const whereCondicao: any = {
+      statusAtivo: !inativos, // Se inativos=true, busca os que estão com statusAtivo=false
+      excluido: false         // Nunca retorna usuários totalmente excluídos
+    };
+
     if (nome) {
       whereCondicao.nome = { contains: nome, mode: 'insensitive' };
     }
@@ -102,6 +106,27 @@ export class UsersService {
         precisaTrocarSenha: true,
       },
       select: { id: true, nome: true, email: true, role: true, atualizadoEm: true }
+    });
+  }
+
+  async restore(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    return this.prisma.user.update({
+      where: { id },
+      data: { statusAtivo: true },
+    });
+  }
+
+  async removeHard(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Soft delete permanente.
+    return this.prisma.user.update({
+      where: { id },
+      data: { excluido: true },
     });
   }
 }

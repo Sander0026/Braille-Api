@@ -21,4 +21,9 @@ export class QueryUserDto {
     @IsString()
     @IsOptional()
     nome?: string;
+
+    @ApiPropertyOptional({ description: 'Listar apenas usuários inativos' })
+    @Type(() => Boolean)
+    @IsOptional()
+    inativos?: boolean = false;
 }

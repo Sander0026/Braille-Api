@@ -46,4 +46,16 @@ export class UsersController {
   resetPassword(@Param('id') id: string) {
     return this.usersService.resetPassword(id);
   }
+
+  @Patch(':id/restore')
+  @ApiOperation({ summary: 'Restaurar um usuário inativo ao sistema' })
+  restore(@Param('id') id: string) {
+    return this.usersService.restore(id);
+  }
+
+  @Delete(':id/hard')
+  @ApiOperation({ summary: 'Excluir definitivamente um usuário (Soft Delete profundo)' })
+  removeHard(@Param('id') id: string) {
+    return this.usersService.removeHard(id);
+  }
 }

@@ -55,6 +55,7 @@ model User {
   role         Role         @default(PROFESSOR)
   fotoPerfil   String?
   statusAtivo  Boolean      @default(true)
+  excluido     Boolean      @default(false)
   criadoEm     DateTime     @default(now())
   atualizadoEm DateTime     @updatedAt
   turmas       Turma[]
