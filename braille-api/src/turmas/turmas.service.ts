@@ -48,7 +48,7 @@ export class TurmasService {
         take: limit,
         include: {
           professor: { select: { id: true, nome: true, email: true } },
-          alunos: { select: { id: true, nomeCompleto: true } },
+          _count: { select: { alunos: true } },  // ← apenas a contagem, sem trazer dados
         },
         orderBy: { nome: 'asc' },
       }),
