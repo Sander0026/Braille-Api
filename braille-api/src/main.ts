@@ -9,7 +9,12 @@ async function bootstrap() {
   // 1. Prefixo global — todas as rotas ficam em /api/*
   app.setGlobalPrefix('api');
 
-  app.enableCors();
+  app.enableCors({
+    origin: true,          // Reflete a origem do pedido (aceita qualquer origem)
+    credentials: true,     // Permite cookies / Authorization headers
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
 
   // 2. Ativar Validação Global (Impede dados lixo no banco)
   app.useGlobalPipes(new ValidationPipe({
@@ -30,7 +35,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
 
-  await app.listen(3000);
+  await app.listen(process.env.PORT || 3000);
   console.log('🚀 Backend rodando em: http://localhost:3000/api');
   console.log('📖 Swagger disponível em: http://localhost:3000/docs');
 }

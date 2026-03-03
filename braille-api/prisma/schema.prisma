@@ -55,10 +55,14 @@ model User {
   role         Role         @default(PROFESSOR)
   fotoPerfil   String?
   statusAtivo  Boolean      @default(true)
+  excluido     Boolean      @default(false)
   criadoEm     DateTime     @default(now())
   atualizadoEm DateTime     @updatedAt
   turmas       Turma[]
   comunicados  Comunicado[]
+
+  @@index([statusAtivo, excluido])   // listagem de usuarios ativos/inativos
+  @@index([role])                    // filtro de professores no dropdown
 }
 
 model Aluno {
@@ -110,29 +114,39 @@ model Aluno {
 
   // Controles do Sistema
   statusAtivo       Boolean  @default(true)
+  excluido          Boolean  @default(false)
   criadoEm          DateTime @default(now())
   atualizadoEm      DateTime @updatedAt
 
   // Relacionamentos
   matriculas        Turma[]
-  frequencias       Frequencia[] 
+  frequencias       Frequencia[]
+
+  @@index([statusAtivo, excluido])   // listagem de alunos ativos/inativos
+  @@index([nomeCompleto])            // busca full-text por nome
 }
 
 model Turma { // "Turma" serve perfeitamente para "Oficina"
-  id           String   @id @default(uuid())
-  nome         String   // Ex: Oficina de Braille, Oficina de Cerâmica
-  descricao    String?
-  horario      String?  // Ex: "Seg e Qua - 14h as 16h" (Atende o pedido da coordenadora)
-  statusAtivo  Boolean  @default(true)
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  id               String   @id @default(uuid())
+  nome             String   // Ex: Oficina de Braille, Oficina de Cerâmica
+  descricao        String?
+  horario          String?  // Ex: "Seg e Qua - 14h as 16h"
+  capacidadeMaxima Int?
+  statusAtivo      Boolean  @default(true)
+  excluido         Boolean  @default(false) // true = oculto de todas as abas, dados preservados
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
 
   // Relacionamentos
   professorId  String
   professor    User     @relation(fields: [professorId], references: [id])
   alunos       Aluno[]
-  frequencias  Frequencia[] 
+  frequencias  Frequencia[]
+
+  @@index([statusAtivo, excluido])   // listagem de turmas ativas/arquivadas
+  @@index([professorId])             // filtro de turmas por professor
 }
+
 
 // Tabela de Frequência (Chamada)
 model Frequencia {
@@ -148,6 +162,8 @@ model Frequencia {
   turma       Turma    @relation(fields: [turmaId], references: [id])
 
   @@unique([dataAula, alunoId, turmaId]) // Evita dar falta e presença pro mesmo aluno no mesmo dia
+  @@index([alunoId])                     // consultas de frequencia por aluno
+  @@index([turmaId, dataAula])           // consultas de chamada por turma e data
 }
 
 model Comunicado {
@@ -162,6 +178,10 @@ model Comunicado {
 
   autorId      String
   autor        User     @relation(fields: [autorId], references: [id])
+
+  @@index([categoria])                   // filtro por categoria
+  @@index([fixado, criadoEm])            // listagem com fixados primeiro
+  @@index([autorId])                     // comunicados por autor
 }
 
 

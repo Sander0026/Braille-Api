@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, IsDateString } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsDateString, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class QueryFrequenciaDto {
@@ -31,4 +31,9 @@ export class QueryFrequenciaDto {
     @IsDateString()
     @IsOptional()
     dataAula?: string;
+
+    @ApiPropertyOptional({ description: 'Filtrar por professor da turma' })
+    @IsUUID()
+    @IsOptional()
+    professorId?: string;
 }

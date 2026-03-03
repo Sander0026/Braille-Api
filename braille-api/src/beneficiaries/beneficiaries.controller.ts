@@ -48,4 +48,18 @@ export class BeneficiariesController {
   remove(@Param('id') id: string) {
     return this.beneficiariesService.remove(id);
   }
+
+  @Patch(':id/restore')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Restaurar um aluno inativado' })
+  restore(@Param('id') id: string) {
+    return this.beneficiariesService.restore(id);
+  }
+
+  @Delete(':id/hard')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Excluir definitivamente um aluno (Soft Delete Nvl 2)' })
+  removeHard(@Param('id') id: string) {
+    return this.beneficiariesService.removeHard(id);
+  }
 }

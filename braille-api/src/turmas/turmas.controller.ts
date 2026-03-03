@@ -13,7 +13,7 @@ import { QueryTurmaDto } from './dto/query-turma.dto';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('turmas')
 export class TurmasController {
-  constructor(private readonly turmasService: TurmasService) {}
+  constructor(private readonly turmasService: TurmasService) { }
 
   @Post()
   @Roles('ADMIN', 'SECRETARIA')
@@ -23,7 +23,7 @@ export class TurmasController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar todas as turmas ativas' })
+  @ApiOperation({ summary: 'Listar turmas. Use statusAtivo=false para arquivadas.' })
   findAll(@Query() query: QueryTurmaDto) {
     return this.turmasService.findAll(query);
   }
@@ -43,9 +43,23 @@ export class TurmasController {
 
   @Delete(':id')
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Inativar uma turma' })
+  @ApiOperation({ summary: 'Arquivar uma turma (statusAtivo=false). Dados preservados.' })
   remove(@Param('id') id: string) {
-    return this.turmasService.remove(id);
+    return this.turmasService.arquivar(id);
+  }
+
+  @Patch(':id/restaurar')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Restaurar uma turma arquivada para ativa' })
+  restaurar(@Param('id') id: string) {
+    return this.turmasService.restaurar(id);
+  }
+
+  @Patch(':id/ocultar')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Ocultar uma turma arquivada (some da aba, dados preservados)' })
+  ocultar(@Param('id') id: string) {
+    return this.turmasService.ocultar(id);
   }
 
   // ROTAS DE MATRÍCULA

@@ -28,10 +28,19 @@ export class BeneficiariesService {
   }
 
   async findAll(query: QueryBeneficiaryDto) {
-    const { page = 1, limit = 10, nome } = query;
+    const { page = 1, limit = 10, nome, inativos } = query;
     const skip = (page - 1) * limit;
 
-    const whereCondicao: any = { statusAtivo: true };
+    const whereCondicao: any = {
+      excluido: false,
+    };
+
+    if (inativos) {
+      whereCondicao.statusAtivo = false;
+    } else {
+      whereCondicao.statusAtivo = true;
+    }
+
     if (nome) {
       whereCondicao.nomeCompleto = { contains: nome, mode: 'insensitive' };
     }
@@ -92,6 +101,22 @@ export class BeneficiariesService {
     return this.prisma.aluno.update({
       where: { id },
       data: { statusAtivo: false }
+    });
+  }
+
+  async restore(id: string) {
+    await this.findOne(id);
+    return this.prisma.aluno.update({
+      where: { id },
+      data: { statusAtivo: true }
+    });
+  }
+
+  async removeHard(id: string) {
+    await this.findOne(id);
+    return this.prisma.aluno.update({
+      where: { id },
+      data: { excluido: true }
     });
   }
 }
