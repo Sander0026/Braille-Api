@@ -26,24 +26,63 @@ export class BeneficiariesService {
   }
 
   async findAll(query: QueryBeneficiaryDto) {
-    const { page = 1, limit = 10, nome, inativos } = query;
+    const {
+      page = 1, limit = 10, nome, inativos,
+      tipoDeficiencia, causaDeficiencia, prefAcessibilidade, precisaAcompanhante,
+      genero, estadoCivil, cidade, uf,
+      escolaridade, rendaFamiliar,
+      dataCadastroInicio, dataCadastroFim,
+    } = query;
+
     const skip = (page - 1) * limit;
 
-    const whereCondicao: any = { excluido: false };
+    // ── Cláusula WHERE dinâmica ────────────────────────────────
+    const where: any = {
+      excluido: false,
+      statusAtivo: inativos ? false : true,
+    };
 
-    if (inativos) {
-      whereCondicao.statusAtivo = false;
-    } else {
-      whereCondicao.statusAtivo = true;
+    // Busca por nome (texto livre, case-insensitive)
+    if (nome?.trim()) {
+      where.nomeCompleto = { contains: nome.trim(), mode: 'insensitive' };
     }
 
-    if (nome) {
-      whereCondicao.nomeCompleto = { contains: nome, mode: 'insensitive' };
+    // Filtros de Deficiência (Enums — valor exato)
+    if (tipoDeficiencia) where.tipoDeficiencia = tipoDeficiencia;
+    if (causaDeficiencia) where.causaDeficiencia = causaDeficiencia;
+    if (prefAcessibilidade) where.prefAcessibilidade = prefAcessibilidade;
+    if (precisaAcompanhante !== undefined) {
+      where.precisaAcompanhante = precisaAcompanhante;
     }
 
+    // Filtros de Dados Pessoais (texto — case-insensitive)
+    if (genero?.trim()) where.genero = { contains: genero.trim(), mode: 'insensitive' };
+    if (estadoCivil?.trim()) where.estadoCivil = { contains: estadoCivil.trim(), mode: 'insensitive' };
+
+    // Filtros de Localização (texto — case-insensitive)
+    if (cidade?.trim()) where.cidade = { contains: cidade.trim(), mode: 'insensitive' };
+    if (uf?.trim()) where.uf = { contains: uf.trim().toUpperCase(), mode: 'insensitive' };
+
+    // Filtros Socioeconômicos (texto — case-insensitive)
+    if (escolaridade?.trim()) where.escolaridade = { contains: escolaridade.trim(), mode: 'insensitive' };
+    if (rendaFamiliar?.trim()) where.rendaFamiliar = { contains: rendaFamiliar.trim(), mode: 'insensitive' };
+
+    // Filtro por Data de Cadastro (range de criadoEm)
+    if (dataCadastroInicio || dataCadastroFim) {
+      where.criadoEm = {};
+      if (dataCadastroInicio) where.criadoEm.gte = new Date(dataCadastroInicio);
+      if (dataCadastroFim) {
+        // Inclui o dia inteiro: vai até 23:59:59 do dia final
+        const fim = new Date(dataCadastroFim);
+        fim.setHours(23, 59, 59, 999);
+        where.criadoEm.lte = fim;
+      }
+    }
+
+    // ── Executar a query ───────────────────────────────────────
     const [alunos, total] = await Promise.all([
       this.prisma.aluno.findMany({
-        where: whereCondicao,
+        where,
         skip,
         take: limit,
         select: {
@@ -58,7 +97,7 @@ export class BeneficiariesService {
         },
         orderBy: { nomeCompleto: 'asc' },
       }),
-      this.prisma.aluno.count({ where: whereCondicao }),
+      this.prisma.aluno.count({ where }),
     ]);
 
     return {
