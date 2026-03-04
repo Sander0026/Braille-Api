@@ -149,24 +149,51 @@ export class BeneficiariesService {
     const XLSX = require('xlsx');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+
+    // Lê como array de arrays para controlar linhas manualmente
+    const rawRows: any[][] = XLSX.utils.sheet_to_json(
+      workbook.Sheets[sheetName],
+      { header: 1, defval: '' },
+    );
+
+    if (rawRows.length < 3) {
+      return { importados: 0, ignorados: 0, erros: [{ linha: 0, cpfRg: '—', motivo: 'Planilha vazia ou sem dados.' }] };
+    }
+
+    // Linha 0 = labels descritivos (ignorar)
+    // Linha 1 = cabeçalhos técnicos (NomeCompleto, CPF_RG, ...)
+    // Linha 2+ = dados reais
+    const headers: string[] = rawRows[1].map((h: any) => String(h ?? '').trim());
+    const dataRows = rawRows.slice(2);
+
+    // Mapeia cada linha para um objeto usando os cabeçalhos técnicos
+    const rows: Record<string, any>[] = dataRows.map((row) => {
+      const obj: Record<string, any> = {};
+      headers.forEach((key, idx) => {
+        obj[key] = row[idx] ?? '';
+      });
+      return obj;
+    });
 
     const erros: { linha: number; cpfRg: string; motivo: string }[] = [];
     const validos: any[] = [];
     const cpfRgsNaPlanilha = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const linha = i + 2; // linha 1 = cabeçalho no Excel
+      const linha = i + 3; // +3: linha 1=labels, linha 2=cabeçalhos, dados a partir da 3
       const row = rows[i];
 
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
       const cpfRg = String(row['CPF_RG'] ?? '').trim();
-      const dataNascimentoRaw = String(row['DataNascimento'] ?? '').trim();
+      const dataNascimentoRaw = row['DataNascimento'];
+
+      // Pular linhas completamente vazias
+      if (!nomeCompleto && !cpfRg && !dataNascimentoRaw) continue;
 
       // ── Campos obrigatórios ─────────────────────────────────
       if (!nomeCompleto) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
       if (!cpfRg) { erros.push({ linha, cpfRg: '—', motivo: 'Campo obrigatório ausente: CPF_RG' }); continue; }
-      if (!dataNascimentoRaw) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+      if (!dataNascimentoRaw && dataNascimentoRaw !== 0) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
 
       // ── Duplicata interna ────────────────────────────────────
       if (cpfRgsNaPlanilha.has(cpfRg)) {
@@ -175,14 +202,21 @@ export class BeneficiariesService {
       }
       cpfRgsNaPlanilha.add(cpfRg);
 
-      // ── Data de nascimento ───────────────────────────────────
+      // ── Data de nascimento ─────────────────────────────────
+      // Aceita: string DD/MM/AAAA, string AAAA-MM-DD, ou número serial do Excel
       let dataNascimento: Date;
       try {
-        if (dataNascimentoRaw.includes('/')) {
-          const [dia, mes, ano] = dataNascimentoRaw.split('/');
+        const rawStr = String(dataNascimentoRaw).trim();
+        if (typeof dataNascimentoRaw === 'number') {
+          // Número serial do Excel → converter via XLSX.SSF.parse_date_code ou manualmente
+          // Excel serial: 1 = 01/01/1900, com bug do ano bissexto 1900
+          const excelEpoch = new Date(1899, 11, 30); // 30/12/1899
+          dataNascimento = new Date(excelEpoch.getTime() + dataNascimentoRaw * 86400000);
+        } else if (rawStr.includes('/')) {
+          const [dia, mes, ano] = rawStr.split('/');
           dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
         } else {
-          dataNascimento = new Date(dataNascimentoRaw);
+          dataNascimento = new Date(rawStr);
         }
         if (isNaN(dataNascimento.getTime())) throw new Error();
       } catch {
