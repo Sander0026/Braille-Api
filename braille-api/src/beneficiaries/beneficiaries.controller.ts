@@ -1,8 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query,
+  UseInterceptors, UploadedFile, BadRequestException
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
 import { RolesGuard } from '../auth/roles.guard';
@@ -11,7 +15,6 @@ import { Roles } from '../auth/roles.decorator';
 @ApiTags('Alunos (Beneficiários)')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
-@UseGuards(AuthGuard)
 @Controller('beneficiaries')
 export class BeneficiariesController {
   constructor(private readonly beneficiariesService: BeneficiariesService) { }
@@ -21,6 +24,33 @@ export class BeneficiariesController {
   @ApiOperation({ summary: 'Cadastrar um novo aluno' })
   create(@Body() createBeneficiaryDto: CreateBeneficiaryDto) {
     return this.beneficiariesService.create(createBeneficiaryDto);
+  }
+
+  @Post('import')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Importar alunos via planilha Excel (.xlsx) ou CSV' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter: (_req, file, callback) => {
+      const allowed = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel',   // .xls
+        'text/csv',                   // .csv
+        'application/csv',
+      ];
+      if (allowed.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls|csv)$/i)) {
+        callback(null, true);
+      } else {
+        callback(new BadRequestException('Tipo de arquivo não permitido. Envie um arquivo .xlsx ou .csv.'), false);
+      }
+    },
+  }))
+  importFromSheet(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Nenhum arquivo enviado.');
+    }
+    return this.beneficiariesService.importFromSheet(file.buffer);
   }
 
   @Get()
