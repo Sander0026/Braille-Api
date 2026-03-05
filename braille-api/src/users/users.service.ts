@@ -7,7 +7,7 @@ import { QueryUserDto } from './dto/query-user.dto';
 import { gerarMatriculaStaff } from '../common/helpers/matricula.helper';
 
 // Senha padrão definida pela instituição (deve ser trocada no primeiro login)
-const SENHA_PADRAO = 'Braille@123';
+const SENHA_PADRAO = 'Ilbes@123';
 
 /**
  * Gera um username único no formato: primeiroNome.ultimoSobrenome + número (se colisão).
