@@ -96,6 +96,13 @@ export class BeneficiariesController {
     return this.beneficiariesService.remove(id);
   }
 
+  @Post(':id/reactivate')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Reativar um aluno arquivado/inativo' })
+  reactivate(@Param('id') id: string) {
+    return this.beneficiariesService.reactivate(id);
+  }
+
   @Patch(':id/restore')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Restaurar um aluno inativado' })
