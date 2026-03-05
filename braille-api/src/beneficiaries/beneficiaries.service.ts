@@ -59,7 +59,9 @@ export class BeneficiariesService {
 
   async findAll(query: QueryBeneficiaryDto) {
     const {
-      page = 1, limit = 10, nome, inativos,
+      page = 1, limit = 10,
+      busca, nome,   // busca = campo novo (OR em nome+matrícula); nome = legado
+      inativos,
       tipoDeficiencia, causaDeficiencia, prefAcessibilidade, precisaAcompanhante,
       genero, estadoCivil, cidade, uf,
       escolaridade, rendaFamiliar,
@@ -74,9 +76,13 @@ export class BeneficiariesService {
       statusAtivo: inativos ? false : true,
     };
 
-    // Busca por nome (texto livre, case-insensitive)
-    if (nome?.trim()) {
-      where.nomeCompleto = { contains: nome.trim(), mode: 'insensitive' };
+    // ── Busca unificada: nome OU matrícula (case-insensitive) ──────
+    const termoBusca = (busca ?? nome)?.trim();
+    if (termoBusca) {
+      where.OR = [
+        { nomeCompleto: { contains: termoBusca, mode: 'insensitive' } },
+        { matricula: { contains: termoBusca, mode: 'insensitive' } },
+      ];
     }
 
     // Filtros de Deficiência (Enums — valor exato)
