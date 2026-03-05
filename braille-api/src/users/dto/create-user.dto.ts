@@ -1,49 +1,41 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsNotEmpty, IsStrongPassword, IsBoolean } from 'class-validator';
+import { IsEmail, IsString, IsOptional, IsEnum, IsNotEmpty } from 'class-validator';
 import { Role } from '@prisma/client';
 
+/**
+ * DTO de criação de Usuário de Sistema (Staff).
+ *
+ * O ADMIN informa apenas: Nome, CPF e Cargo.
+ * O backend gera automaticamente: username, senha padrão e matrícula.
+ */
 export class CreateUserDto {
-  @ApiProperty({ description: 'Nome completo do usuário' })
+  @ApiProperty({ description: 'Nome completo do funcionário' })
   @IsString()
   @IsNotEmpty()
   nome: string;
 
-
-  @ApiProperty({ description: 'Nome de usuário para login (único)' })
+  @ApiProperty({ description: 'CPF do funcionário (único, sem formatação. Ex: 12345678901)' })
   @IsString()
   @IsNotEmpty()
-  username: string;
-
-  @ApiPropertyOptional({ description: 'E-mail do usuário' })
-  @IsEmail()
-  @IsOptional()
-  email?: string;
-
-  @ApiProperty({ description: 'Senha forte de acesso' })
-  @IsString()
-  @IsStrongPassword({
-    minLength: 8,
-    minLowercase: 1,
-    minUppercase: 1,
-    minNumbers: 1,
-    minSymbols: 1,
-  }, {
-    message: 'A senha deve ter pelo menos 8 caracteres, contendo letras maiúsculas, minúsculas, números e caracteres especiais (ex: !@#$%).'
-  })
-  senha: string;
+  cpf: string;
 
   @ApiPropertyOptional({ enum: Role, description: 'Perfil de acesso' })
   @IsEnum(Role)
   @IsOptional()
   role?: Role;
 
-  @ApiPropertyOptional({ description: 'URL da foto de perfil' })
-  @IsString()
+  @ApiPropertyOptional({ description: 'E-mail do funcionário' })
+  @IsEmail()
   @IsOptional()
-  fotoPerfil?: string;
+  email?: string;
 
-  @ApiPropertyOptional({ description: 'Exige que o usuário troque de senha' })
-  @IsBoolean()
-  @IsOptional()
-  precisaTrocarSenha?: boolean;
+  // ── Contato e Endereço (opcionais) ───────────────────────────────
+  @ApiPropertyOptional() @IsString() @IsOptional() telefone?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() cep?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() rua?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() numero?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() complemento?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() bairro?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() cidade?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() uf?: string;
 }

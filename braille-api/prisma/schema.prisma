@@ -58,10 +58,22 @@ model User {
   nome               String
   username           String             @unique
   email              String?            @unique
+  cpf                String?            @unique              // CPF do funcionário (unicidade)
   senha              String
   precisaTrocarSenha Boolean            @default(false)
   role               Role               @default(PROFESSOR)
   fotoPerfil         String?
+
+  // Contato e Endereço (opcionais)
+  telefone           String?
+  cep                String?
+  rua                String?
+  numero             String?
+  complemento        String?
+  bairro             String?
+  cidade             String?
+  uf                 String?
+
   statusAtivo        Boolean            @default(true)
   excluido           Boolean            @default(false)
   criadoEm          DateTime           @default(now())
@@ -69,8 +81,9 @@ model User {
   turmas             Turma[]
   comunicados        Comunicado[]
 
-  @@index([statusAtivo, excluido])   // listagem de usuarios ativos/inativos
-  @@index([role])                    // filtro de professores no dropdown
+  @@index([statusAtivo, excluido])
+  @@index([role])
+  @@index([cpf])
 }
 
 model Aluno {
