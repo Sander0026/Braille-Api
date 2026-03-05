@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req } from '@nestjs/common';
 import { FrequenciasService } from './frequencias.service';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
+import { Role } from '@prisma/client';
 
 @ApiTags('Frequências (Chamadas)')
 @ApiBearerAuth()
@@ -15,8 +16,8 @@ export class FrequenciasController {
 
   @Post()
   @ApiOperation({ summary: 'Registrar chamada de um aluno em uma turma' })
-  create(@Body() createFrequenciaDto: CreateFrequenciaDto) {
-    return this.frequenciasService.create(createFrequenciaDto);
+  create(@Body() dto: CreateFrequenciaDto, @Req() req: any) {
+    return this.frequenciasService.create(dto, req.user?.role as Role);
   }
 
   @Get()
@@ -26,7 +27,7 @@ export class FrequenciasController {
   }
 
   @Get('resumo')
-  @ApiOperation({ summary: 'Listar resumo agrupado de chamadas por aula' })
+  @ApiOperation({ summary: 'Listar resumo agrupado de chamadas por aula (inclui status diário fechado)' })
   findResumo(@Query() query: QueryFrequenciaDto) {
     return this.frequenciasService.findResumo(query);
   }
@@ -44,14 +45,38 @@ export class FrequenciasController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Editar chamada' })
-  update(@Param('id') id: string, @Body() updateFrequenciaDto: UpdateFrequenciaDto) {
-    return this.frequenciasService.update(id, updateFrequenciaDto);
+  @ApiOperation({ summary: 'Editar chamada (professor: só no dia; admin: qualquer data; trava se diário fechado)' })
+  update(@Param('id') id: string, @Body() dto: UpdateFrequenciaDto, @Req() req: any) {
+    return this.frequenciasService.update(id, dto, req.user?.role as Role);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Remover chamada' })
-  remove(@Param('id') id: string) {
-    return this.frequenciasService.remove(id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.frequenciasService.remove(id, req.user?.role as Role);
+  }
+
+  // ── Diário ─────────────────────────────────────────────────────────────────
+
+  @Post('diario/fechar/:turmaId/:dataAula')
+  @ApiOperation({
+    summary: 'Fechar o diário de uma turma numa data — congela a chamada (professor: só hoje; admin: qualquer data)'
+  })
+  fecharDiario(
+    @Param('turmaId') turmaId: string,
+    @Param('dataAula') dataAula: string,
+    @Req() req: any,
+  ) {
+    return this.frequenciasService.fecharDiario(turmaId, dataAula, req.user?.sub, req.user?.role as Role);
+  }
+
+  @Post('diario/reabrir/:turmaId/:dataAula')
+  @ApiOperation({ summary: 'Reabrir diário fechado para retificação (somente ADMIN)' })
+  reabrirDiario(
+    @Param('turmaId') turmaId: string,
+    @Param('dataAula') dataAula: string,
+    @Req() req: any,
+  ) {
+    return this.frequenciasService.reabrirDiario(turmaId, dataAula, req.user?.role as Role);
   }
 }
