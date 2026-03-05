@@ -59,8 +59,11 @@ export class AuditLogService {
     // ─── Consultas ───────────────────────────────────────────────────────────
 
     async findAll(query: QueryAuditDto) {
-        const { page = 1, limit = 20, entidade, registroId, autorId, acao, de, ate } = query;
+        const page = Number(query.page) || 1;
+        const limit = Number(query.limit) || 20;
+        const { entidade, registroId, autorId, acao, de, ate } = query;
         const skip = (page - 1) * limit;
+
 
         const where: any = {};
         if (entidade) where.entidade = entidade;
