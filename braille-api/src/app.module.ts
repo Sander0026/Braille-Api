@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -13,7 +14,8 @@ import { FrequenciasModule } from './frequencias/frequencias.module';
 import { ContatosModule } from './contatos/contatos.module';
 import { UploadModule } from './upload/upload.module';
 import { SiteConfigModule } from './site-config/site-config.module';
-
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
 @Module({
   imports: [
@@ -23,11 +25,22 @@ import { SiteConfigModule } from './site-config/site-config.module';
     UsersModule,
     BeneficiariesModule,
     ComunicadosModule,
-    TurmasModule, DashboardModule, FrequenciasModule, ContatosModule, UploadModule,
+    TurmasModule,
+    DashboardModule,
+    FrequenciasModule,
+    ContatosModule,
+    UploadModule,
     SiteConfigModule,
-
+    AuditLogModule,   // Fase 5
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Interceptor global de auditoria — captura mutações em todas as rotas
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
+    },
+  ],
 })
 export class AppModule { }

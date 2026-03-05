@@ -22,6 +22,25 @@ enum MatriculaStatus {
   CANCELADA
 }
 
+enum DiaSemana {
+  SEG
+  TER
+  QUA
+  QUI
+  SEX
+  SAB
+  DOM
+}
+
+enum TurmaStatus {
+  PREVISTA    // Turma criada, ainda não iniciou
+  ANDAMENTO   // Turma em andamento (default ao criar)
+  CONCLUIDA   // Turma encerrada com sucesso
+  CANCELADA   // Turma cancelada
+}
+
+
+
 enum TipoDeficiencia {
   CEGUEIRA_TOTAL
   BAIXA_VISAO
@@ -157,20 +176,24 @@ model Turma { // "Turma" serve perfeitamente para "Oficina"
   descricao        String?
   horario          String?  // Ex: "Seg e Qua - 14h as 16h" (campo legado — Fase 3 refatorará)
   capacidadeMaxima Int?
-  statusAtivo      Boolean  @default(true)
-  excluido         Boolean  @default(false) // true = oculto de todas as abas, dados preservados
+  statusAtivo      Boolean      @default(true)
+  excluido         Boolean      @default(false)
+  status           TurmaStatus  @default(ANDAMENTO) // Status acadêmico da turma
   criadoEm        DateTime @default(now())
   atualizadoEm    DateTime @updatedAt
+
 
   // Relacionamentos
   professorId       String
   professor         User               @relation(fields: [professorId], references: [id])
   matriculasOficina MatriculaOficina[]
   frequencias       Frequencia[]
+  gradeHoraria      GradeHoraria[]     // Turnos estruturados da turma
 
-  @@index([statusAtivo, excluido])   // listagem de turmas ativas/arquivadas
-  @@index([professorId])             // filtro de turmas por professor
+  @@index([statusAtivo, excluido])
+  @@index([professorId])
 }
+
 
 // ── Histórico de Matrículas (Vínculo Aluno <> Turma) ──────────────
 model MatriculaOficina {
@@ -188,10 +211,29 @@ model MatriculaOficina {
   turmaId     String
   turma       Turma  @relation(fields: [turmaId], references: [id])
 
-  @@unique([alunoId, turmaId])              // Aluno só pode ter 1 vínculo por turma
-  @@index([alunoId])                        // histórico do aluno
-  @@index([turmaId, status])               // alunos ativos por turma
+  @@unique([alunoId, turmaId])
+  @@index([alunoId])
+  @@index([turmaId, status])
 }
+
+// ── Grade Horária estruturada (Fase 3) ──────────────────────────
+// horaInicio e horaFim em MINUTOS desde meia-noite (ex: 840 = 14:00, 960 = 16:00)
+// Isso evita qualquer problema de timezone e torna a comparação de sobreposição trivial.
+model GradeHoraria {
+  id          String     @id @default(uuid())
+  dia         DiaSemana
+  horaInicio  Int        // Ex: 840 = 14h00
+  horaFim     Int        // Ex: 960 = 16h00
+  criadoEm    DateTime   @default(now())
+
+  turmaId     String
+  turma       Turma      @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+
+  @@unique([turmaId, dia])          // Uma turma só pode ter 1 horário por dia
+  @@index([turmaId])
+}
+
+
 
 
 // Tabela de Frequência (Chamada)
@@ -200,6 +242,10 @@ model Frequencia {
   dataAula    DateTime @default(now())
   presente    Boolean  @default(false)
   observacao  String?
+  fechado     Boolean  @default(false) // true = diário encerrado, só ADMIN pode reabrir
+  fechadoEm   DateTime?                // quando foi encerrado
+  fechadoPor  String?                  // userId de quem fechou
+
 
   // Relacionamentos
   alunoId     String
@@ -261,4 +307,43 @@ model ConteudoSecao {
   valor    String  @db.Text
 
   @@id([secao, chave])
+}
+
+// ─── FASE 5: Auditoria Central ─────────────────────────────────────────────
+
+enum AuditAcao {
+  CRIAR
+  ATUALIZAR
+  EXCLUIR
+  ARQUIVAR
+  RESTAURAR
+  LOGIN
+  LOGOUT
+  MATRICULAR
+  DESMATRICULAR
+  FECHAR_DIARIO
+  REABRIR_DIARIO
+  MUDAR_STATUS
+}
+
+/// Registro imutável de toda ação crítica no sistema.
+/// Nunca deve ser alterado ou deletado — apenas inserido.
+model AuditLog {
+  id         String     @id @default(cuid())
+  entidade   String     // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" …
+  registroId String?    // ID do registro afetado (null para LOGIN/LOGOUT)
+  acao       AuditAcao
+  autorId    String?    // ID do usuário que realizou a ação (null = sistema)
+  autorNome  String?    // Snapshot do nome — preserva histórico mesmo se usuário for excluído
+  autorRole  String?    // Snapshot do cargo (ADMIN | SECRETARIA | PROFESSOR …)
+  ip         String?    // IP da requisição
+  userAgent  String?    // Browser/client da requisição
+  oldValue   Json?      // Estado anterior do registro (para ATUALIZAR/EXCLUIR)
+  newValue   Json?      // Estado novo do registro (para CRIAR/ATUALIZAR)
+  criadoEm   DateTime   @default(now())
+
+  @@index([entidade, registroId])
+  @@index([autorId])
+  @@index([criadoEm])
+  @@index([acao])
 }

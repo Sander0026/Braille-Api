@@ -1,44 +1,76 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class FrequenciasService {
   constructor(private prisma: PrismaService) { }
 
-  /**
-   * Garante que dataAula seja hoje (UTC). Chamadas de datas anteriores
-   * são documentos imutáveis — não podem ser criadas nem alteradas.
-   */
-  private validarDataHoje(dataAula: Date): void {
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  /** Compara se dataAula é Hoje em UTC (ignora horário). */
+  private ehHoje(dataAula: Date): boolean {
     const hoje = new Date();
-    const ehHoje =
+    return (
       dataAula.getUTCFullYear() === hoje.getUTCFullYear() &&
       dataAula.getUTCMonth() === hoje.getUTCMonth() &&
-      dataAula.getUTCDate() === hoje.getUTCDate();
+      dataAula.getUTCDate() === hoje.getUTCDate()
+    );
+  }
 
-    if (!ehHoje) {
+  /**
+   * Garante que a chamada pertence ao dia atual.
+   * ADMIN pode ignorar a trava (bypass = true).
+   */
+  private validarDataHoje(dataAula: Date, bypass = false): void {
+    if (bypass) return;
+    if (!this.ehHoje(dataAula)) {
       throw new ForbiddenException(
-        'Chamadas de datas anteriores não podem ser criadas ou alteradas. A chamada só pode ser editada no próprio dia da aula.'
+        'Chamadas de datas anteriores não podem ser criadas ou alteradas. ' +
+        'A chamada só pode ser editada no próprio dia da aula. ' +
+        'Apenas administradores podem retificar chamadas antigas.'
       );
     }
   }
 
-  async create(createFrequenciaDto: CreateFrequenciaDto) {
-    const dataConvertida = new Date(createFrequenciaDto.dataAula);
+  /**
+   * Verifica se o diário (turma+data) está fechado.
+   * Se fechado e o usuário não for ADMIN → lança ForbiddenException.
+   */
+  private async verificarDiarioAberto(
+    turmaId: string,
+    dataAula: Date,
+    role: Role,
+  ): Promise<void> {
+    // Verifica se qualquer frequência dessa turma+data está marcada como fechado
+    const fechado = await this.prisma.frequencia.findFirst({
+      where: { turmaId, dataAula, fechado: true },
+      select: { id: true },
+    });
 
-    // Regra de imutabilidade: chamada só pode ser criada no dia atual
-    this.validarDataHoje(dataConvertida);
+    if (fechado && role !== Role.ADMIN) {
+      throw new ForbiddenException(
+        'O diário desta data está fechado. Somente um administrador pode reabri-lo para retificação.'
+      );
+    }
+  }
 
-    // Trava de Segurança: chamada já registrada para este aluno/turma/dia
+  // ─── CRUD Principal ────────────────────────────────────────────────────────
+
+  async create(dto: CreateFrequenciaDto, requesterRole: Role = Role.PROFESSOR) {
+    const dataConvertida = new Date(dto.dataAula);
+
+    // ADMIN pode lançar chamada retroativa; professor só no dia
+    this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
+
+    // Trava: diário fechado?
+    await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
+
     const chamadaExistente = await this.prisma.frequencia.findFirst({
-      where: {
-        alunoId: createFrequenciaDto.alunoId,
-        turmaId: createFrequenciaDto.turmaId,
-        dataAula: dataConvertida,
-      },
+      where: { alunoId: dto.alunoId, turmaId: dto.turmaId, dataAula: dataConvertida },
     });
 
     if (chamadaExistente) {
@@ -46,7 +78,7 @@ export class FrequenciasService {
     }
 
     return this.prisma.frequencia.create({
-      data: { ...createFrequenciaDto, dataAula: dataConvertida },
+      data: { ...dto, dataAula: dataConvertida },
     });
   }
 
@@ -106,11 +138,13 @@ export class FrequenciasService {
         });
 
         const presentesCount = await this.prisma.frequencia.count({
-          where: {
-            dataAula: group.dataAula,
-            turmaId: group.turmaId,
-            presente: true,
-          },
+          where: { dataAula: group.dataAula, turmaId: group.turmaId, presente: true },
+        });
+
+        // Verifica se o diário está fechado para este turmaId+dataAula
+        const diarioFechado = await this.prisma.frequencia.findFirst({
+          where: { turmaId: group.turmaId, dataAula: group.dataAula, fechado: true },
+          select: { fechado: true, fechadoEm: true },
         });
 
         return {
@@ -120,6 +154,8 @@ export class FrequenciasService {
           totalAlunos: group._count._all,
           presentes: presentesCount,
           faltas: group._count._all - presentesCount,
+          diarioFechado: !!diarioFechado?.fechado,
+          fechadoEm: diarioFechado?.fechadoEm ?? null,
         };
       })
     );
@@ -164,26 +200,92 @@ export class FrequenciasService {
     return frequencia;
   }
 
-  async update(id: string, updateFrequenciaDto: UpdateFrequenciaDto) {
+  async update(id: string, dto: UpdateFrequenciaDto, requesterRole: Role = Role.PROFESSOR) {
     const frequencia = await this.findOne(id);
 
-    // Regra de imutabilidade: só permite alterar chamadas do dia atual
-    this.validarDataHoje(frequencia.dataAula);
+    // Professor só edita no dia; ADMIN pode retificar qualquer data
+    this.validarDataHoje(frequencia.dataAula, requesterRole === Role.ADMIN);
 
-    const dadosParaAtualizar: any = { ...updateFrequenciaDto };
-    if (updateFrequenciaDto.dataAula) {
-      dadosParaAtualizar.dataAula = new Date(updateFrequenciaDto.dataAula);
-    }
+    // Trava: diário fechado?
+    await this.verificarDiarioAberto(frequencia.turmaId, frequencia.dataAula, requesterRole);
+
+    const dadosParaAtualizar: any = { ...dto };
+    if (dto.dataAula) dadosParaAtualizar.dataAula = new Date(dto.dataAula);
+
     return this.prisma.frequencia.update({ where: { id }, data: dadosParaAtualizar });
   }
 
-  async remove(id: string) {
+  async remove(id: string, requesterRole: Role = Role.PROFESSOR) {
     const frequencia = await this.findOne(id);
-
-    // Regra de imutabilidade: só permite remover chamadas do dia atual
-    this.validarDataHoje(frequencia.dataAula);
-
+    this.validarDataHoje(frequencia.dataAula, requesterRole === Role.ADMIN);
+    await this.verificarDiarioAberto(frequencia.turmaId, frequencia.dataAula, requesterRole);
     return this.prisma.frequencia.delete({ where: { id } });
+  }
 
+  // ─── Fechamento de Diário ───────────────────────────────────────────────────
+
+  /**
+   * PROFESSOR fecha o diário de uma turma em uma data específica.
+   * Após fechar: só ADMIN pode reabrir/retificar.
+   * Regra: só pode fechar o diário do dia atual (professor), ou qualquer dia (admin).
+   */
+  async fecharDiario(
+    turmaId: string,
+    dataAula: string,
+    userId: string,
+    requesterRole: Role,
+  ) {
+    const data = new Date(dataAula);
+
+    // Professor só fecha o diário do dia atual
+    if (requesterRole !== Role.ADMIN && !this.ehHoje(data)) {
+      throw new ForbiddenException('Só é possível fechar o diário do dia atual.');
+    }
+
+    // Verifica se há registros para fechar
+    const registros = await this.prisma.frequencia.findMany({
+      where: { turmaId, dataAula: data },
+      select: { id: true, fechado: true },
+    });
+
+    if (registros.length === 0) {
+      throw new BadRequestException('Não há registros de chamada para fechar nesta data.');
+    }
+
+    const jaFechados = registros.filter(r => r.fechado);
+    if (jaFechados.length === registros.length) {
+      throw new BadRequestException('O diário desta data já está fechado.');
+    }
+
+    // Fecha todos os registros da turma nessa data
+    await this.prisma.frequencia.updateMany({
+      where: { turmaId, dataAula: data },
+      data: { fechado: true, fechadoEm: new Date(), fechadoPor: userId },
+    });
+
+    return {
+      mensagem: `Diário fechado com sucesso. ${registros.length} registro(s) bloqueado(s).`,
+      turmaId,
+      dataAula,
+      totalRegistros: registros.length,
+    };
+  }
+
+  /**
+   * ADMIN reabre o diário para retificação. Volta fechado = false.
+   */
+  async reabrirDiario(turmaId: string, dataAula: string, requesterRole: Role) {
+    if (requesterRole !== Role.ADMIN) {
+      throw new ForbiddenException('Somente administradores podem reabrir um diário fechado.');
+    }
+
+    const data = new Date(dataAula);
+
+    await this.prisma.frequencia.updateMany({
+      where: { turmaId, dataAula: data, fechado: true },
+      data: { fechado: false, fechadoEm: null, fechadoPor: null },
+    });
+
+    return { mensagem: 'Diário reaberto para retificação.', turmaId, dataAula };
   }
 }
