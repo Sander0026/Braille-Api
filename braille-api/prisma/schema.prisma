@@ -15,6 +15,13 @@ enum Role {
   COMUNICACAO
 }
 
+enum MatriculaStatus {
+  ATIVA
+  CONCLUIDA
+  EVADIDA
+  CANCELADA
+}
+
 enum TipoDeficiencia {
   CEGUEIRA_TOTAL
   BAIXA_VISAO
@@ -46,20 +53,21 @@ enum CategoriaComunicado {
 // ================= MODELOS (Tabelas) =================
 
 model User {
-  id           String       @id @default(uuid())
-  nome         String
-  username     String       @unique
-  email        String?      @unique
-  senha        String
-  precisaTrocarSenha Boolean @default(false)
-  role         Role         @default(PROFESSOR)
-  fotoPerfil   String?
-  statusAtivo  Boolean      @default(true)
-  excluido     Boolean      @default(false)
-  criadoEm     DateTime     @default(now())
-  atualizadoEm DateTime     @updatedAt
-  turmas       Turma[]
-  comunicados  Comunicado[]
+  id                 String             @id @default(uuid())
+  matricula          String?            @unique              // Ex: P20260001
+  nome               String
+  username           String             @unique
+  email              String?            @unique
+  senha              String
+  precisaTrocarSenha Boolean            @default(false)
+  role               Role               @default(PROFESSOR)
+  fotoPerfil         String?
+  statusAtivo        Boolean            @default(true)
+  excluido           Boolean            @default(false)
+  criadoEm          DateTime           @default(now())
+  atualizadoEm      DateTime           @updatedAt
+  turmas             Turma[]
+  comunicados        Comunicado[]
 
   @@index([statusAtivo, excluido])   // listagem de usuarios ativos/inativos
   @@index([role])                    // filtro de professores no dropdown
@@ -68,6 +76,9 @@ model User {
 model Aluno {
   id                String   @id @default(uuid())
   
+  // 0. Identificação Institucional
+  matricula         String?  @unique                         // Ex: 20260001 (gerado automaticamente)
+
   // 1. Dados Identificadores
   nomeCompleto      String
   dataNascimento    DateTime
@@ -119,18 +130,19 @@ model Aluno {
   atualizadoEm      DateTime @updatedAt
 
   // Relacionamentos
-  matriculas        Turma[]
+  matriculasOficina MatriculaOficina[]
   frequencias       Frequencia[]
 
   @@index([statusAtivo, excluido])   // listagem de alunos ativos/inativos
   @@index([nomeCompleto])            // busca full-text por nome
+  @@index([matricula])               // busca por número de matrícula
 }
 
 model Turma { // "Turma" serve perfeitamente para "Oficina"
   id               String   @id @default(uuid())
   nome             String   // Ex: Oficina de Braille, Oficina de Cerâmica
   descricao        String?
-  horario          String?  // Ex: "Seg e Qua - 14h as 16h"
+  horario          String?  // Ex: "Seg e Qua - 14h as 16h" (campo legado — Fase 3 refatorará)
   capacidadeMaxima Int?
   statusAtivo      Boolean  @default(true)
   excluido         Boolean  @default(false) // true = oculto de todas as abas, dados preservados
@@ -138,13 +150,34 @@ model Turma { // "Turma" serve perfeitamente para "Oficina"
   atualizadoEm    DateTime @updatedAt
 
   // Relacionamentos
-  professorId  String
-  professor    User     @relation(fields: [professorId], references: [id])
-  alunos       Aluno[]
-  frequencias  Frequencia[]
+  professorId       String
+  professor         User               @relation(fields: [professorId], references: [id])
+  matriculasOficina MatriculaOficina[]
+  frequencias       Frequencia[]
 
   @@index([statusAtivo, excluido])   // listagem de turmas ativas/arquivadas
   @@index([professorId])             // filtro de turmas por professor
+}
+
+// ── Histórico de Matrículas (Vínculo Aluno <> Turma) ──────────────
+model MatriculaOficina {
+  id          String          @id @default(uuid())
+  status      MatriculaStatus @default(ATIVA)
+  dataEntrada DateTime        @default(now())
+  dataEncerramento DateTime?  // Preenchida ao Concluir/Evadir/Cancelar
+  observacao  String?         // Motivo do cancelamento/evasão etc.
+  criadoEm    DateTime        @default(now())
+  atualizadoEm DateTime       @updatedAt
+
+  // Relacionamentos
+  alunoId     String
+  aluno       Aluno  @relation(fields: [alunoId], references: [id])
+  turmaId     String
+  turma       Turma  @relation(fields: [turmaId], references: [id])
+
+  @@unique([alunoId, turmaId])              // Aluno só pode ter 1 vínculo por turma
+  @@index([alunoId])                        // histórico do aluno
+  @@index([turmaId, status])               // alunos ativos por turma
 }
 
 

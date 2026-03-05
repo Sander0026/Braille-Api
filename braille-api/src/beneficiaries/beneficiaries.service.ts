@@ -3,6 +3,7 @@ import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
+import { gerarMatriculaAluno } from '../common/helpers/matricula.helper';
 
 @Injectable()
 export class BeneficiariesService {
@@ -17,8 +18,12 @@ export class BeneficiariesService {
       throw new ConflictException('Já existe um beneficiário cadastrado com este CPF/RG.');
     }
 
+    // Gera número de matrícula automaticamente
+    const matricula = await gerarMatriculaAluno(this.prisma);
+
     const dadosParaSalvar = {
       ...createBeneficiaryDto,
+      matricula,
       dataNascimento: new Date(createBeneficiaryDto.dataNascimento)
     };
 
@@ -258,7 +263,7 @@ export class BeneficiariesService {
   async findOne(id: string) {
     const beneficiario = await this.prisma.aluno.findUnique({
       where: { id },
-      include: { matriculas: true }
+      include: { matriculasOficina: { include: { turma: true } } }
     });
     if (!beneficiario) throw new NotFoundException('Beneficiário não encontrado.');
     return beneficiario;

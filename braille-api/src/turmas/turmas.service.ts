@@ -48,7 +48,7 @@ export class TurmasService {
         take: limit,
         include: {
           professor: { select: { id: true, nome: true, email: true } },
-          _count: { select: { alunos: true } },  // ← apenas a contagem, sem trazer dados
+          _count: { select: { matriculasOficina: { where: { status: 'ATIVA' } } } },  // contagem de alunos ativos
         },
         orderBy: { nome: 'asc' },
       }),
@@ -112,35 +112,62 @@ export class TurmasService {
     return this.arquivar(id);
   }
 
-  //  MÉTODOS DE MATRÍCULA 
+  // ═══ MÉTODOS DE MATRÍCULA (via MatriculaOficina) ════════════════════
 
   async addAluno(turmaId: string, alunoId: string) {
-    const turma = await this.prisma.turma.findUnique({ where: { id: turmaId } });
+    const turma = await this.prisma.turma.findUnique({
+      where: { id: turmaId },
+      include: { _count: { select: { matriculasOficina: { where: { status: 'ATIVA' } } } } },
+    });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
 
     const aluno = await this.prisma.aluno.findUnique({ where: { id: alunoId } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
-    return this.prisma.turma.update({
-      where: { id: turmaId },
-      data: {
-        alunos: {
-          connect: { id: alunoId },
-        },
-      },
-      include: { alunos: { select: { id: true, nomeCompleto: true } } },
+    // Verifica se já existe vínculo ativo
+    const vinculoExistente = await this.prisma.matriculaOficina.findUnique({
+      where: { alunoId_turmaId: { alunoId, turmaId } },
+    });
+    if (vinculoExistente && vinculoExistente.status === 'ATIVA') {
+      throw new BadRequestException('Este aluno já está matriculado nesta turma.');
+    }
+
+    // Verifica capacidade máxima
+    if (turma.capacidadeMaxima !== null) {
+      const matriculasAtivas = (turma as any)._count.matriculasOficina;
+      if (matriculasAtivas >= turma.capacidadeMaxima) {
+        throw new BadRequestException(
+          `Capacidade máxima da turma atingida (${turma.capacidadeMaxima} vagas). ` +
+          `Aumente a capacidade na edição da turma ou escolha outra turma.`
+        );
+      }
+    }
+
+    // Cria ou reativa o vínculo
+    if (vinculoExistente) {
+      return this.prisma.matriculaOficina.update({
+        where: { alunoId_turmaId: { alunoId, turmaId } },
+        data: { status: 'ATIVA', dataEntrada: new Date(), dataEncerramento: null },
+        include: { aluno: { select: { id: true, nomeCompleto: true, matricula: true } } },
+      });
+    }
+
+    return this.prisma.matriculaOficina.create({
+      data: { alunoId, turmaId },
+      include: { aluno: { select: { id: true, nomeCompleto: true, matricula: true } } },
     });
   }
 
   async removeAluno(turmaId: string, alunoId: string) {
-    return this.prisma.turma.update({
-      where: { id: turmaId },
-      data: {
-        alunos: {
-          disconnect: { id: alunoId },
-        },
-      },
-      include: { alunos: { select: { id: true, nomeCompleto: true } } },
+    const vinculo = await this.prisma.matriculaOficina.findUnique({
+      where: { alunoId_turmaId: { alunoId, turmaId } },
+    });
+    if (!vinculo) throw new NotFoundException('Vínculo de matrícula não encontrado.');
+
+    // Não deletamos — apenas muda o status para CANCELADA (preserva histórico)
+    return this.prisma.matriculaOficina.update({
+      where: { alunoId_turmaId: { alunoId, turmaId } },
+      data: { status: 'CANCELADA', dataEncerramento: new Date() },
     });
   }
 
@@ -149,7 +176,13 @@ export class TurmasService {
       where: { id },
       include: {
         professor: { select: { id: true, nome: true, email: true } },
-        alunos: { select: { id: true, nomeCompleto: true } },
+        matriculasOficina: {
+          where: { status: 'ATIVA' },
+          select: {
+            id: true, status: true, dataEntrada: true,
+            aluno: { select: { id: true, nomeCompleto: true, matricula: true } },
+          },
+        },
       },
     });
 
