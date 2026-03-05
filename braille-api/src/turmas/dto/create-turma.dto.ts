@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsUUID, IsOptional, IsArray, ValidateNested, IsEnum, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
-import { DiaSemana } from '@prisma/client';
+import { DiaSemana, TurmaStatus } from '@prisma/client';
+
 
 /** Um turno semanal da turma. horaInicio/horaFim em MINUTOS desde meia-noite.
  *  Ex: Segunda 14h00–16h00 → { dia: 'SEG', horaInicio: 840, horaFim: 960 }

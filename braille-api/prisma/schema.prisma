@@ -32,6 +32,14 @@ enum DiaSemana {
   DOM
 }
 
+enum TurmaStatus {
+  PREVISTA    // Turma criada, ainda não iniciou
+  ANDAMENTO   // Turma em andamento (default ao criar)
+  CONCLUIDA   // Turma encerrada com sucesso
+  CANCELADA   // Turma cancelada
+}
+
+
 
 enum TipoDeficiencia {
   CEGUEIRA_TOTAL
@@ -168,10 +176,12 @@ model Turma { // "Turma" serve perfeitamente para "Oficina"
   descricao        String?
   horario          String?  // Ex: "Seg e Qua - 14h as 16h" (campo legado — Fase 3 refatorará)
   capacidadeMaxima Int?
-  statusAtivo      Boolean  @default(true)
-  excluido         Boolean  @default(false) // true = oculto de todas as abas, dados preservados
+  statusAtivo      Boolean      @default(true)
+  excluido         Boolean      @default(false)
+  status           TurmaStatus  @default(ANDAMENTO) // Status acadêmico da turma
   criadoEm        DateTime @default(now())
   atualizadoEm    DateTime @updatedAt
+
 
   // Relacionamentos
   professorId       String
@@ -232,6 +242,10 @@ model Frequencia {
   dataAula    DateTime @default(now())
   presente    Boolean  @default(false)
   observacao  String?
+  fechado     Boolean  @default(false) // true = diário encerrado, só ADMIN pode reabrir
+  fechadoEm   DateTime?                // quando foi encerrado
+  fechadoPor  String?                  // userId de quem fechou
+
 
   // Relacionamentos
   alunoId     String

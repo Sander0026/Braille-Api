@@ -2,11 +2,18 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } f
 import { TurmasService } from './turmas.service';
 import { CreateTurmaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { QueryTurmaDto } from './dto/query-turma.dto';
+import { IsEnum } from 'class-validator';
+import { TurmaStatus } from '@prisma/client';
+
+class MudarStatusDto {
+  @IsEnum(TurmaStatus)
+  status: TurmaStatus;
+}
 
 @ApiTags('Turmas e Oficinas')
 @ApiBearerAuth()
@@ -39,6 +46,15 @@ export class TurmasController {
   @ApiOperation({ summary: 'Atualizar dados de uma turma' })
   update(@Param('id') id: string, @Body() updateTurmaDto: UpdateTurmaDto) {
     return this.turmasService.update(id, updateTurmaDto);
+  }
+
+  /** Muda o status acadêmico: PREVISTA → ANDAMENTO, ANDAMENTO → CONCLUIDA/CANCELADA, etc. */
+  @Patch(':id/status')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Mudar o status acadêmico da turma (PREVISTA/ANDAMENTO/CONCLUIDA/CANCELADA)' })
+  @ApiBody({ type: MudarStatusDto })
+  mudarStatus(@Param('id') id: string, @Body() body: MudarStatusDto) {
+    return this.turmasService.mudarStatus(id, body.status);
   }
 
   @Delete(':id')

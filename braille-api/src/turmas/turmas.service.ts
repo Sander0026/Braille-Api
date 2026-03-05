@@ -3,7 +3,16 @@ import { CreateTurmaDto, GradeHorariaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryTurmaDto } from './dto/query-turma.dto';
-import { DiaSemana } from '@prisma/client';
+import { DiaSemana, TurmaStatus } from '@prisma/client';
+
+// Transições permitidas de status
+const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
+  PREVISTA: ['ANDAMENTO', 'CANCELADA'],
+  ANDAMENTO: ['CONCLUIDA', 'CANCELADA'],
+  CONCLUIDA: [],
+  CANCELADA: ['PREVISTA'],  // Cancela → pode reativar como Prevista
+};
+
 
 // ─── Helpers de Colisão ──────────────────────────────────────────────────────
 
@@ -273,9 +282,6 @@ export class TurmasService {
 
   /**
    * Verifica se o PROFESSOR já leciona outra turma no mesmo dia e horário.
-   * @param professorId     ID do professor
-   * @param novosHorarios   Grade da nova turma
-   * @param turmaIdExcluir  ID da turma a ignorar (edição)
    */
   private async validarColisaoProfessor(
     professorId: string,
@@ -306,4 +312,37 @@ export class TurmasService {
       }
     }
   }
+
+  // ══ STATUS (Ciclo de Vida da Turma) ══════════════════════════════════════
+
+  /**
+   * Muda o status acadêmico da turma.
+   * PREVISTA → ANDAMENTO/CANCELADA; ANDAMENTO → CONCLUIDA/CANCELADA; CANCELADA → PREVISTA
+   */
+  async mudarStatus(id: string, novoStatus: TurmaStatus) {
+
+    const turma = await this.prisma.turma.findUnique({
+      where: { id },
+      select: { id: true, status: true, nome: true },
+    });
+    if (!turma) throw new NotFoundException('Turma não encontrada.');
+
+    const permitidos = TRANSICOES_VALIDAS[turma.status];
+    if (!permitidos.includes(novoStatus)) {
+      throw new BadRequestException(
+        `Transição inválida: "${turma.status}" → "${novoStatus}". ` +
+        `Permitidas: ${permitidos.length ? permitidos.join(', ') : 'nenhuma'}.`
+      );
+    }
+
+    // Sincroniza statusAtivo: só ANDAMENTO/PREVISTA mantêm a turma ativa
+    const statusAtivo = novoStatus === 'ANDAMENTO' || novoStatus === 'PREVISTA';
+
+    return this.prisma.turma.update({
+      where: { id },
+      data: { status: novoStatus, statusAtivo },
+      select: { id: true, nome: true, status: true, statusAtivo: true },
+    });
+  }
 }
+
