@@ -1,7 +1,8 @@
 import {
   Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query,
-  UseInterceptors, UploadedFile, BadRequestException
+  UseInterceptors, UploadedFile, BadRequestException, Res
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
@@ -57,6 +58,22 @@ export class BeneficiariesController {
   @ApiOperation({ summary: 'Listar todos os alunos (Com paginação e filtros)' })
   findAll(@Query() query: QueryBeneficiaryDto) {
     return this.beneficiariesService.findAll(query);
+  }
+
+  @Get('export')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Exportar lista de alunos filtrada como planilha Excel (.xlsx)' })
+  async exportXlsx(@Query() query: QueryBeneficiaryDto, @Res() res: Response) {
+    const buffer = await this.beneficiariesService.exportToXlsx(query);
+    const date = new Date().toISOString().slice(0, 10);
+    const status = query.inativos ? 'Inativos' : 'Ativos';
+    const filename = `Alunos_${status}_${date}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Get(':id')
