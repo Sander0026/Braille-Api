@@ -308,3 +308,42 @@ model ConteudoSecao {
 
   @@id([secao, chave])
 }
+
+// ─── FASE 5: Auditoria Central ─────────────────────────────────────────────
+
+enum AuditAcao {
+  CRIAR
+  ATUALIZAR
+  EXCLUIR
+  ARQUIVAR
+  RESTAURAR
+  LOGIN
+  LOGOUT
+  MATRICULAR
+  DESMATRICULAR
+  FECHAR_DIARIO
+  REABRIR_DIARIO
+  MUDAR_STATUS
+}
+
+/// Registro imutável de toda ação crítica no sistema.
+/// Nunca deve ser alterado ou deletado — apenas inserido.
+model AuditLog {
+  id         String     @id @default(cuid())
+  entidade   String     // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" …
+  registroId String?    // ID do registro afetado (null para LOGIN/LOGOUT)
+  acao       AuditAcao
+  autorId    String?    // ID do usuário que realizou a ação (null = sistema)
+  autorNome  String?    // Snapshot do nome — preserva histórico mesmo se usuário for excluído
+  autorRole  String?    // Snapshot do cargo (ADMIN | SECRETARIA | PROFESSOR …)
+  ip         String?    // IP da requisição
+  userAgent  String?    // Browser/client da requisição
+  oldValue   Json?      // Estado anterior do registro (para ATUALIZAR/EXCLUIR)
+  newValue   Json?      // Estado novo do registro (para CRIAR/ATUALIZAR)
+  criadoEm   DateTime   @default(now())
+
+  @@index([entidade, registroId])
+  @@index([autorId])
+  @@index([criadoEm])
+  @@index([acao])
+}
