@@ -106,6 +106,155 @@ export class BeneficiariesService {
     };
   }
 
+  // ── Exportação para Excel (.xlsx) ─────────────────────────────────
+  async exportToXlsx(query: QueryBeneficiaryDto): Promise<Buffer> {
+    const {
+      nome, inativos,
+      tipoDeficiencia, causaDeficiencia, prefAcessibilidade, precisaAcompanhante,
+      genero, estadoCivil, cidade, uf,
+      escolaridade, rendaFamiliar,
+      dataCadastroInicio, dataCadastroFim,
+    } = query;
+
+    // Reutiliza exatamente a mesma lógica WHERE, mas SEM paginação
+    const where: any = { excluido: false, statusAtivo: inativos ? false : true };
+    if (nome?.trim()) where.nomeCompleto = { contains: nome.trim(), mode: 'insensitive' };
+    if (tipoDeficiencia) where.tipoDeficiencia = tipoDeficiencia;
+    if (causaDeficiencia) where.causaDeficiencia = causaDeficiencia;
+    if (prefAcessibilidade) where.prefAcessibilidade = prefAcessibilidade;
+    if (precisaAcompanhante !== undefined) where.precisaAcompanhante = precisaAcompanhante;
+    if (genero?.trim()) where.genero = { contains: genero.trim(), mode: 'insensitive' };
+    if (estadoCivil?.trim()) where.estadoCivil = { contains: estadoCivil.trim(), mode: 'insensitive' };
+    if (cidade?.trim()) where.cidade = { contains: cidade.trim(), mode: 'insensitive' };
+    if (uf?.trim()) where.uf = { contains: uf.trim().toUpperCase(), mode: 'insensitive' };
+    if (escolaridade?.trim()) where.escolaridade = { contains: escolaridade.trim(), mode: 'insensitive' };
+    if (rendaFamiliar?.trim()) where.rendaFamiliar = { contains: rendaFamiliar.trim(), mode: 'insensitive' };
+    if (dataCadastroInicio || dataCadastroFim) {
+      where.criadoEm = {};
+      if (dataCadastroInicio) where.criadoEm.gte = new Date(dataCadastroInicio);
+      if (dataCadastroFim) {
+        const fim = new Date(dataCadastroFim);
+        fim.setHours(23, 59, 59, 999);
+        where.criadoEm.lte = fim;
+      }
+    }
+
+    // Busca todos sem limite
+    const alunos = await this.prisma.aluno.findMany({
+      where,
+      orderBy: { nomeCompleto: 'asc' },
+      select: {
+        nomeCompleto: true, cpfRg: true, dataNascimento: true, genero: true,
+        estadoCivil: true, telefoneContato: true, email: true,
+        cep: true, rua: true, numero: true, bairro: true, cidade: true, uf: true,
+        tipoDeficiencia: true, causaDeficiencia: true, prefAcessibilidade: true,
+        precisaAcompanhante: true, tecAssistivas: true,
+        escolaridade: true, profissao: true, rendaFamiliar: true, beneficiosGov: true,
+        statusAtivo: true, criadoEm: true,
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Instituto Louis Braille';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Alunos', {
+      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+    });
+
+    // Cabeçalho estilizado
+    const headers = [
+      { header: 'Nome Completo', key: 'nome', width: 35 },
+      { header: 'CPF / RG', key: 'cpf', width: 18 },
+      { header: 'Nascimento', key: 'nasc', width: 14 },
+      { header: 'Gênero', key: 'genero', width: 14 },
+      { header: 'Estado Civil', key: 'estCivil', width: 16 },
+      { header: 'Telefone', key: 'tel', width: 18 },
+      { header: 'E-mail', key: 'email', width: 28 },
+      { header: 'CEP', key: 'cep', width: 12 },
+      { header: 'Rua', key: 'rua', width: 30 },
+      { header: 'Nº', key: 'num', width: 7 },
+      { header: 'Bairro', key: 'bairro', width: 20 },
+      { header: 'Cidade', key: 'cidade', width: 20 },
+      { header: 'UF', key: 'uf', width: 6 },
+      { header: 'Tipo Deficiência', key: 'tipoDef', width: 20 },
+      { header: 'Causa', key: 'causa', width: 14 },
+      { header: 'Pref. Acessibilidade', key: 'pref', width: 22 },
+      { header: 'Acompanhante', key: 'acomp', width: 14 },
+      { header: 'Tec. Assistivas', key: 'tec', width: 24 },
+      { header: 'Escolaridade', key: 'esc', width: 22 },
+      { header: 'Profissão', key: 'prof', width: 20 },
+      { header: 'Renda Familiar', key: 'renda', width: 22 },
+      { header: 'Benefícios Gov.', key: 'benef', width: 22 },
+      { header: 'Status', key: 'status', width: 10 },
+      { header: 'Cadastrado em', key: 'criado', width: 16 },
+    ];
+
+    sheet.columns = headers.map(h => ({
+      header: h.header, key: h.key, width: h.width,
+      style: { font: { name: 'Arial', size: 10 } },
+    }));
+
+    // Estilo do cabeçalho (linha 1)
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        bottom: { style: 'medium', color: { argb: 'FF2563EB' } },
+      };
+    });
+    headerRow.height = 22;
+
+    const fmtData = (d: Date) => d ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '';
+
+    // Preenchimento dos dados
+    alunos.forEach((a, idx) => {
+      const row = sheet.addRow({
+        nome: a.nomeCompleto,
+        cpf: a.cpfRg,
+        nasc: fmtData(a.dataNascimento),
+        genero: a.genero ?? '',
+        estCivil: a.estadoCivil ?? '',
+        tel: a.telefoneContato ?? '',
+        email: a.email ?? '',
+        cep: a.cep ?? '',
+        rua: a.rua ?? '',
+        num: a.numero ?? '',
+        bairro: a.bairro ?? '',
+        cidade: a.cidade ?? '',
+        uf: a.uf ?? '',
+        tipoDef: a.tipoDeficiencia?.replace(/_/g, ' ') ?? '',
+        causa: a.causaDeficiencia?.replace(/_/g, ' ') ?? '',
+        pref: a.prefAcessibilidade?.replace(/_/g, ' ') ?? '',
+        acomp: a.precisaAcompanhante ? 'Sim' : 'Não',
+        tec: a.tecAssistivas ?? '',
+        esc: a.escolaridade ?? '',
+        prof: a.profissao ?? '',
+        renda: a.rendaFamiliar ?? '',
+        benef: a.beneficiosGov ?? '',
+        status: a.statusAtivo ? 'Ativo' : 'Inativo',
+        criado: fmtData(a.criadoEm),
+      });
+
+      // Zebra (alternado)
+      if (idx % 2 === 1) {
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F6FF' } };
+        });
+      }
+    });
+
+    // Congela a linha do cabeçalho
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return buffer as Buffer;
+  }
+
   async findOne(id: string) {
     const beneficiario = await this.prisma.aluno.findUnique({
       where: { id },
