@@ -22,6 +22,17 @@ enum MatriculaStatus {
   CANCELADA
 }
 
+enum DiaSemana {
+  SEG
+  TER
+  QUA
+  QUI
+  SEX
+  SAB
+  DOM
+}
+
+
 enum TipoDeficiencia {
   CEGUEIRA_TOTAL
   BAIXA_VISAO
@@ -167,10 +178,12 @@ model Turma { // "Turma" serve perfeitamente para "Oficina"
   professor         User               @relation(fields: [professorId], references: [id])
   matriculasOficina MatriculaOficina[]
   frequencias       Frequencia[]
+  gradeHoraria      GradeHoraria[]     // Turnos estruturados da turma
 
-  @@index([statusAtivo, excluido])   // listagem de turmas ativas/arquivadas
-  @@index([professorId])             // filtro de turmas por professor
+  @@index([statusAtivo, excluido])
+  @@index([professorId])
 }
+
 
 // ── Histórico de Matrículas (Vínculo Aluno <> Turma) ──────────────
 model MatriculaOficina {
@@ -188,10 +201,29 @@ model MatriculaOficina {
   turmaId     String
   turma       Turma  @relation(fields: [turmaId], references: [id])
 
-  @@unique([alunoId, turmaId])              // Aluno só pode ter 1 vínculo por turma
-  @@index([alunoId])                        // histórico do aluno
-  @@index([turmaId, status])               // alunos ativos por turma
+  @@unique([alunoId, turmaId])
+  @@index([alunoId])
+  @@index([turmaId, status])
 }
+
+// ── Grade Horária estruturada (Fase 3) ──────────────────────────
+// horaInicio e horaFim em MINUTOS desde meia-noite (ex: 840 = 14:00, 960 = 16:00)
+// Isso evita qualquer problema de timezone e torna a comparação de sobreposição trivial.
+model GradeHoraria {
+  id          String     @id @default(uuid())
+  dia         DiaSemana
+  horaInicio  Int        // Ex: 840 = 14h00
+  horaFim     Int        // Ex: 960 = 16h00
+  criadoEm    DateTime   @default(now())
+
+  turmaId     String
+  turma       Turma      @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+
+  @@unique([turmaId, dia])          // Uma turma só pode ter 1 horário por dia
+  @@index([turmaId])
+}
+
+
 
 
 // Tabela de Frequência (Chamada)
