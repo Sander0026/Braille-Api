@@ -9,16 +9,16 @@ import { Roles } from '../auth/roles.decorator';
 import { QueryUserDto } from './dto/query-user.dto';
 
 @ApiTags('Usuários do Sistema (Staff)')
-@ApiBearerAuth() // Cadeado do Swagger
-@UseGuards(AuthGuard, RolesGuard) // Aplica os guards de autenticação e autorização para todas as rotas desse controller
-@Roles('ADMIN') // Somente quem tem a role ADMIN pode acessar as rotas desse controller
-@UseGuards(AuthGuard) // Bloqueia quem não tem Token
-@Controller('users') // Rota base para usuários
+@ApiBearerAuth()
+@UseGuards(AuthGuard, RolesGuard)
+@Roles('ADMIN')
+@UseGuards(AuthGuard)
+@Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) { }
 
   @Post()
-  @ApiOperation({ summary: 'Cadastrar um novo usuário (Secretaria, Prof, etc)' })
+  @ApiOperation({ summary: 'Cadastrar novo funcionário. Username, senha padrão e matrícula são gerados automaticamente.' })
   create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
   }
@@ -35,20 +35,26 @@ export class UsersController {
     return this.usersService.update(id, updateUserDto);
   }
 
+  @Post(':id/reativar')
+  @ApiOperation({ summary: 'Reativar um funcionário inativo. Gera nova senha padrão e restaura o acesso.' })
+  reativar(@Param('id') id: string) {
+    return this.usersService.reativar(id);
+  }
+
   @Delete(':id')
-  @ApiOperation({ summary: 'Excluir um usuário do sistema' })
+  @ApiOperation({ summary: 'Inativar um usuário do sistema' })
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
 
   @Patch(':id/reset-password')
-  @ApiOperation({ summary: 'Forçar o reset de senha de um usuário através do painel Administrativo' })
+  @ApiOperation({ summary: 'Resetar a senha de um usuário (Admin)' })
   resetPassword(@Param('id') id: string) {
     return this.usersService.resetPassword(id);
   }
 
   @Patch(':id/restore')
-  @ApiOperation({ summary: 'Restaurar um usuário inativo ao sistema' })
+  @ApiOperation({ summary: 'Restaurar um usuário inativo' })
   restore(@Param('id') id: string) {
     return this.usersService.restore(id);
   }

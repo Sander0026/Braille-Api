@@ -1,38 +1,118 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { QueryUserDto } from './dto/query-user.dto';
+import { gerarMatriculaStaff } from '../common/helpers/matricula.helper';
+
+// Senha padrão definida pela instituição (deve ser trocada no primeiro login)
+const SENHA_PADRAO = 'Braille@123';
+
+/**
+ * Gera um username único no formato: primeiroNome.ultimoSobrenome + número (se colisão).
+ * Ex: "joao.silva" ou "joao.silva2"
+ */
+async function gerarUsername(nome: string, prisma: PrismaService): Promise<string> {
+  const partes = nome.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/);
+  const primeiro = partes[0].replace(/[^a-z0-9]/g, '');
+  const ultimo = partes.length > 1 ? partes[partes.length - 1].replace(/[^a-z0-9]/g, '') : '';
+  const base = ultimo ? `${primeiro}.${ultimo}` : primeiro;
+
+  let username = base;
+  let tentativa = 2;
+
+  while (await prisma.user.findFirst({ where: { username } })) {
+    username = `${base}${tentativa}`;
+    tentativa++;
+  }
+
+  return username;
+}
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) { }
 
   async create(createUserDto: CreateUserDto) {
-    const { nome, username, email, senha, role, fotoPerfil } = createUserDto;
+    const { nome, cpf, email, role, telefone, cep, rua, numero, complemento, bairro, cidade, uf } = createUserDto;
 
-    const userExists = await this.prisma.user.findUnique({ where: { username } });
-    if (userExists) {
-      throw new ConflictException('Este nome de usuário já está em uso.');
+    // 1. Verificar se CPF já existe
+    const userByCpf = await this.prisma.user.findUnique({ where: { cpf } });
+
+    if (userByCpf) {
+      if (!userByCpf.excluido && userByCpf.statusAtivo) {
+        throw new ConflictException('Já existe um funcionário ativo com este CPF.');
+      }
+      // CPF inativo/excluído — retorna sinal de reativação
+      return {
+        _reativacao: true,
+        id: userByCpf.id,
+        nome: userByCpf.nome,
+        username: userByCpf.username,
+        statusAtivo: userByCpf.statusAtivo,
+        excluido: userByCpf.excluido,
+        message: 'Funcionário inativo encontrado com este CPF.',
+      };
     }
 
-    const hashedPassword = await bcrypt.hash(senha, 10);
+    // 2. Gerar username único automaticamente
+    const username = await gerarUsername(nome, this.prisma);
 
+    // 3. Gerar matrícula institucional
+    const matricula = await gerarMatriculaStaff(this.prisma);
+
+    // 4. Usar senha padrão (deve ser trocada no primeiro login)
+    const hashedPassword = await bcrypt.hash(SENHA_PADRAO, 10);
+
+    // 5. Criar o usuário
     const user = await this.prisma.user.create({
       data: {
-        nome,
-        username,
-        email,
+        nome, username, email, cpf, matricula, role,
         senha: hashedPassword,
-        role,
-        fotoPerfil,
+        precisaTrocarSenha: true,
+        telefone, cep, rua, numero, complemento, bairro, cidade, uf,
       },
     });
 
-    // Retorna o usuário sem a senha
+    // Retorna o usuário sem a senha, mas com as credenciais geradas para o Admin anotar
     const { senha: _, ...result } = user;
-    return result;
+    return {
+      ...result,
+      _credenciais: {
+        username,
+        senha: SENHA_PADRAO,
+        instrucao: 'Entregue estas credenciais ao funcionário. A senha deve ser trocada no primeiro login.',
+      },
+    };
+  }
+
+  async reativar(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Gera nova senha padrão ao reativar
+    const hashedPassword = await bcrypt.hash(SENHA_PADRAO, 10);
+
+    const reativado = await this.prisma.user.update({
+      where: { id },
+      data: {
+        statusAtivo: true,
+        excluido: false,
+        senha: hashedPassword,
+        precisaTrocarSenha: true,
+      },
+      select: { id: true, nome: true, username: true, email: true, role: true, matricula: true },
+    });
+
+    return {
+      ...reativado,
+      _credenciais: {
+        username: reativado.username,
+        senha: SENHA_PADRAO,
+        instrucao: 'Funcionário reativado. Entregue as credenciais ao funcionário para o primeiro login.',
+      },
+    };
   }
 
   async findAll(query: QueryUserDto) {
@@ -40,8 +120,8 @@ export class UsersService {
     const skip = (page - 1) * limit;
 
     const whereCondicao: any = {
-      statusAtivo: !inativos, // Se inativos=true, busca os que estão com statusAtivo=false
-      excluido: false         // Nunca retorna usuários totalmente excluídos
+      statusAtivo: !inativos,
+      excluido: false,
     };
 
     if (nome) {
@@ -53,7 +133,11 @@ export class UsersService {
         where: whereCondicao,
         skip,
         take: limit,
-        select: { id: true, nome: true, username: true, email: true, role: true, fotoPerfil: true, precisaTrocarSenha: true },
+        select: {
+          id: true, nome: true, username: true, email: true, role: true,
+          fotoPerfil: true, precisaTrocarSenha: true, matricula: true,
+          cpf: true, telefone: true, cidade: true, uf: true,
+        },
         orderBy: { nome: 'asc' },
       }),
       this.prisma.user.count({ where: whereCondicao }),
@@ -75,58 +159,42 @@ export class UsersService {
 
     return this.prisma.user.update({
       where: { id },
-      data: {
-        ...updateUserDto,
-        role: updateUserDto.role as any,
+      data: { ...updateUserDto, role: updateUserDto.role as any },
+      select: {
+        id: true, nome: true, username: true, email: true, role: true,
+        fotoPerfil: true, matricula: true, cpf: true,
+        telefone: true, cep: true, rua: true, numero: true,
+        complemento: true, bairro: true, cidade: true, uf: true, atualizadoEm: true,
       },
-      select: { id: true, nome: true, username: true, email: true, role: true, fotoPerfil: true, atualizadoEm: true }
     });
   }
 
   async remove(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-
-    return this.prisma.user.update({
-      where: { id },
-      data: { statusAtivo: false },
-    });
-  }
-
-  async resetPassword(id: string) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('Usuário não encontrado.');
-
-    const defaultPasswordHashed = await bcrypt.hash('Ilbes@123', 10);
-
-    return this.prisma.user.update({
-      where: { id },
-      data: {
-        senha: defaultPasswordHashed,
-        precisaTrocarSenha: true,
-      },
-      select: { id: true, nome: true, email: true, role: true, atualizadoEm: true }
-    });
+    return this.prisma.user.update({ where: { id }, data: { statusAtivo: false } });
   }
 
   async restore(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+    return this.prisma.user.update({ where: { id }, data: { statusAtivo: true } });
+  }
 
+  async resetPassword(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    const defaultPasswordHashed = await bcrypt.hash(SENHA_PADRAO, 10);
     return this.prisma.user.update({
       where: { id },
-      data: { statusAtivo: true },
+      data: { senha: defaultPasswordHashed, precisaTrocarSenha: true },
+      select: { id: true, nome: true, email: true, role: true, atualizadoEm: true },
     });
   }
 
   async removeHard(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-
-    // Soft delete permanente.
-    return this.prisma.user.update({
-      where: { id },
-      data: { excluido: true },
-    });
+    return this.prisma.user.update({ where: { id }, data: { excluido: true } });
   }
 }

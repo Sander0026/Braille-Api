@@ -10,12 +10,25 @@ export class BeneficiariesService {
   constructor(private prisma: PrismaService) { }
 
   async create(createBeneficiaryDto: CreateBeneficiaryDto) {
-    const beneficiarioExiste = await this.prisma.aluno.findUnique({
+    const alunoExistente = await this.prisma.aluno.findUnique({
       where: { cpfRg: createBeneficiaryDto.cpfRg }
     });
 
-    if (beneficiarioExiste) {
-      throw new ConflictException('Já existe um beneficiário cadastrado com este CPF/RG.');
+    if (alunoExistente) {
+      // Se está ativo, bloqueia com conflito real
+      if (alunoExistente.statusAtivo && !alunoExistente.excluido) {
+        throw new ConflictException('Já existe um aluno ativo com este CPF/RG.');
+      }
+      // Se está inativo, retorna sinal para o frontend perguntar se quer reativar
+      return {
+        _reativacao: true,
+        id: alunoExistente.id,
+        nomeCompleto: alunoExistente.nomeCompleto,
+        matricula: alunoExistente.matricula,
+        statusAtivo: alunoExistente.statusAtivo,
+        excluido: alunoExistente.excluido,
+        message: 'Já existe um aluno inativo/arquivado com este CPF/RG.',
+      };
     }
 
     // Gera número de matrícula automaticamente
@@ -28,6 +41,20 @@ export class BeneficiariesService {
     };
 
     return this.prisma.aluno.create({ data: dadosParaSalvar });
+  }
+
+  async reactivate(id: string) {
+    const aluno = await this.prisma.aluno.findUnique({ where: { id } });
+    if (!aluno) throw new NotFoundException('Aluno não encontrado.');
+
+    return this.prisma.aluno.update({
+      where: { id },
+      data: { statusAtivo: true, excluido: false },
+      select: {
+        id: true, nomeCompleto: true, cpfRg: true, matricula: true,
+        statusAtivo: true, criadoEm: true,
+      },
+    });
   }
 
   async findAll(query: QueryBeneficiaryDto) {
