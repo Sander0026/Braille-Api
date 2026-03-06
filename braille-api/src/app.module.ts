@@ -41,6 +41,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
   ],
   controllers: [AppController],
   providers: [
+    AppService,
     // Guarda Global contra Força Bruta (Throttler)
     {
       provide: APP_GUARD,
