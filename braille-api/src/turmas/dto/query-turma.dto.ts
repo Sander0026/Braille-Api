@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, IsBoolean, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsBoolean, IsUUID, IsEnum } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
+import { TurmaStatus } from '@prisma/client';
 
 export class QueryTurmaDto {
   @ApiPropertyOptional({ default: 1 })
@@ -38,4 +39,9 @@ export class QueryTurmaDto {
   @IsUUID()
   @IsOptional()
   professorId?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar as turmas pelo ciclo de vida (PREVISTA, ANDAMENTO, CONCLUIDA, CANCELADA)' })
+  @IsEnum(TurmaStatus)
+  @IsOptional()
+  status?: TurmaStatus;
 }

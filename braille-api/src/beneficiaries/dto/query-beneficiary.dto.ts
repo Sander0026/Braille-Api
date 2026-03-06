@@ -18,7 +18,13 @@ export class QueryBeneficiaryDto {
   @IsOptional()
   limit?: number = 10;
 
-  @ApiPropertyOptional({ description: 'Filtrar por nome do aluno' })
+  @ApiPropertyOptional({ description: 'Busca por nome ou matrícula do aluno (texto livre)' })
+  @IsString()
+  @IsOptional()
+  busca?: string;
+
+  /** @deprecated use busca */
+  @ApiPropertyOptional({ description: 'Filtrar por nome do aluno (legado — use busca)' })
   @IsString()
   @IsOptional()
   nome?: string;

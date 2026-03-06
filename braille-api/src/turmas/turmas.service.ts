@@ -76,6 +76,7 @@ export class TurmasService {
 
     if (nome) whereCondicao.nome = { contains: nome, mode: 'insensitive' };
     if (professorId) whereCondicao.professorId = professorId;
+    if (query.status) whereCondicao.status = query.status;
 
     const [turmas, total] = await Promise.all([
       this.prisma.turma.findMany({
@@ -96,6 +97,20 @@ export class TurmasService {
       data: turmas,
       meta: { total, page, lastPage: Math.ceil(total / limit) },
     };
+  }
+
+  async findProfessoresAtivos() {
+    return this.prisma.user.findMany({
+      where: {
+        turmas: {
+          some: {
+            excluido: false,
+          },
+        },
+      },
+      select: { id: true, nome: true },
+      orderBy: { nome: 'asc' },
+    });
   }
 
   async update(id: string, updateTurmaDto: UpdateTurmaDto) {
