@@ -76,6 +76,7 @@ export class TurmasService {
 
     if (nome) whereCondicao.nome = { contains: nome, mode: 'insensitive' };
     if (professorId) whereCondicao.professorId = professorId;
+    if (query.status) whereCondicao.status = query.status;
 
     const [turmas, total] = await Promise.all([
       this.prisma.turma.findMany({
