@@ -30,7 +30,24 @@ async function main() {
     },
   });
 
+  // 3. Cadastra ou atualiza as configurações do Site Padrão (CMS)
+  const configsPadrao = [
+    { chave: 'siteNome', valor: 'Instituto Luiz Braille', tipo: 'texto', descricao: 'Nome exibido no portal principal' },
+    { chave: 'corPrimaria', valor: '#f5c800', tipo: 'cor', descricao: 'Amarelo ILBES Oficial' },
+    { chave: 'contatoEmail', valor: 'contato@braille.org', tipo: 'texto', descricao: 'E-mail para mensagens/formulário' },
+    { chave: 'contatoTelefone', valor: '(27) 3000-0000', tipo: 'texto', descricao: 'Telefone para exibição no rodapé' }
+  ];
+
+  for (const conf of configsPadrao) {
+    await prisma.siteConfig.upsert({
+      where: { chave: conf.chave },
+      update: {},
+      create: conf,
+    });
+  }
+
   console.log('🌱 Seed executado com sucesso! Usuário criado:', admin.username);
+  console.log('🎨 Configurações de layout carregadas ({ keys: ' + configsPadrao.length + ' })');
 }
 
 main()
