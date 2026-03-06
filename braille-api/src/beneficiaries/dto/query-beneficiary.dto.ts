@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, IsEnum, IsDateString, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsEnum, IsDateString, IsBoolean } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade } from '@prisma/client';
 
@@ -15,6 +15,7 @@ export class QueryBeneficiaryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   @IsOptional()
   limit?: number = 10;
 
