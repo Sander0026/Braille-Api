@@ -1,8 +1,30 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { PrismaService } from './prisma/prisma.service';
 
 @Injectable()
 export class AppService {
+  constructor(private readonly prisma: PrismaService) { }
+
   getHello(): string {
-    return 'Hello World!';
+    return 'Bem-vindo à API do Instituto Luiz Braille!';
+  }
+
+  async checkHealth() {
+    try {
+      // Tenta um ping cru e ultra-leve no banco de dados para aferir conexão
+      await this.prisma.$queryRaw`SELECT 1`;
+      return {
+        status: 'ok',
+        database: 'connected',
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      throw new HttpException({
+        status: 'error',
+        database: 'disconnected',
+        details: 'A conexão com o NeonDB falhou.',
+        timestamp: new Date().toISOString()
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 }
