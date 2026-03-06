@@ -35,6 +35,12 @@ export class TurmasController {
     return this.turmasService.findAll(query);
   }
 
+  @Get('professores-ativos')
+  @ApiOperation({ summary: 'Listar apenas professores vinculados a pelo menos uma turma ativa.' })
+  findProfessoresAtivos() {
+    return this.turmasService.findProfessoresAtivos();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Buscar uma turma específica e ver seus alunos' })
   findOne(@Param('id') id: string) {

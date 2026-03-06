@@ -99,6 +99,20 @@ export class TurmasService {
     };
   }
 
+  async findProfessoresAtivos() {
+    return this.prisma.user.findMany({
+      where: {
+        turmas: {
+          some: {
+            excluido: false,
+          },
+        },
+      },
+      select: { id: true, nome: true },
+      orderBy: { nome: 'asc' },
+    });
+  }
+
   async update(id: string, updateTurmaDto: UpdateTurmaDto) {
     const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
