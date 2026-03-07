@@ -27,18 +27,53 @@ export class AuthService {
       throw new UnauthorizedException('Nome de usuário ou senha incorretos');
     }
 
-    // 3. Se deu tudo certo, monta o crachá (Payload do JWT)
+    // 3. Se deu tudo certo, monta o crachá (Payload do JWT de 15 min)
     const payload = { sub: user.id, nome: user.nome, role: user.role, precisaTrocarSenha: user.precisaTrocarSenha };
+    const access_token = await this.jwtService.signAsync(payload);
 
-    // 4. Retorna o Token para o Frontend
+    // 4. Gera o "Visto Longo" Randomizado de (Refresh Token)
+    const randomRefreshString = require('crypto').randomBytes(40).toString('hex');
+    const hashedRefreshToken = await bcrypt.hash(randomRefreshString, 10);
+
+    // 5. Salva o Hash na Ficha do Servidor no Banco
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: hashedRefreshToken }
+    });
+
+    // 6. Retorna o Token Duplo para o Frontend (A String bruta vai via JSON)
     return {
-      access_token: await this.jwtService.signAsync(payload),
+      access_token,
+      refresh_token: randomRefreshString,
       usuario: {
+        id: user.id,
         nome: user.nome,
         role: user.role,
         precisaTrocarSenha: user.precisaTrocarSenha
       }
     };
+  }
+
+  async refreshToken(userId: string, rawRefreshToken: string) {
+    // 1. Pede os dados no Banco
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user || !user.refreshToken) {
+      throw new UnauthorizedException('Sua sessão expirou ou foi revogada administrativamente.');
+    }
+
+    // 2. Compara a Chave Mestra Limpa que veio do Angular com a Hasheada na Tabela
+    const isRefreshValid = await bcrypt.compare(rawRefreshToken, user.refreshToken);
+
+    if (!isRefreshValid) {
+      throw new UnauthorizedException('Refresh Token Inválido. Faça o login novamente.');
+    }
+
+    // 3. Retorna Passaporte Novo (15min)
+    const payload = { sub: user.id, nome: user.nome, role: user.role, precisaTrocarSenha: user.precisaTrocarSenha };
+    const access_token = await this.jwtService.signAsync(payload);
+
+    return { access_token };
   }
 
   async trocarSenha(userId: string, trocarSenhaDto: any) {
