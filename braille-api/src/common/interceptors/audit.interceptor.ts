@@ -112,6 +112,7 @@ export class AuditInterceptor implements NestInterceptor {
                         autorRole,
                         ip,
                         userAgent,
+                        oldValue: (req as any).auditOldValue ? this.sanitize((req as any).auditOldValue) : undefined,
                         newValue,
                     });
                 },
