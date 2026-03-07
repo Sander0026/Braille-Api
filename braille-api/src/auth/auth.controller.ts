@@ -1,6 +1,7 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Patch, Get, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from './auth.guard';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
@@ -19,6 +20,15 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Credenciais inválidas' })
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Renovar Token Expirado (Refresh Silencioso)' })
+  @ApiResponse({ status: 201, description: 'Sessão validada e o Novo Token de 15m Emitido' })
+  @ApiResponse({ status: 401, description: 'Refresh Token Inválido ou Sessão Encerrada pelo T.I.' })
+  refresh(@Body() refreshTokenDto: RefreshTokenDto) {
+    return this.authService.refreshToken(refreshTokenDto.userId, refreshTokenDto.refreshToken);
   }
 
   @ApiBearerAuth()
