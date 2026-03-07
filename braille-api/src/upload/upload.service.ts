@@ -23,7 +23,12 @@ export class UploadService {
       }
 
       const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'braille_instituicao' },
+        {
+          folder: 'braille_instituicao',
+          transformation: [
+            { fetch_format: 'auto', quality: 'auto' } // Otimização Cloudinary LCP Permanente (UX/Performance)
+          ]
+        },
         (error, result) => {
           if (error) return reject(error);
 
