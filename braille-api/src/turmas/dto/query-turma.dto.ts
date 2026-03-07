@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, IsBoolean, IsUUID, IsEnum } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsBoolean, IsUUID, IsEnum } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { TurmaStatus } from '@prisma/client';
 
@@ -15,6 +15,7 @@ export class QueryTurmaDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   @IsOptional()
   limit?: number = 10;
 

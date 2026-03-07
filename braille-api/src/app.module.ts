@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -20,6 +21,11 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Bloqueia abusos de rede: máximo de 30 chamadas por IP por minuto
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 30,
+    }]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -36,6 +42,11 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
   controllers: [AppController],
   providers: [
     AppService,
+    // Guarda Global contra Força Bruta (Throttler)
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     // Interceptor global de auditoria — captura mutações em todas as rotas
     {
       provide: APP_INTERCEPTOR,

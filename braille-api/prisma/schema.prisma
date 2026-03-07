@@ -33,13 +33,11 @@ enum DiaSemana {
 }
 
 enum TurmaStatus {
-  PREVISTA    // Turma criada, ainda não iniciou
-  ANDAMENTO   // Turma em andamento (default ao criar)
-  CONCLUIDA   // Turma encerrada com sucesso
-  CANCELADA   // Turma cancelada
+  PREVISTA // Turma criada, ainda não iniciou
+  ANDAMENTO // Turma em andamento (default ao criar)
+  CONCLUIDA // Turma encerrada com sucesso
+  CANCELADA // Turma cancelada
 }
-
-
 
 enum TipoDeficiencia {
   CEGUEIRA_TOTAL
@@ -72,52 +70,53 @@ enum CategoriaComunicado {
 // ================= MODELOS (Tabelas) =================
 
 model User {
-  id                 String             @id @default(uuid())
-  matricula          String?            @unique              // Ex: P20260001
+  id                 String  @id @default(uuid())
+  matricula          String? @unique // Ex: P20260001
   nome               String
-  username           String             @unique
-  email              String?            @unique
-  cpf                String?            @unique              // CPF do funcionário (unicidade)
+  username           String  @unique
+  email              String? @unique
+  cpf                String? @unique // CPF do funcionário (unicidade)
   senha              String
-  precisaTrocarSenha Boolean            @default(false)
-  role               Role               @default(PROFESSOR)
+  precisaTrocarSenha Boolean @default(false)
+  role               Role    @default(PROFESSOR)
   fotoPerfil         String?
 
   // Contato e Endereço (opcionais)
-  telefone           String?
-  cep                String?
-  rua                String?
-  numero             String?
-  complemento        String?
-  bairro             String?
-  cidade             String?
-  uf                 String?
+  telefone    String?
+  cep         String?
+  rua         String?
+  numero      String?
+  complemento String?
+  bairro      String?
+  cidade      String?
+  uf          String?
 
-  statusAtivo        Boolean            @default(true)
-  excluido           Boolean            @default(false)
-  criadoEm          DateTime           @default(now())
-  atualizadoEm      DateTime           @updatedAt
-  turmas             Turma[]
-  comunicados        Comunicado[]
+  statusAtivo  Boolean      @default(true)
+  excluido     Boolean      @default(false)
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+  turmas       Turma[]
+  comunicados  Comunicado[]
 
   @@index([statusAtivo, excluido])
   @@index([role])
   @@index([cpf])
+  @@index([email]) // acelera buscas caso existam muitos usuarios
 }
 
 model Aluno {
-  id                String   @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 0. Identificação Institucional
-  matricula         String?  @unique                         // Ex: 20260001 (gerado automaticamente)
+  matricula String? @unique // Ex: 20260001 (gerado automaticamente)
 
   // 1. Dados Identificadores
-  nomeCompleto      String
-  dataNascimento    DateTime
-  fotoPerfil        String?
-  cpfRg             String   @unique
-  genero            String?
-  estadoCivil       String?
+  nomeCompleto   String
+  dataNascimento DateTime
+  fotoPerfil     String?
+  cpfRg          String   @unique
+  genero         String?
+  estadoCivil    String?
 
   // 2. Contato e Localização
   cep               String?
@@ -133,18 +132,18 @@ model Aluno {
   contatoEmergencia String?
 
   // 3. Perfil da Deficiência
-  tipoDeficiencia   TipoDeficiencia?
-  causaDeficiencia  CausaDeficiencia?
-  idadeOcorrencia   String?
-  possuiLaudo       Boolean  @default(false)
-  laudoUrl          String?  // URL da imagem do laudo no Cloudinary
-  tecAssistivas     String?  // Ex: Bengala, cão-guia, NVDA
+  tipoDeficiencia  TipoDeficiencia?
+  causaDeficiencia CausaDeficiencia?
+  idadeOcorrencia  String?
+  possuiLaudo      Boolean           @default(false)
+  laudoUrl         String? // URL da imagem do laudo no Cloudinary
+  tecAssistivas    String? // Ex: Bengala, cão-guia, NVDA
 
   // 4. Situação Socioeconômica
-  escolaridade      String?
-  profissao         String?
-  rendaFamiliar     String?
-  beneficiosGov     String?  // Ex: BPC/LOAS
+  escolaridade       String?
+  profissao          String?
+  rendaFamiliar      String?
+  beneficiosGov      String? // Ex: BPC/LOAS
   composicaoFamiliar String?
 
   // 5. Saúde e Autonomia
@@ -153,63 +152,63 @@ model Aluno {
   outrasComorbidades  String?
 
   // 6. Preferências de Acessibilidade
-  prefAcessibilidade  PreferenciaAcessibilidade?
+  prefAcessibilidade PreferenciaAcessibilidade?
 
   // Controles do Sistema
-  statusAtivo       Boolean  @default(true)
-  excluido          Boolean  @default(false)
-  criadoEm          DateTime @default(now())
-  atualizadoEm      DateTime @updatedAt
+  statusAtivo  Boolean  @default(true)
+  excluido     Boolean  @default(false)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
 
   // Relacionamentos
   matriculasOficina MatriculaOficina[]
   frequencias       Frequencia[]
 
-  @@index([statusAtivo, excluido])   // listagem de alunos ativos/inativos
-  @@index([nomeCompleto])            // busca full-text por nome
-  @@index([matricula])               // busca por número de matrícula
+  @@index([statusAtivo, excluido]) // listagem de alunos ativos/inativos
+  @@index([nomeCompleto]) // busca full-text por nome
+  @@index([matricula]) // busca por número de matrícula
+  @@index([cpfRg]) // O(log N) para buscas numéricas frequentes
+  @@index([email]) // otimiza recuperação de contatos
 }
 
-model Turma { // "Turma" serve perfeitamente para "Oficina"
-  id               String   @id @default(uuid())
-  nome             String   // Ex: Oficina de Braille, Oficina de Cerâmica
+model Turma {
+  id               String      @id @default(uuid())
+  nome             String // Ex: Oficina de Braille, Oficina de Cerâmica
   descricao        String?
-  horario          String?  // Ex: "Seg e Qua - 14h as 16h" (campo legado — Fase 3 refatorará)
+  horario          String? // Ex: "Seg e Qua - 14h as 16h" (campo legado — Fase 3 refatorará)
   capacidadeMaxima Int?
-  statusAtivo      Boolean      @default(true)
-  excluido         Boolean      @default(false)
-  status           TurmaStatus  @default(ANDAMENTO) // Status acadêmico da turma
-  criadoEm        DateTime @default(now())
-  atualizadoEm    DateTime @updatedAt
-
+  statusAtivo      Boolean     @default(true)
+  excluido         Boolean     @default(false)
+  status           TurmaStatus @default(ANDAMENTO) // Status acadêmico da turma
+  criadoEm         DateTime    @default(now())
+  atualizadoEm     DateTime    @updatedAt
 
   // Relacionamentos
   professorId       String
   professor         User               @relation(fields: [professorId], references: [id])
   matriculasOficina MatriculaOficina[]
   frequencias       Frequencia[]
-  gradeHoraria      GradeHoraria[]     // Turnos estruturados da turma
+  gradeHoraria      GradeHoraria[] // Turnos estruturados da turma
 
   @@index([statusAtivo, excluido])
   @@index([professorId])
 }
 
-
 // ── Histórico de Matrículas (Vínculo Aluno <> Turma) ──────────────
 model MatriculaOficina {
-  id          String          @id @default(uuid())
-  status      MatriculaStatus @default(ATIVA)
-  dataEntrada DateTime        @default(now())
-  dataEncerramento DateTime?  // Preenchida ao Concluir/Evadir/Cancelar
-  observacao  String?         // Motivo do cancelamento/evasão etc.
-  criadoEm    DateTime        @default(now())
-  atualizadoEm DateTime       @updatedAt
+  id               String          @id @default(uuid())
+  status           MatriculaStatus @default(ATIVA)
+  dataEntrada      DateTime        @default(now())
+  dataEncerramento DateTime? // Preenchida ao Concluir/Evadir/Cancelar
+  observacao       String? // Motivo do cancelamento/evasão etc.
+  criadoEm         DateTime        @default(now())
+  atualizadoEm     DateTime        @updatedAt
 
   // Relacionamentos
-  alunoId     String
-  aluno       Aluno  @relation(fields: [alunoId], references: [id])
-  turmaId     String
-  turma       Turma  @relation(fields: [turmaId], references: [id])
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+  turmaId String
+  turma   Turma  @relation(fields: [turmaId], references: [id])
 
   @@unique([alunoId, turmaId])
   @@index([alunoId])
@@ -220,91 +219,86 @@ model MatriculaOficina {
 // horaInicio e horaFim em MINUTOS desde meia-noite (ex: 840 = 14:00, 960 = 16:00)
 // Isso evita qualquer problema de timezone e torna a comparação de sobreposição trivial.
 model GradeHoraria {
-  id          String     @id @default(uuid())
-  dia         DiaSemana
-  horaInicio  Int        // Ex: 840 = 14h00
-  horaFim     Int        // Ex: 960 = 16h00
-  criadoEm    DateTime   @default(now())
+  id         String    @id @default(uuid())
+  dia        DiaSemana
+  horaInicio Int // Ex: 840 = 14h00
+  horaFim    Int // Ex: 960 = 16h00
+  criadoEm   DateTime  @default(now())
 
-  turmaId     String
-  turma       Turma      @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  turmaId String
+  turma   Turma  @relation(fields: [turmaId], references: [id], onDelete: Cascade)
 
-  @@unique([turmaId, dia])          // Uma turma só pode ter 1 horário por dia
+  @@unique([turmaId, dia]) // Uma turma só pode ter 1 horário por dia
   @@index([turmaId])
 }
 
-
-
-
 // Tabela de Frequência (Chamada)
 model Frequencia {
-  id          String   @id @default(uuid())
-  dataAula    DateTime @default(now())
-  presente    Boolean  @default(false)
-  observacao  String?
-  fechado     Boolean  @default(false) // true = diário encerrado, só ADMIN pode reabrir
-  fechadoEm   DateTime?                // quando foi encerrado
-  fechadoPor  String?                  // userId de quem fechou
-
+  id         String    @id @default(uuid())
+  dataAula   DateTime  @default(now())
+  presente   Boolean   @default(false)
+  observacao String?
+  fechado    Boolean   @default(false) // true = diário encerrado, só ADMIN pode reabrir
+  fechadoEm  DateTime? // quando foi encerrado
+  fechadoPor String? // userId de quem fechou
 
   // Relacionamentos
-  alunoId     String
-  aluno       Aluno    @relation(fields: [alunoId], references: [id])
-  turmaId     String
-  turma       Turma    @relation(fields: [turmaId], references: [id])
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+  turmaId String
+  turma   Turma  @relation(fields: [turmaId], references: [id])
 
   @@unique([dataAula, alunoId, turmaId]) // Evita dar falta e presença pro mesmo aluno no mesmo dia
-  @@index([alunoId])                     // consultas de frequencia por aluno
-  @@index([turmaId, dataAula])           // consultas de chamada por turma e data
+  @@index([alunoId]) // consultas de frequencia por aluno
+  @@index([turmaId, dataAula]) // consultas de chamada por turma e data
 }
 
 model Comunicado {
-  id           String   @id @default(uuid())
+  id           String              @id @default(uuid())
   titulo       String
   conteudo     String
-  categoria    CategoriaComunicado @default(GERAL) 
+  categoria    CategoriaComunicado @default(GERAL)
   imagemCapa   String?
-  fixado       Boolean  @default(false)
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  fixado       Boolean             @default(false)
+  criadoEm     DateTime            @default(now())
+  atualizadoEm DateTime            @updatedAt
 
-  autorId      String
-  autor        User     @relation(fields: [autorId], references: [id])
+  autorId String
+  autor   User   @relation(fields: [autorId], references: [id])
 
-  @@index([categoria])                   // filtro por categoria
-  @@index([fixado, criadoEm])            // listagem com fixados primeiro
-  @@index([autorId])                     // comunicados por autor
+  @@index([categoria]) // filtro por categoria
+  @@index([fixado, criadoEm]) // listagem com fixados primeiro
+  @@index([autorId]) // comunicados por autor
 }
-
 
 // Tabela para o "Fale Conosco" do Site Público
 model MensagemContato {
-  id          String   @id @default(uuid())
-  nome        String
-  email       String?
-  telefone    String?
-  assunto     String
-  mensagem    String
-  lida        Boolean  @default(false)
-  criadoEm    DateTime @default(now())
+  id       String   @id @default(uuid())
+  nome     String
+  email    String?
+  telefone String?
+  assunto  String
+  mensagem String
+  lida     Boolean  @default(false)
+  criadoEm DateTime @default(now())
 }
 
 // ══════════════════ CMS — Configurações do Site ══════════════════
 
 // Configurações gerais: cor primária, logo, nome, slogan, stats
 model SiteConfig {
-  chave      String   @id              // "corPrimaria" | "logo" | "nomeInstituto" …
-  valor      String
-  tipo       String   @default("texto") // "texto" | "cor" | "url" | "numero"
-  descricao  String?
+  chave        String   @id // "corPrimaria" | "logo" | "nomeInstituto" …
+  valor        String
+  tipo         String   @default("texto") // "texto" | "cor" | "url" | "numero"
+  descricao    String?
   atualizadoEm DateTime @updatedAt
 }
 
 // Conteúdo editável das seções da home pública
 model ConteudoSecao {
-  secao    String  // "hero" | "missao" | "valores" | "oficinas" | "depoimentos" | "cta"
-  chave    String  // "titulo" | "descricao" | "card_0_titulo" …
-  valor    String  @db.Text
+  secao String // "hero" | "missao" | "valores" | "oficinas" | "depoimentos" | "cta"
+  chave String // "titulo" | "descricao" | "card_0_titulo" …
+  valor String @db.Text
 
   @@id([secao, chave])
 }
@@ -329,18 +323,18 @@ enum AuditAcao {
 /// Registro imutável de toda ação crítica no sistema.
 /// Nunca deve ser alterado ou deletado — apenas inserido.
 model AuditLog {
-  id         String     @id @default(cuid())
-  entidade   String     // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" …
-  registroId String?    // ID do registro afetado (null para LOGIN/LOGOUT)
+  id         String    @id @default(cuid())
+  entidade   String // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" …
+  registroId String? // ID do registro afetado (null para LOGIN/LOGOUT)
   acao       AuditAcao
-  autorId    String?    // ID do usuário que realizou a ação (null = sistema)
-  autorNome  String?    // Snapshot do nome — preserva histórico mesmo se usuário for excluído
-  autorRole  String?    // Snapshot do cargo (ADMIN | SECRETARIA | PROFESSOR …)
-  ip         String?    // IP da requisição
-  userAgent  String?    // Browser/client da requisição
-  oldValue   Json?      // Estado anterior do registro (para ATUALIZAR/EXCLUIR)
-  newValue   Json?      // Estado novo do registro (para CRIAR/ATUALIZAR)
-  criadoEm   DateTime   @default(now())
+  autorId    String? // ID do usuário que realizou a ação (null = sistema)
+  autorNome  String? // Snapshot do nome — preserva histórico mesmo se usuário for excluído
+  autorRole  String? // Snapshot do cargo (ADMIN | SECRETARIA | PROFESSOR …)
+  ip         String? // IP da requisição
+  userAgent  String? // Browser/client da requisição
+  oldValue   Json? // Estado anterior do registro (para ATUALIZAR/EXCLUIR)
+  newValue   Json? // Estado novo do registro (para CRIAR/ATUALIZAR)
+  criadoEm   DateTime  @default(now())
 
   @@index([entidade, registroId])
   @@index([autorId])

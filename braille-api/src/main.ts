@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,11 +13,14 @@ async function bootstrap() {
   app.use(json({ limit: '20mb' }));
   app.use(urlencoded({ extended: true, limit: '20mb' }));
 
+  // 0.1 Segurança de Headers HTTP (Esconde as marcas do Express/NestJS contra hackers)
+  app.use(helmet());
+
   // 1. Prefixo global — todas as rotas ficam em /api/*
   app.setGlobalPrefix('api');
 
   app.enableCors({
-    origin: true,          // Reflete a origem do pedido (aceita qualquer origem)
+    origin: ['http://localhost:4200', 'https://instituto-luizbraille.vercel.app'], // Apenas os apps oficiais podem consumir a API
     credentials: true,     // Permite cookies / Authorization headers
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
@@ -27,6 +32,9 @@ async function bootstrap() {
     forbidNonWhitelisted: true, // Dá erro se enviarem campos extras
     transform: true, // Converte tipos automaticamente (ex: string "1" vira number 1)
   }));
+
+  // 2.1. Interceptor Global de Erros de Banco (Esconde o Prisma do Frontend)
+  app.useGlobalFilters(new PrismaExceptionFilter());
 
   // 3. Configurar Documentação Swagger (em /docs para não conflitar com /api)
   const config = new DocumentBuilder()
