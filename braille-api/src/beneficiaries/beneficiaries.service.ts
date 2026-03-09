@@ -1,4 +1,5 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, Inject } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,7 +8,10 @@ import { gerarMatriculaAluno } from '../common/helpers/matricula.helper';
 
 @Injectable()
 export class BeneficiariesService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    @Inject(REQUEST) private request: any
+  ) { }
 
   async create(createBeneficiaryDto: CreateBeneficiaryDto) {
     const alunoExistente = await this.prisma.aluno.findUnique({
@@ -303,7 +307,9 @@ export class BeneficiariesService {
   }
 
   async update(id: string, updateBeneficiaryDto: UpdateBeneficiaryDto) {
-    await this.findOne(id);
+    const beneficiarioAntigo = await this.findOne(id);
+    (this.request as any).auditOldValue = beneficiarioAntigo;
+
     let dadosParaAtualizar: any = { ...updateBeneficiaryDto };
     if (updateBeneficiaryDto.dataNascimento) {
       dadosParaAtualizar.dataNascimento = new Date(updateBeneficiaryDto.dataNascimento);
@@ -312,17 +318,23 @@ export class BeneficiariesService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const beneficiarioAntigo = await this.findOne(id);
+    (this.request as any).auditOldValue = beneficiarioAntigo;
+
     return this.prisma.aluno.update({ where: { id }, data: { statusAtivo: false } });
   }
 
   async restore(id: string) {
-    await this.findOne(id);
+    const beneficiarioAntigo = await this.findOne(id);
+    (this.request as any).auditOldValue = beneficiarioAntigo;
+
     return this.prisma.aluno.update({ where: { id }, data: { statusAtivo: true } });
   }
 
   async removeHard(id: string) {
-    await this.findOne(id);
+    const beneficiarioAntigo = await this.findOne(id);
+    (this.request as any).auditOldValue = beneficiarioAntigo;
+
     return this.prisma.aluno.update({ where: { id }, data: { excluido: true } });
   }
 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CacheModule } from '@nestjs/cache-manager';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
@@ -21,6 +22,11 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Memória Cache (Fase 14) - Configurado Globalmente com vida natural padrão de 5 minutos (300.000ms)
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 300000, // Versões v5+ do Cache_Manager adotam Millisegundos
+    }),
     // Bloqueia abusos de rede: máximo de 30 chamadas por IP por minuto
     ThrottlerModule.forRoot([{
       ttl: 60000,

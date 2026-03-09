@@ -80,6 +80,7 @@ model User {
   precisaTrocarSenha Boolean @default(false)
   role               Role    @default(PROFESSOR)
   fotoPerfil         String?
+  refreshToken       String? // Visto longo de 7 dias para rotacionar sessões
 
   // Contato e Endereço (opcionais)
   telefone    String?
