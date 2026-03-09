@@ -74,8 +74,8 @@ export class AuditInterceptor implements NestInterceptor {
             path.includes('/audit-log') ||
             path.includes('/frequencias') ||
             path.includes('/turmas') ||
-            path.includes('/alunos') ||      // BeneficiariesController usa /alunos
-            path.includes('/usuarios') ||
+            path.includes('/beneficiaries') || // Controller name is 'beneficiaries'
+            path.includes('/users') ||         // Controller name is 'users'
             path.includes('/comunicados')
         ) return next.handle();
 
