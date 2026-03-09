@@ -1,13 +1,15 @@
 import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
+import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
-import { Role } from '@prisma/client';
+import { Role, AuditAcao } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class FrequenciasService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService, private auditService: AuditLogService) { }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -80,6 +82,82 @@ export class FrequenciasService {
     return this.prisma.frequencia.create({
       data: { ...dto, dataAula: dataConvertida },
     });
+  }
+
+  // ─── Lote Absoluto (Fase 23) ──────────────────────────────────────────────────
+  async salvarLote(
+    dto: CreateFrequenciaLoteDto,
+    userId: string,
+    userNome: string,
+    requesterRole: Role,
+    req: any,
+  ) {
+    const dataConvertida = new Date(dto.dataAula);
+
+    // Validações básicas (Bypass só pro Admin)
+    this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
+    await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
+
+    // Identifica o IP para o Log Manual
+    const ip = (req.headers && req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      ?? req.socket?.remoteAddress
+      ?? '';
+    const userAgent = req.headers ? req.headers['user-agent'] : '';
+
+    // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
+    await this.prisma.$transaction(async (tx) => {
+      for (const aluno of dto.alunos) {
+        let frequenciaFinal: any;
+        let acaoAudit: AuditAcao;
+        let oldValue: any = undefined;
+
+        if (aluno.frequenciaId) {
+          // Atualiza (PATCH)
+          const existente = await tx.frequencia.findUnique({
+            where: { id: aluno.frequenciaId },
+          });
+
+          if (!existente) {
+            throw new NotFoundException(`Frequência ${aluno.frequenciaId} não encontrada para o aluno ${aluno.alunoId}`);
+          }
+
+          oldValue = existente;
+          frequenciaFinal = await tx.frequencia.update({
+            where: { id: aluno.frequenciaId },
+            data: { presente: aluno.presente },
+          });
+          acaoAudit = AuditAcao.ATUALIZAR;
+        } else {
+          // Cria (POST)
+          frequenciaFinal = await tx.frequencia.create({
+            data: {
+              turmaId: dto.turmaId,
+              alunoId: aluno.alunoId,
+              dataAula: dataConvertida,
+              presente: aluno.presente,
+            },
+          });
+          acaoAudit = AuditAcao.CRIAR;
+        }
+
+        // Toca o Serviço de Auditoria Silenciosamente (Nenhum Log Bolha / Array)
+        // O AuditLogService é Fire-and-forget, então chamamos assincronamente sem estourar a transação
+        this.auditService.registrar({
+          entidade: 'Frequencia',
+          registroId: frequenciaFinal.id,
+          acao: acaoAudit,
+          autorId: userId,
+          autorNome: userNome,
+          autorRole: requesterRole,
+          ip,
+          userAgent,
+          oldValue,
+          newValue: frequenciaFinal,
+        });
+      }
+    });
+
+    return { sucesso: true, processados: dto.alunos.length, mensagem: 'Operação de lote efetivada com integridade atômica.' };
   }
 
   async findAll(query: QueryFrequenciaDto) {
