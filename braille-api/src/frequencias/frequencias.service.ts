@@ -106,49 +106,38 @@ export class FrequenciasService {
 
     // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
     try {
+      const auditPayloads: any[] = [];
+
       await this.prisma.$transaction(async (tx) => {
+        // Pré-carrega registros existentes para evitar buscas redundantes (O(1) query vs O(N) queries)
+        const alunosIds = dto.alunos.map(a => a.alunoId);
+        const existentesDb = await tx.frequencia.findMany({
+          where: {
+            turmaId: dto.turmaId,
+            dataAula: dataConvertida,
+            alunoId: { in: alunosIds },
+          },
+        });
+        const mapaExistentes = new Map(existentesDb.map(f => [f.alunoId, f]));
+
         for (const aluno of dto.alunos) {
           let frequenciaFinal: any;
           let acaoAudit: AuditAcao;
           let oldValue: any = undefined;
 
-          if (aluno.frequenciaId) {
-            // Atualiza (PATCH)
-            const existente = await tx.frequencia.findUnique({
-              where: { id: aluno.frequenciaId },
-            });
+          // Preferência para a busca no banco pré-carregada via turmaId + dataAula + alunoId
+          const existente = mapaExistentes.get(aluno.alunoId);
 
-            if (!existente) {
-              // Se foi excluída por outro meio, silenciosamente pule ou force a criação
-              frequenciaFinal = await tx.frequencia.create({
-                data: {
-                  turmaId: dto.turmaId,
-                  alunoId: aluno.alunoId,
-                  dataAula: dataConvertida,
-                  presente: aluno.presente,
-                },
-              });
-              acaoAudit = AuditAcao.CRIAR;
-            } else {
-              oldValue = existente;
-              frequenciaFinal = await tx.frequencia.update({
-                where: { id: aluno.frequenciaId },
-                data: { presente: aluno.presente },
-              });
-              acaoAudit = AuditAcao.ATUALIZAR;
-            }
+          if (existente) {
+            oldValue = existente;
+            frequenciaFinal = await tx.frequencia.update({
+              where: { id: existente.id },
+              data: { presente: aluno.presente },
+            });
+            acaoAudit = AuditAcao.ATUALIZAR;
           } else {
-            // Usa upsert blindado para evitar P2002 Unique Constraint num cenário sem ID Front
-            frequenciaFinal = await tx.frequencia.upsert({
-              where: {
-                dataAula_alunoId_turmaId: {
-                  dataAula: dataConvertida,
-                  alunoId: aluno.alunoId,
-                  turmaId: dto.turmaId,
-                }
-              },
-              update: { presente: aluno.presente },
-              create: {
+            frequenciaFinal = await tx.frequencia.create({
+              data: {
                 turmaId: dto.turmaId,
                 alunoId: aluno.alunoId,
                 dataAula: dataConvertida,
@@ -158,8 +147,8 @@ export class FrequenciasService {
             acaoAudit = AuditAcao.CRIAR;
           }
 
-          // Toca o Serviço de Auditoria Silenciosamente
-          this.auditService.registrar({
+          // Coleta o log em vez de disparar concorrência pesada no meio da transação
+          auditPayloads.push({
             entidade: 'Frequencia',
             registroId: frequenciaFinal.id,
             acao: acaoAudit,
@@ -170,7 +159,17 @@ export class FrequenciasService {
             userAgent,
             oldValue,
             newValue: frequenciaFinal,
-          }).catch(err => console.error('Erro silencioso de Auditoria:', err));
+          });
+        }
+      }, {
+        maxWait: 10000,
+        timeout: 30000, // Previne "Transaction API error: Transaction not found."
+      });
+
+      // Dispara a auditoria de forma sequencial, no background, para não exaurir o Pool de Conexões do Prisma nem a transação.
+      Promise.resolve().then(async () => {
+        for (const payload of auditPayloads) {
+          await this.auditService.registrar(payload).catch(() => { });
         }
       });
 
