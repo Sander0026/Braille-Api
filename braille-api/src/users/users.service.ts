@@ -133,6 +133,15 @@ export class UsersService {
       select: { id: true, nome: true, username: true, email: true, role: true, matricula: true },
     });
 
+    this.auditService.registrar({
+      entidade: 'User',
+      registroId: id,
+      acao: AuditAcao.RESTAURAR,
+      ...this.getAutor(),
+      oldValue: { statusAtivo: user.statusAtivo, excluido: user.excluido, precisaTrocarSenha: user.precisaTrocarSenha },
+      newValue: { statusAtivo: true, excluido: false, precisaTrocarSenha: true, mensagem: 'Senha resetada e usuário reativado.' },
+    });
+
     return {
       ...reativado,
       _credenciais: {
@@ -228,23 +237,56 @@ export class UsersService {
   async restore(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return this.prisma.user.update({ where: { id }, data: { statusAtivo: true } });
+    const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: true } });
+
+    this.auditService.registrar({
+      entidade: 'User',
+      registroId: id,
+      acao: AuditAcao.RESTAURAR,
+      ...this.getAutor(),
+      oldValue: { statusAtivo: false },
+      newValue: { statusAtivo: true },
+    });
+
+    return result;
   }
 
   async resetPassword(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     const defaultPasswordHashed = await bcrypt.hash(SENHA_PADRAO, 10);
-    return this.prisma.user.update({
+    const result = await this.prisma.user.update({
       where: { id },
       data: { senha: defaultPasswordHashed, precisaTrocarSenha: true },
       select: { id: true, nome: true, email: true, role: true, atualizadoEm: true },
     });
+
+    this.auditService.registrar({
+      entidade: 'User',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      ...this.getAutor(),
+      oldValue: { precisaTrocarSenha: user.precisaTrocarSenha },
+      newValue: { precisaTrocarSenha: true, mensagem: 'Senha resetada pelo administrador com senha padrão.' },
+    });
+
+    return result;
   }
 
   async removeHard(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return this.prisma.user.update({ where: { id }, data: { excluido: true } });
+    const result = await this.prisma.user.update({ where: { id }, data: { excluido: true } });
+
+    this.auditService.registrar({
+      entidade: 'User',
+      registroId: id,
+      acao: AuditAcao.ARQUIVAR,
+      ...this.getAutor(),
+      oldValue: { excluido: false },
+      newValue: { excluido: true },
+    });
+
+    return result;
   }
 }
