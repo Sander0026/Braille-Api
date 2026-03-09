@@ -112,43 +112,34 @@ export class FrequenciasService {
           let acaoAudit: AuditAcao;
           let oldValue: any = undefined;
 
+          let existente;
+
           if (aluno.frequenciaId) {
-            // Atualiza (PATCH)
-            const existente = await tx.frequencia.findUnique({
+            // Se o App já enviou a Pk
+            existente = await tx.frequencia.findUnique({
               where: { id: aluno.frequenciaId },
             });
-
-            if (!existente) {
-              // Se foi excluída por outro meio, silenciosamente pule ou force a criação
-              frequenciaFinal = await tx.frequencia.create({
-                data: {
-                  turmaId: dto.turmaId,
-                  alunoId: aluno.alunoId,
-                  dataAula: dataConvertida,
-                  presente: aluno.presente,
-                },
-              });
-              acaoAudit = AuditAcao.CRIAR;
-            } else {
-              oldValue = existente;
-              frequenciaFinal = await tx.frequencia.update({
-                where: { id: aluno.frequenciaId },
-                data: { presente: aluno.presente },
-              });
-              acaoAudit = AuditAcao.ATUALIZAR;
-            }
           } else {
-            // Usa upsert blindado para evitar P2002 Unique Constraint num cenário sem ID Front
-            frequenciaFinal = await tx.frequencia.upsert({
+            // Se o App não sabe se já existe, busca pela composição (sem depender do ON CONFLICT SQL)
+            existente = await tx.frequencia.findFirst({
               where: {
-                dataAula_alunoId_turmaId: {
-                  dataAula: dataConvertida,
-                  alunoId: aluno.alunoId,
-                  turmaId: dto.turmaId,
-                }
-              },
-              update: { presente: aluno.presente },
-              create: {
+                dataAula: dataConvertida,
+                alunoId: aluno.alunoId,
+                turmaId: dto.turmaId,
+              }
+            });
+          }
+
+          if (existente) {
+            oldValue = existente;
+            frequenciaFinal = await tx.frequencia.update({
+              where: { id: existente.id },
+              data: { presente: aluno.presente },
+            });
+            acaoAudit = AuditAcao.ATUALIZAR;
+          } else {
+            frequenciaFinal = await tx.frequencia.create({
+              data: {
                 turmaId: dto.turmaId,
                 alunoId: aluno.alunoId,
                 dataAula: dataConvertida,
