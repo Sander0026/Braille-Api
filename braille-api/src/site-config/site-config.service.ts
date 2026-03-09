@@ -1,5 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { REQUEST } from '@nestjs/core';
+import { AuditAcao, Role } from '@prisma/client';
 
 // Valores padrão usados como fallback quando nao ha registro no banco
 export const SITE_CONFIG_DEFAULTS: Record<string, string> = {
@@ -62,7 +65,21 @@ export const SECAO_DEFAULTS: Record<string, Record<string, string>> = {
 
 @Injectable()
 export class SiteConfigService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private auditService: AuditLogService,
+        @Inject(REQUEST) private request: any,
+    ) { }
+
+    private getAutor() {
+        return {
+            autorId: this.request?.user?.sub,
+            autorNome: this.request?.user?.nome,
+            autorRole: this.request?.user?.role as Role,
+            ip: (this.request?.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request?.socket?.remoteAddress,
+            userAgent: this.request?.headers?.['user-agent'],
+        };
+    }
 
     // ── Configs gerais ──────────────────────────────────────
     async getAll(): Promise<Record<string, string>> {
@@ -73,7 +90,9 @@ export class SiteConfigService {
     }
 
     async updateMany(dados: Record<string, string>): Promise<void> {
+        const oldState = await this.getAll();
         const chaves = Object.keys(dados);
+
         // Apaga as chaves que serão sobrescritas e recria — muito mais rápido
         // do que N upserts sequenciais dentro de uma transaction
         await this.prisma.$transaction([
@@ -82,6 +101,17 @@ export class SiteConfigService {
                 data: Object.entries(dados).map(([chave, valor]) => ({ chave, valor })),
             }),
         ]);
+
+        const newState = await this.getAll();
+
+        this.auditService.registrar({
+            entidade: 'ConteudoSite',
+            registroId: 'ConfigGeral',
+            acao: AuditAcao.ATUALIZAR,
+            ...this.getAutor(),
+            oldValue: oldState,
+            newValue: newState,
+        });
     }
 
     // ── Conteúdo das seções ─────────────────────────────────
@@ -107,6 +137,8 @@ export class SiteConfigService {
     }
 
     async updateSecao(secao: string, dados: Record<string, string>): Promise<void> {
+        const oldState = await this.getSecao(secao);
+
         // deleteMany + createMany: 2 operações vs N upserts sequenciais
         // Reduz o tempo de resposta de ~1-2s para ~50-100ms
         await this.prisma.$transaction([
@@ -115,5 +147,16 @@ export class SiteConfigService {
                 data: Object.entries(dados).map(([chave, valor]) => ({ secao, chave, valor })),
             }),
         ]);
+
+        const newState = await this.getSecao(secao);
+
+        this.auditService.registrar({
+            entidade: 'ConteudoSecao',
+            registroId: secao,
+            acao: AuditAcao.ATUALIZAR,
+            ...this.getAutor(),
+            oldValue: oldState,
+            newValue: newState,
+        });
     }
 }
