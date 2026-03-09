@@ -67,10 +67,12 @@ export class AuditInterceptor implements NestInterceptor {
         const path = req.path.toLowerCase();
 
         // Ignorar rotas de saúde / swagger / a própria rota de auditoria (evita recursão)
+        // Ignorar também frequencias/lote para não gerar 1 log Array genérico (Lote audita por conta própria)
         if (
             path.startsWith('/api-docs') ||
             path === '/health' ||
-            path.includes('/audit-log')
+            path.includes('/audit-log') ||
+            path.includes('/frequencias/lote')
         ) return next.handle();
 
 
