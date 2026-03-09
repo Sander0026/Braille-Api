@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Inject } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
@@ -6,10 +6,25 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
 import { Role, AuditAcao } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class FrequenciasService {
-  constructor(private prisma: PrismaService, private auditService: AuditLogService) { }
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditLogService,
+    @Inject(REQUEST) private request: any,
+  ) { }
+
+  private getAutor() {
+    return {
+      autorId: this.request.user?.sub,
+      autorNome: this.request.user?.nome,
+      autorRole: this.request.user?.role as Role,
+      ip: (this.request.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request.socket?.remoteAddress,
+      userAgent: this.request.headers?.['user-agent'],
+    };
+  }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -90,7 +105,6 @@ export class FrequenciasService {
     userId: string,
     userNome: string,
     requesterRole: Role,
-    req: any,
   ) {
     const dataConvertida = new Date(dto.dataAula);
 
@@ -98,11 +112,8 @@ export class FrequenciasService {
     this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
     await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
 
-    // Identifica o IP para o Log Manual
-    const ip = (req.headers && req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-      ?? req.socket?.remoteAddress
-      ?? '';
-    const userAgent = req.headers ? req.headers['user-agent'] : '';
+    // Identifica o IP para o Log Manual (migrado pro getAutor centralizado)
+    const autorContext = this.getAutor();
 
     // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
     try {
@@ -152,11 +163,7 @@ export class FrequenciasService {
             entidade: 'Frequencia',
             registroId: frequenciaFinal.id,
             acao: acaoAudit,
-            autorId: userId,
-            autorNome: userNome,
-            autorRole: requesterRole,
-            ip,
-            userAgent,
+            ...autorContext, // Usa a extração global unificada
             oldValue,
             newValue: frequenciaFinal,
           });

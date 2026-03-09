@@ -24,7 +24,7 @@ export class FrequenciasController {
   @Post('lote')
   @ApiOperation({ summary: 'Registrar ou atualizar chamada em lote (múltiplos alunos da mesma turma e data, via transação isolada)' })
   salvarLote(@Body() dto: CreateFrequenciaLoteDto, @Req() req: any) {
-    return this.frequenciasService.salvarLote(dto, req.user?.sub, req.user?.nome, req.user?.role as Role, req);
+    return this.frequenciasService.salvarLote(dto, req.user?.sub, req.user?.nome, req.user?.role as Role);
   }
 
   @Get()

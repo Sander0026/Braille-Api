@@ -5,11 +5,14 @@ import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
 import { gerarMatriculaAluno } from '../common/helpers/matricula.helper';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAcao } from '@prisma/client';
 
 @Injectable()
 export class BeneficiariesService {
   constructor(
     private prisma: PrismaService,
+    private auditService: AuditLogService,
     @Inject(REQUEST) private request: any
   ) { }
 
@@ -44,14 +47,23 @@ export class BeneficiariesService {
       dataNascimento: new Date(createBeneficiaryDto.dataNascimento)
     };
 
-    return this.prisma.aluno.create({ data: dadosParaSalvar });
+    const alunoNovo = await this.prisma.aluno.create({ data: dadosParaSalvar });
+
+    this.auditService.registrar({
+      entidade: 'Aluno',
+      registroId: alunoNovo.id,
+      acao: AuditAcao.CRIAR,
+      newValue: alunoNovo,
+    });
+
+    return alunoNovo;
   }
 
   async reactivate(id: string) {
     const aluno = await this.prisma.aluno.findUnique({ where: { id } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
-    return this.prisma.aluno.update({
+    const result = await this.prisma.aluno.update({
       where: { id },
       data: { statusAtivo: true, excluido: false },
       select: {
@@ -59,6 +71,16 @@ export class BeneficiariesService {
         statusAtivo: true, criadoEm: true,
       },
     });
+
+    this.auditService.registrar({
+      entidade: 'Aluno',
+      registroId: id,
+      acao: AuditAcao.RESTAURAR,
+      oldValue: { statusAtivo: false },
+      newValue: { statusAtivo: true },
+    });
+
+    return result;
   }
 
   async findAll(query: QueryBeneficiaryDto) {
@@ -314,28 +336,62 @@ export class BeneficiariesService {
     if (updateBeneficiaryDto.dataNascimento) {
       dadosParaAtualizar.dataNascimento = new Date(updateBeneficiaryDto.dataNascimento);
     }
-    return this.prisma.aluno.update({ where: { id }, data: dadosParaAtualizar });
+    const alunoAtualizado = await this.prisma.aluno.update({ where: { id }, data: dadosParaAtualizar });
+
+    this.auditService.registrar({
+      entidade: 'Aluno',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      oldValue: beneficiarioAntigo,
+      newValue: alunoAtualizado,
+    });
+
+    return alunoAtualizado;
   }
 
   async remove(id: string) {
     const beneficiarioAntigo = await this.findOne(id);
     (this.request as any).auditOldValue = beneficiarioAntigo;
 
-    return this.prisma.aluno.update({ where: { id }, data: { statusAtivo: false } });
+    const result = await this.prisma.aluno.update({ where: { id }, data: { statusAtivo: false } });
+    this.auditService.registrar({
+      entidade: 'Aluno',
+      registroId: id,
+      acao: AuditAcao.EXCLUIR,
+      oldValue: { statusAtivo: true },
+      newValue: { statusAtivo: false },
+    });
+    return result;
   }
 
   async restore(id: string) {
     const beneficiarioAntigo = await this.findOne(id);
     (this.request as any).auditOldValue = beneficiarioAntigo;
 
-    return this.prisma.aluno.update({ where: { id }, data: { statusAtivo: true } });
+    const result = await this.prisma.aluno.update({ where: { id }, data: { statusAtivo: true } });
+    this.auditService.registrar({
+      entidade: 'Aluno',
+      registroId: id,
+      acao: AuditAcao.RESTAURAR,
+      oldValue: { statusAtivo: false },
+      newValue: { statusAtivo: true },
+    });
+    return result;
   }
 
   async removeHard(id: string) {
     const beneficiarioAntigo = await this.findOne(id);
     (this.request as any).auditOldValue = beneficiarioAntigo;
 
-    return this.prisma.aluno.update({ where: { id }, data: { excluido: true } });
+    const result = await this.prisma.aluno.update({ where: { id }, data: { excluido: true } });
+    this.auditService.registrar({
+      entidade: 'Aluno',
+      registroId: id,
+      acao: AuditAcao.ARQUIVAR,
+      oldValue: { excluido: false },
+      newValue: { excluido: true },
+    });
+    return result;
   }
 
   // ── Importação via Planilha (XLSX / CSV) ────────────────────────────
@@ -507,7 +563,34 @@ export class BeneficiariesService {
 
     // ── Inserir em lote ──────────────────────────────────────
     if (paraInserir.length > 0) {
-      await this.prisma.aluno.createMany({ data: paraInserir, skipDuplicates: true });
+      // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
+      // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
+
+      const auditPayloads: any[] = [];
+      const inseridos: any[] = [];
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const aluno of paraInserir) {
+          // Garante a matrícula gerada para a pessoa importada
+          aluno.matricula = await gerarMatriculaAluno(tx as any);
+          const criacao = await tx.aluno.create({ data: aluno });
+          inseridos.push(criacao);
+
+          auditPayloads.push({
+            entidade: 'Aluno',
+            registroId: criacao.id,
+            acao: AuditAcao.CRIAR,
+            newValue: criacao,
+          });
+        }
+      });
+
+      // Dispara a auditoria sequencial no background
+      Promise.resolve().then(async () => {
+        for (const payload of auditPayloads) {
+          await this.auditService.registrar(payload).catch(() => { });
+        }
+      });
     }
 
     return { importados: paraInserir.length, ignorados, erros };
