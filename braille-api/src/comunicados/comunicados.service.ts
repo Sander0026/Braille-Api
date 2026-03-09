@@ -1,11 +1,28 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
 import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAcao, Role } from '@prisma/client';
+import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class ComunicadosService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditLogService,
+    @Inject(REQUEST) private request: any,
+  ) { }
+
+  private getAutor() {
+    return {
+      autorId: this.request.user?.sub,
+      autorNome: this.request.user?.nome,
+      autorRole: this.request.user?.role as Role,
+      ip: (this.request.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request.socket?.remoteAddress,
+      userAgent: this.request.headers?.['user-agent'],
+    };
+  }
 
   async create(createComunicadoDto: CreateComunicadoDto) {
     const admin = await this.prisma.user.findFirst({ where: { username: 'admin' } });
@@ -14,7 +31,7 @@ export class ComunicadosService {
       throw new NotFoundException('Administrador principal não encontrado para assinar o comunicado.');
     }
 
-    return this.prisma.comunicado.create({
+    const comunicadoNovo = await this.prisma.comunicado.create({
       data: {
         titulo: createComunicadoDto.titulo,
         conteudo: createComunicadoDto.conteudo,
@@ -24,6 +41,16 @@ export class ComunicadosService {
         imagemCapa: createComunicadoDto.imagemCapa,
       },
     });
+
+    this.auditService.registrar({
+      entidade: 'Comunicado',
+      registroId: comunicadoNovo.id,
+      acao: AuditAcao.CRIAR,
+      ...this.getAutor(),
+      newValue: comunicadoNovo,
+    });
+
+    return comunicadoNovo;
   }
 
   async findAll(query: import('./dto/query-comunicado.dto').QueryComunicadoDto = {}) {
@@ -72,9 +99,9 @@ export class ComunicadosService {
   }
 
   async update(id: string, updateComunicadoDto: UpdateComunicadoDto) {
-    await this.findOne(id);
+    const comunicadoAntigo = await this.findOne(id);
 
-    return this.prisma.comunicado.update({
+    const comunicadoAtualizado = await this.prisma.comunicado.update({
       where: { id },
       data: {
         titulo: updateComunicadoDto.titulo,
@@ -84,10 +111,31 @@ export class ComunicadosService {
         imagemCapa: updateComunicadoDto.imagemCapa,
       }
     });
+
+    this.auditService.registrar({
+      entidade: 'Comunicado',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      ...this.getAutor(),
+      oldValue: Object.fromEntries(Object.entries(comunicadoAntigo).filter(([k]) => k !== 'autor')), // Remove nested
+      newValue: comunicadoAtualizado,
+    });
+
+    return comunicadoAtualizado;
   }
 
   async remove(id: string) {
-    await this.findOne(id);
-    return this.prisma.comunicado.delete({ where: { id } });
+    const comunicado = await this.findOne(id);
+    const result = await this.prisma.comunicado.delete({ where: { id } });
+
+    this.auditService.registrar({
+      entidade: 'Comunicado',
+      registroId: id,
+      acao: AuditAcao.EXCLUIR,
+      ...this.getAutor(),
+      oldValue: Object.fromEntries(Object.entries(comunicado).filter(([k]) => k !== 'autor')),
+    });
+
+    return result;
   }
 }

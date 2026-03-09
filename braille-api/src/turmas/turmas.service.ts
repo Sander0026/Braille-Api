@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
 import { CreateTurmaDto, GradeHorariaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryTurmaDto } from './dto/query-turma.dto';
-import { DiaSemana, TurmaStatus } from '@prisma/client';
+import { AuditAcao, DiaSemana, Role, TurmaStatus } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { REQUEST } from '@nestjs/core';
 
 // Transições permitidas de status
 const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
@@ -30,7 +32,21 @@ function minutosParaHora(m: number): string {
 
 @Injectable()
 export class TurmasService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditLogService,
+    @Inject(REQUEST) private request: any,
+  ) { }
+
+  private getAutor() {
+    return {
+      autorId: this.request.user?.sub,
+      autorNome: this.request.user?.nome,
+      autorRole: this.request.user?.role as Role,
+      ip: (this.request.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request.socket?.remoteAddress,
+      userAgent: this.request.headers?.['user-agent'],
+    };
+  }
 
   async create(createTurmaDto: CreateTurmaDto) {
     const { gradeHoraria, ...dadosTurma } = createTurmaDto;
@@ -43,7 +59,7 @@ export class TurmasService {
       await this.validarColisaoProfessor(createTurmaDto.professorId, gradeHoraria);
     }
 
-    return this.prisma.turma.create({
+    const turmaNova = await this.prisma.turma.create({
       data: {
         ...dadosTurma,
         ...(gradeHoraria?.length && {
@@ -58,6 +74,16 @@ export class TurmasService {
       },
       include: { gradeHoraria: true, professor: { select: { id: true, nome: true } } },
     });
+
+    this.auditService.registrar({
+      entidade: 'Turma',
+      registroId: turmaNova.id,
+      acao: AuditAcao.CRIAR,
+      ...this.getAutor(),
+      newValue: turmaNova,
+    });
+
+    return turmaNova;
   }
 
   async findAll(query: QueryTurmaDto) {
@@ -125,7 +151,7 @@ export class TurmasService {
       await this.validarColisaoProfessor(professorId, gradeHoraria, id);
     }
 
-    return this.prisma.turma.update({
+    const turmaAtualizada = await this.prisma.turma.update({
       where: { id },
       data: {
         ...dadosTurma,
@@ -142,20 +168,49 @@ export class TurmasService {
       },
       include: { gradeHoraria: true, professor: { select: { id: true, nome: true } } },
     });
+
+    this.auditService.registrar({
+      entidade: 'Turma',
+      registroId: turma.id,
+      acao: AuditAcao.ATUALIZAR,
+      ...this.getAutor(),
+      oldValue: turma,
+      newValue: turmaAtualizada,
+    });
+
+    return turmaAtualizada;
   }
 
   async arquivar(id: string) {
     const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
     if (!turma.statusAtivo) throw new BadRequestException('A turma já está arquivada.');
-    return this.prisma.turma.update({ where: { id }, data: { statusAtivo: false, excluido: false } });
+    const result = await this.prisma.turma.update({ where: { id }, data: { statusAtivo: false, excluido: false } });
+    this.auditService.registrar({
+      entidade: 'Turma',
+      registroId: id,
+      acao: AuditAcao.ARQUIVAR,
+      ...this.getAutor(),
+      oldValue: { statusAtivo: true },
+      newValue: { statusAtivo: false },
+    });
+    return result;
   }
 
   async restaurar(id: string) {
     const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
     if (turma.statusAtivo && !turma.excluido) throw new BadRequestException('A turma já está ativa.');
-    return this.prisma.turma.update({ where: { id }, data: { statusAtivo: true, excluido: false } });
+    const result = await this.prisma.turma.update({ where: { id }, data: { statusAtivo: true, excluido: false } });
+    this.auditService.registrar({
+      entidade: 'Turma',
+      registroId: id,
+      acao: AuditAcao.RESTAURAR,
+      ...this.getAutor(),
+      oldValue: { statusAtivo: false },
+      newValue: { statusAtivo: true },
+    });
+    return result;
   }
 
   async ocultar(id: string) {
@@ -353,11 +408,22 @@ export class TurmasService {
     // Sincroniza statusAtivo: só ANDAMENTO/PREVISTA mantêm a turma ativa
     const statusAtivo = novoStatus === 'ANDAMENTO' || novoStatus === 'PREVISTA';
 
-    return this.prisma.turma.update({
+    const result = await this.prisma.turma.update({
       where: { id },
       data: { status: novoStatus, statusAtivo },
       select: { id: true, nome: true, status: true, statusAtivo: true },
     });
+
+    this.auditService.registrar({
+      entidade: 'Turma',
+      registroId: id,
+      acao: AuditAcao.MUDAR_STATUS,
+      ...this.getAutor(),
+      oldValue: { status: turma.status },
+      newValue: { status: result.status },
+    });
+
+    return result;
   }
 }
 
