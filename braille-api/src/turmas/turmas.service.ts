@@ -217,7 +217,18 @@ export class TurmasService {
     const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
     if (turma.excluido) throw new BadRequestException('A turma já está oculta.');
-    return this.prisma.turma.update({ where: { id }, data: { excluido: true, statusAtivo: false } });
+    const result = await this.prisma.turma.update({ where: { id }, data: { excluido: true, statusAtivo: false } });
+
+    this.auditService.registrar({
+      entidade: 'Turma',
+      registroId: id,
+      acao: AuditAcao.ARQUIVAR,
+      ...this.getAutor(),
+      oldValue: { excluido: false, statusAtivo: turma.statusAtivo },
+      newValue: { excluido: true, statusAtivo: false },
+    });
+
+    return result;
   }
 
   async remove(id: string) {
