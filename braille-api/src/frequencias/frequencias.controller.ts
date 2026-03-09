@@ -5,6 +5,7 @@ import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
+import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { Role } from '@prisma/client';
 
 @ApiTags('Frequências (Chamadas)')
@@ -18,6 +19,12 @@ export class FrequenciasController {
   @ApiOperation({ summary: 'Registrar chamada de um aluno em uma turma' })
   create(@Body() dto: CreateFrequenciaDto, @Req() req: any) {
     return this.frequenciasService.create(dto, req.user?.role as Role);
+  }
+
+  @Post('lote')
+  @ApiOperation({ summary: 'Registrar ou atualizar chamada em lote (múltiplos alunos da mesma turma e data, via transação isolada)' })
+  salvarLote(@Body() dto: CreateFrequenciaLoteDto, @Req() req: any) {
+    return this.frequenciasService.salvarLote(dto, req.user?.sub, req.user?.nome, req.user?.role as Role);
   }
 
   @Get()

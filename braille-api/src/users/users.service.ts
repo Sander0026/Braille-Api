@@ -1,10 +1,13 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { QueryUserDto } from './dto/query-user.dto';
 import { gerarMatriculaStaff } from '../common/helpers/matricula.helper';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAcao, Role } from '@prisma/client';
+import { REQUEST } from '@nestjs/core';
 
 // Senha padrão definida pela instituição (deve ser trocada no primeiro login)
 const SENHA_PADRAO = 'Ilbes@123';
@@ -32,7 +35,21 @@ async function gerarUsername(nome: string, prisma: PrismaService): Promise<strin
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditLogService,
+    @Inject(REQUEST) private request: any,
+  ) { }
+
+  private getAutor() {
+    return {
+      autorId: this.request.user?.sub,
+      autorNome: this.request.user?.nome,
+      autorRole: this.request.user?.role as Role,
+      ip: (this.request.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request.socket?.remoteAddress,
+      userAgent: this.request.headers?.['user-agent'],
+    };
+  }
 
   async create(createUserDto: CreateUserDto) {
     const { nome, cpf, email, role, telefone, cep, rua, numero, complemento, bairro, cidade, uf } = createUserDto;
@@ -77,6 +94,17 @@ export class UsersService {
 
     // Retorna o usuário sem a senha, mas com as credenciais geradas para o Admin anotar
     const { senha: _, ...result } = user;
+
+    // Toca a auditoria (Fire and Forget)
+    this.auditService.registrar({
+      entidade: 'User',
+      registroId: user.id,
+      acao: AuditAcao.CRIAR,
+      ...this.getAutor(),
+      // Como não temos a requisição HTTP completa aqui, salvamos o mínimo possível ou passamos autor via payload futuramente
+      newValue: result,
+    });
+
     return {
       ...result,
       _credenciais: {
@@ -157,7 +185,7 @@ export class UsersService {
       updateUserDto.senha = await bcrypt.hash(updateUserDto.senha, 10);
     }
 
-    return this.prisma.user.update({
+    const userAtualizado = await this.prisma.user.update({
       where: { id },
       data: { ...updateUserDto, role: updateUserDto.role as any },
       select: {
@@ -167,12 +195,34 @@ export class UsersService {
         complemento: true, bairro: true, cidade: true, uf: true, atualizadoEm: true,
       },
     });
+
+    this.auditService.registrar({
+      entidade: 'User',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      ...this.getAutor(),
+      oldValue: Object.fromEntries(Object.entries(user).filter(([k]) => k !== 'senha')),
+      newValue: userAtualizado,
+    });
+
+    return userAtualizado;
   }
 
   async remove(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return this.prisma.user.update({ where: { id }, data: { statusAtivo: false } });
+    const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: false } });
+
+    this.auditService.registrar({
+      entidade: 'User',
+      registroId: id,
+      acao: AuditAcao.MUDAR_STATUS,
+      ...this.getAutor(),
+      oldValue: { statusAtivo: true },
+      newValue: { statusAtivo: false },
+    });
+
+    return result;
   }
 
   async restore(id: string) {

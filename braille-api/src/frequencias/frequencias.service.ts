@@ -1,13 +1,30 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Inject } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
+import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
-import { Role } from '@prisma/client';
+import { Role, AuditAcao } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class FrequenciasService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditLogService,
+    @Inject(REQUEST) private request: any,
+  ) { }
+
+  private getAutor() {
+    return {
+      autorId: this.request.user?.sub,
+      autorNome: this.request.user?.nome,
+      autorRole: this.request.user?.role as Role,
+      ip: (this.request.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request.socket?.remoteAddress,
+      userAgent: this.request.headers?.['user-agent'],
+    };
+  }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -80,6 +97,97 @@ export class FrequenciasService {
     return this.prisma.frequencia.create({
       data: { ...dto, dataAula: dataConvertida },
     });
+  }
+
+  // ─── Lote Absoluto (Fase 23) ──────────────────────────────────────────────────
+  async salvarLote(
+    dto: CreateFrequenciaLoteDto,
+    userId: string,
+    userNome: string,
+    requesterRole: Role,
+  ) {
+    const dataConvertida = new Date(dto.dataAula);
+
+    // Validações básicas (Bypass só pro Admin)
+    this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
+    await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
+
+    // Identifica o IP para o Log Manual (migrado pro getAutor centralizado)
+    const autorContext = this.getAutor();
+
+    // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
+    try {
+      const auditPayloads: any[] = [];
+
+      await this.prisma.$transaction(async (tx) => {
+        // Pré-carrega registros existentes para evitar buscas redundantes (O(1) query vs O(N) queries)
+        const alunosIds = dto.alunos.map(a => a.alunoId);
+        const existentesDb = await tx.frequencia.findMany({
+          where: {
+            turmaId: dto.turmaId,
+            dataAula: dataConvertida,
+            alunoId: { in: alunosIds },
+          },
+        });
+        const mapaExistentes = new Map(existentesDb.map(f => [f.alunoId, f]));
+
+        for (const aluno of dto.alunos) {
+          let frequenciaFinal: any;
+          let acaoAudit: AuditAcao;
+          let oldValue: any = undefined;
+
+          // Preferência para a busca no banco pré-carregada via turmaId + dataAula + alunoId
+          const existente = mapaExistentes.get(aluno.alunoId);
+
+          if (existente) {
+            oldValue = existente;
+            frequenciaFinal = await tx.frequencia.update({
+              where: { id: existente.id },
+              data: { presente: aluno.presente },
+            });
+            acaoAudit = AuditAcao.ATUALIZAR;
+          } else {
+            frequenciaFinal = await tx.frequencia.create({
+              data: {
+                turmaId: dto.turmaId,
+                alunoId: aluno.alunoId,
+                dataAula: dataConvertida,
+                presente: aluno.presente,
+              },
+            });
+            acaoAudit = AuditAcao.CRIAR;
+          }
+
+          // Coleta o log em vez de disparar concorrência pesada no meio da transação
+          auditPayloads.push({
+            entidade: 'Frequencia',
+            registroId: frequenciaFinal.id,
+            acao: acaoAudit,
+            ...autorContext, // Usa a extração global unificada
+            oldValue,
+            newValue: frequenciaFinal,
+          });
+        }
+      }, {
+        maxWait: 10000,
+        timeout: 30000, // Previne "Transaction API error: Transaction not found."
+      });
+
+      // Dispara a auditoria de forma sequencial, no background, para não exaurir o Pool de Conexões do Prisma nem a transação.
+      Promise.resolve().then(async () => {
+        for (const payload of auditPayloads) {
+          await this.auditService.registrar(payload).catch(() => { });
+        }
+      });
+
+      return { sucesso: true, processados: dto.alunos.length, mensagem: 'Operação de lote efetivada com integridade atômica.' };
+
+    } catch (error: any) {
+      console.error('🔥 Erro Crítico Prisma Transação (Lote):', error);
+      throw new BadRequestException(
+        `Falha ao processar o Lote de Chamadas. O servidor do banco de dados abortou a transação. Motivo técnico: ${error.message || 'Desconhecido'}`
+      );
+    }
   }
 
   async findAll(query: QueryFrequenciaDto) {
