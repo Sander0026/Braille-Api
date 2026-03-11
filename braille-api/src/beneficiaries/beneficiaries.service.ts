@@ -470,7 +470,10 @@ export class BeneficiariesService {
     const XLSX = require('xlsx');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      defval: '',
+      range: 1, // Pula a linha 1 (cabeçalho descritivo) e usa a linha 2 (chaves do sistema) como header
+    });
 
     const erros: { linha: number; cpfRg: string; motivo: string }[] = [];
     const validos: any[] = [];
