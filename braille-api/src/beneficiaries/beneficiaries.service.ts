@@ -63,9 +63,14 @@ export class BeneficiariesService {
     const aluno = await this.prisma.aluno.findUnique({ where: { id } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
+    // RA ÚNCO: O RA (matrícula) nunca muda. É o "CPF interno" do Instituto.
+    // Se o aluno já tem matrícula, preserva. Só gera nova se estava vazio
+    // (cenário de migração de dados legados sem matrícula gerada).
+    const matricula = aluno.matricula ?? await gerarMatriculaAluno(this.prisma);
+
     const result = await this.prisma.aluno.update({
       where: { id },
-      data: { statusAtivo: true, excluido: false },
+      data: { statusAtivo: true, excluido: false, matricula },
       select: {
         id: true, nomeCompleto: true, cpfRg: true, matricula: true,
         statusAtivo: true, criadoEm: true,
@@ -81,6 +86,27 @@ export class BeneficiariesService {
     });
 
     return result;
+  }
+
+  /** Verificação rápida: retorna se um CPF/RG já existe no sistema (sem lançar exceção) */
+  async checkCpfRg(cpfRg: string): Promise<
+    | { status: 'livre' }
+    | { status: 'ativo'; id: string; nomeCompleto: string; matricula: string | null }
+    | { status: 'inativo'; id: string; nomeCompleto: string; matricula: string | null; excluido: boolean }
+  > {
+    const cpfRgLimpo = (cpfRg ?? '').replace(/\D/g, '');
+    if (!cpfRgLimpo) return { status: 'livre' };
+
+    const aluno = await this.prisma.aluno.findUnique({
+      where: { cpfRg: cpfRgLimpo },
+      select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true, excluido: true },
+    });
+
+    if (!aluno) return { status: 'livre' };
+    if (aluno.statusAtivo && !aluno.excluido) {
+      return { status: 'ativo', id: aluno.id, nomeCompleto: aluno.nomeCompleto, matricula: aluno.matricula };
+    }
+    return { status: 'inativo', id: aluno.id, nomeCompleto: aluno.nomeCompleto, matricula: aluno.matricula, excluido: aluno.excluido };
   }
 
   async findAll(query: QueryBeneficiaryDto) {
@@ -153,6 +179,7 @@ export class BeneficiariesService {
           id: true,
           nomeCompleto: true,
           cpfRg: true,
+          matricula: true,
           dataNascimento: true,
           telefoneContato: true,
           tipoDeficiencia: true,
@@ -208,7 +235,7 @@ export class BeneficiariesService {
       where,
       orderBy: { nomeCompleto: 'asc' },
       select: {
-        nomeCompleto: true, cpfRg: true, dataNascimento: true, genero: true,
+        nomeCompleto: true, cpfRg: true, matricula: true, dataNascimento: true, genero: true,
         estadoCivil: true, telefoneContato: true, email: true,
         cep: true, rua: true, numero: true, bairro: true, cidade: true, uf: true,
         tipoDeficiencia: true, causaDeficiencia: true, prefAcessibilidade: true,
@@ -603,6 +630,7 @@ export class BeneficiariesService {
       let baseCount = await this.prisma.aluno.count({
         where: { matricula: { startsWith: prefix } },
       });
+
       for (const aluno of paraInserir) {
         aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
       }

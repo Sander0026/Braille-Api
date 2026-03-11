@@ -250,12 +250,13 @@ export class TurmasService {
     const aluno = await this.prisma.aluno.findUnique({ where: { id: alunoId } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
-    // Verificar vínculo existente
-    const vinculoExistente = await this.prisma.matriculaOficina.findFirst({
-      where: { alunoId, turmaId },
+    // RA ÚNICO: verifica apenas matrícula ATIVA — não bloqueia reingressos
+    // após cancelamento/evasão (o aluno pode ter histórico na mesma turma).
+    const matriculaAtiva = await this.prisma.matriculaOficina.findFirst({
+      where: { alunoId, turmaId, status: 'ATIVA' },
     });
-    if (vinculoExistente?.status === 'ATIVA') {
-      throw new BadRequestException('Este aluno já está matriculado nesta turma.');
+    if (matriculaAtiva) {
+      throw new BadRequestException('Este aluno já possui uma matrícula ativa nesta turma.');
     }
 
     // Trava de capacidade
@@ -274,15 +275,7 @@ export class TurmasService {
       await this.validarColisaoAluno(alunoId, turma.gradeHoraria, turmaId);
     }
 
-    // Cria ou reativa o vínculo
-    if (vinculoExistente) {
-      return this.prisma.matriculaOficina.update({
-        where: { id: vinculoExistente.id },
-        data: { status: 'ATIVA', dataEntrada: new Date(), dataEncerramento: null },
-        include: { aluno: { select: { id: true, nomeCompleto: true, matricula: true } } },
-      });
-    }
-
+    // Sempre cria um novo vínculo — preserva o histórico completo de reingressos
     return this.prisma.matriculaOficina.create({
       data: { alunoId, turmaId },
       include: { aluno: { select: { id: true, nomeCompleto: true, matricula: true } } },
@@ -290,16 +283,19 @@ export class TurmasService {
   }
 
   async removeAluno(turmaId: string, alunoId: string) {
+    // Busca a matrícula ATIVA mais recente (pode ter histórico de reingressos)
     const vinculo = await this.prisma.matriculaOficina.findFirst({
-      where: { alunoId, turmaId },
+      where: { alunoId, turmaId, status: 'ATIVA' },
+      orderBy: { criadoEm: 'desc' },
     });
-    if (!vinculo) throw new NotFoundException('Vínculo de matrícula não encontrado.');
+    if (!vinculo) throw new NotFoundException('Matrícula ativa não encontrada para este aluno nesta turma.');
 
     return this.prisma.matriculaOficina.update({
       where: { id: vinculo.id },
       data: { status: 'CANCELADA', dataEncerramento: new Date() },
     });
   }
+
 
   async findOne(id: string) {
     const turma = await this.prisma.turma.findUnique({
