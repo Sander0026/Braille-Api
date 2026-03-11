@@ -447,7 +447,7 @@ export class BeneficiariesService {
     // Lê como array de arrays para controlar linhas manualmente
     const rawRows: any[][] = XLSX.utils.sheet_to_json(
       workbook.Sheets[sheetName],
-      { header: 1, defval: '' },
+      { header: 1, defval: '', cellDates: true },
     );
 
     if (rawRows.length < 3) {
@@ -497,22 +497,21 @@ export class BeneficiariesService {
       cpfRgsNaPlanilha.add(cpfRg);
 
       // ── Data de nascimento ─────────────────────────────────
-      // Aceita: string DD/MM/AAAA, string AAAA-MM-DD, ou número serial do Excel
+      // Aceita: string DD/MM/AAAA, string AAAA-MM-DD, ou objeto Date (do cellDates:true)
       let dataNascimento: Date;
       try {
-        const rawStr = String(dataNascimentoRaw).trim();
-        if (typeof dataNascimentoRaw === 'number') {
-          // Número serial do Excel → converter via XLSX.SSF.parse_date_code ou manualmente
-          // Excel serial: 1 = 01/01/1900, com bug do ano bissexto 1900
-          const excelEpoch = new Date(1899, 11, 30); // 30/12/1899
-          dataNascimento = new Date(excelEpoch.getTime() + dataNascimentoRaw * 86400000);
-        } else if (rawStr.includes('/')) {
-          const [dia, mes, ano] = rawStr.split('/');
-          dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+        if (dataNascimentoRaw instanceof Date) {
+            dataNascimento = dataNascimentoRaw;
         } else {
-          dataNascimento = new Date(rawStr);
+            const rawStr = String(dataNascimentoRaw).trim();
+            if (rawStr.includes('/')) {
+              const [dia, mes, ano] = rawStr.split('/');
+              dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+            } else {
+              dataNascimento = new Date(rawStr);
+            }
         }
-        if (isNaN(dataNascimento.getTime())) throw new Error();
+        if (Number.isNaN(dataNascimento.getTime())) throw new Error();
       } catch {
         erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoRaw}". Use DD/MM/AAAA` });
         continue;
@@ -597,33 +596,39 @@ export class BeneficiariesService {
 
     // ── Inserir em lote ──────────────────────────────────────
     if (paraInserir.length > 0) {
-      // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
-      // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
-
-      const auditPayloads: any[] = [];
-      const inseridos: any[] = [];
-
-      await this.prisma.$transaction(async (tx) => {
-        for (const aluno of paraInserir) {
-          // Garante a matrícula gerada para a pessoa importada
-          aluno.matricula = await gerarMatriculaAluno(tx as any);
-          const criacao = await tx.aluno.create({ data: aluno });
-          inseridos.push(criacao);
-
-          auditPayloads.push({
-            entidade: 'Aluno',
-            registroId: criacao.id,
-            acao: AuditAcao.CRIAR,
-            newValue: criacao,
-          });
-        }
+      // ── Pré-gerar matrículas com simples contador ─────────────
+      // Evita chamadas de API em loop dentro de transação que causavam P2028 com NeonDB serverless.
+      const ano = new Date().getFullYear();
+      const prefix = `${ano}`;
+      let baseCount = await this.prisma.aluno.count({
+        where: { matricula: { startsWith: prefix } },
       });
+      for (const aluno of paraInserir) {
+        aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
+      }
 
-      // Dispara a auditoria sequencial no background
+      // ── Inserir em lote com createMany (single SQL — sem $transaction interativa) ──
+      try {
+        await this.prisma.aluno.createMany({
+          data: paraInserir,
+          skipDuplicates: false,
+        });
+      } catch (err: any) {
+        console.error('🔥 ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
+        throw err;
+      }
+
+      // ── Auditoria em background (por lote) ──────────────────────
       Promise.resolve().then(async () => {
-        for (const payload of auditPayloads) {
-          await this.auditService.registrar(payload).catch(() => { });
-        }
+        await this.auditService.registrar({
+          entidade: 'Aluno',
+          registroId: 'importacao-lote',
+          acao: AuditAcao.CRIAR,
+          newValue: {
+            quantidade: paraInserir.length,
+            matriculas: paraInserir.map(a => a.matricula),
+          },
+        }).catch(() => { });
       });
     }
 
