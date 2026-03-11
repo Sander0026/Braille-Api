@@ -220,6 +220,13 @@ export class UsersService {
   async remove(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Impedir auto-exclusão: um admin não pode desativar a si mesmo
+    const autorId = this.request.user?.sub;
+    if (autorId && autorId === id) {
+      throw new BadRequestException('Você não pode desativar a sua própria conta.');
+    }
+
     const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: false } });
 
     this.auditService.registrar({
@@ -276,6 +283,13 @@ export class UsersService {
   async removeHard(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Impedir auto-exclusão permanente
+    const autorId = this.request.user?.sub;
+    if (autorId && autorId === id) {
+      throw new BadRequestException('Você não pode excluir a sua própria conta do sistema.');
+    }
+
     const result = await this.prisma.user.update({ where: { id }, data: { excluido: true } });
 
     this.auditService.registrar({
