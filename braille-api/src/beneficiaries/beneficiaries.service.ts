@@ -63,8 +63,10 @@ export class BeneficiariesService {
     const aluno = await this.prisma.aluno.findUnique({ where: { id } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
-    // Gera nova matrícula a cada reativação (regra de negócio)
-    const matricula = await gerarMatriculaAluno(this.prisma);
+    // RA ÚNCO: O RA (matrícula) nunca muda. É o "CPF interno" do Instituto.
+    // Se o aluno já tem matrícula, preserva. Só gera nova se estava vazio
+    // (cenário de migração de dados legados sem matrícula gerada).
+    const matricula = aluno.matricula ?? await gerarMatriculaAluno(this.prisma);
 
     const result = await this.prisma.aluno.update({
       where: { id },
@@ -80,7 +82,7 @@ export class BeneficiariesService {
       registroId: id,
       acao: AuditAcao.RESTAURAR,
       oldValue: { statusAtivo: false },
-      newValue: { statusAtivo: true, matricula },
+      newValue: { statusAtivo: true },
     });
 
     return result;
