@@ -513,13 +513,25 @@ export class BeneficiariesService {
           if (dataNascimentoStr.includes('/')) {
             const [dia, mes, ano] = dataNascimentoStr.split('/');
             dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+          } else if (!Number.isNaN(Number(dataNascimentoCell))) {
+            // Excel serial numérico puro: dias desde 30/12/1899
+            const excelEpoch = new Date(1899, 11, 30);
+            dataNascimento = new Date(excelEpoch.getTime() + Number(dataNascimentoCell) * 86400000);
           } else {
+            // Último recurso: parser nativo do JS
             dataNascimento = new Date(dataNascimentoStr);
           }
         }
+        
+        // Verifica se é uma data válida no JS
         if (Number.isNaN(dataNascimento.getTime())) throw new Error('Data inválida');
-      } catch {
-        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoCell}". Use DD/MM/AAAA` });
+        
+        // Verifica se o ano é humanamente aceitável para o banco PostgreSQL
+        const ano = dataNascimento.getFullYear();
+        if (ano < 1900 || ano > 2100) throw new Error('Ano fora de limite (1900-2100)');
+        
+      } catch (err: any) {
+        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida ou absurda: "${dataNascimentoCell}". Use DD/MM/AAAA` });
         continue;
       }
 
