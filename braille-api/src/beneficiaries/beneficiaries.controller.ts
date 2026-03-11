@@ -60,6 +60,13 @@ export class BeneficiariesController {
     return this.beneficiariesService.findAll(query);
   }
 
+  @Get('check-cpf')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Verifica se um CPF/RG já existe no sistema' })
+  async checkCpfRg(@Query('cpfRg') cpfRg: string) {
+    return this.beneficiariesService.checkCpfRg(cpfRg);
+  }
+
   @Get('export')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Exportar lista de alunos filtrada como planilha Excel (.xlsx)' })
