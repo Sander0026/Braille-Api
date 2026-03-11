@@ -470,7 +470,11 @@ export class BeneficiariesService {
     const XLSX = require('xlsx');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      defval: '',
+      range: 1,       // Pula a linha 1 (cabeçalho descritivo) e usa a linha 2 (chaves do sistema) como header
+      cellDates: true, // Converte seriais de data do Excel (ex: 32906) para Date objects automaticamente
+    });
 
     const erros: { linha: number; cpfRg: string; motivo: string }[] = [];
     const validos: any[] = [];
@@ -482,12 +486,12 @@ export class BeneficiariesService {
 
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
       const cpfRg = String(row['CPF_RG'] ?? '').trim();
-      const dataNascimentoRaw = String(row['DataNascimento'] ?? '').trim();
+      const dataNascimentoCell = row['DataNascimento'];
 
       // ── Campos obrigatórios ─────────────────────────────────
       if (!nomeCompleto) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
       if (!cpfRg) { erros.push({ linha, cpfRg: '—', motivo: 'Campo obrigatório ausente: CPF_RG' }); continue; }
-      if (!dataNascimentoRaw) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+      if (!dataNascimentoCell) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
 
       // ── Duplicata interna ────────────────────────────────────
       if (cpfRgsNaPlanilha.has(cpfRg)) {
@@ -497,17 +501,37 @@ export class BeneficiariesService {
       cpfRgsNaPlanilha.add(cpfRg);
 
       // ── Data de nascimento ───────────────────────────────────
+      // cellDates:true converte seriais do Excel para Date objects automaticamente.
+      // Também suportamos string DD/MM/AAAA para quem digita manualmente.
       let dataNascimento: Date;
       try {
-        if (dataNascimentoRaw.includes('/')) {
-          const [dia, mes, ano] = dataNascimentoRaw.split('/');
-          dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+        if (dataNascimentoCell instanceof Date) {
+          // Excel com cellDates:true → já é um Date válido
+          dataNascimento = dataNascimentoCell;
         } else {
-          dataNascimento = new Date(dataNascimentoRaw);
+          const dataNascimentoStr = String(dataNascimentoCell).trim();
+          if (dataNascimentoStr.includes('/')) {
+            const [dia, mes, ano] = dataNascimentoStr.split('/');
+            dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+          } else if (!Number.isNaN(Number(dataNascimentoCell))) {
+            // Excel serial numérico puro: dias desde 30/12/1899
+            const excelEpoch = new Date(1899, 11, 30);
+            dataNascimento = new Date(excelEpoch.getTime() + Number(dataNascimentoCell) * 86400000);
+          } else {
+            // Último recurso: parser nativo do JS
+            dataNascimento = new Date(dataNascimentoStr);
+          }
         }
-        if (isNaN(dataNascimento.getTime())) throw new Error();
-      } catch {
-        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoRaw}". Use DD/MM/AAAA` });
+        
+        // Verifica se é uma data válida no JS
+        if (Number.isNaN(dataNascimento.getTime())) throw new Error('Data inválida');
+        
+        // Verifica se o ano é humanamente aceitável para o banco PostgreSQL
+        const ano = dataNascimento.getFullYear();
+        if (ano < 1900 || ano > 2100) throw new Error('Ano fora de limite (1900-2100)');
+        
+      } catch (err: any) {
+        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida ou absurda: "${dataNascimentoCell}". Use DD/MM/AAAA` });
         continue;
       }
 
@@ -593,29 +617,43 @@ export class BeneficiariesService {
       // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
       // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
 
-      const auditPayloads: any[] = [];
-      const inseridos: any[] = [];
-
-      await this.prisma.$transaction(async (tx) => {
-        for (const aluno of paraInserir) {
-          // Garante a matrícula gerada para a pessoa importada
-          aluno.matricula = await gerarMatriculaAluno(tx);
-          const criacao = await tx.aluno.create({ data: aluno });
-          inseridos.push(criacao);
-
-          auditPayloads.push({
-            entidade: 'Aluno',
-            registroId: criacao.id,
-            acao: AuditAcao.CRIAR,
-            newValue: criacao,
-          });
-        }
+      // ── Pré-gerar matrículas e IDs com simples contador ─────────────
+      // Evita findUnique+loop que causava P2028 com NeonDB serverless.
+      // E atribuir UUID localmente permite que tenhamos o ID para a auditoria individual.
+      const ano = new Date().getFullYear();
+      const prefix = `${ano}`;
+      let baseCount = await this.prisma.aluno.count({
+        where: { matricula: { startsWith: prefix } },
       });
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const crypto = require('crypto');
+      for (const aluno of paraInserir) {
+        aluno.id = crypto.randomUUID();
+        aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
+      }
 
-      // Dispara a auditoria sequencial no background
+      // ── Inserir em lote com createMany (single SQL — sem $transaction interativa) ──
+      // createMany é um único INSERT com múltiplos VALUES — execução atômica sem
+      // o protocolo de transação interativa do Prisma que gerava P2028.
+      try {
+        await this.prisma.aluno.createMany({
+          data: paraInserir,
+          skipDuplicates: false, // queremos falhar se houver conflito de CPF/RG
+        });
+      } catch (err: any) {
+        console.error('🔥 ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
+        throw err;
+      }
+
+      // ── Auditoria em background (invididual) ───────────────────
       Promise.resolve().then(async () => {
-        for (const payload of auditPayloads) {
-          await this.auditService.registrar(payload).catch(() => { });
+        for (const aluno of paraInserir) {
+          await this.auditService.registrar({
+            entidade: 'Aluno',
+            registroId: aluno.id,
+            acao: AuditAcao.CRIAR,
+            newValue: aluno,
+          }).catch(() => { });
         }
       });
     }
