@@ -33,7 +33,7 @@ export class AuthGuard implements CanActivate {
       });
 
       if (!userAtivo || !userAtivo.statusAtivo || userAtivo.excluido) {
-        throw new UnauthorizedException('Sua conta foi desativada ou excluída. Contate o administrador.');
+        throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
       }
 
       // Pendura os dados do usuário na requisição para usarmos depois

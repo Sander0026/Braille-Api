@@ -224,7 +224,7 @@ export class UsersService {
     // Impedir auto-exclusão: um admin não pode desativar a si mesmo
     const autorId = this.request.user?.sub;
     if (autorId && autorId === id) {
-      throw new BadRequestException('Você não pode desativar a sua própria conta.');
+      throw new BadRequestException('Não é possível desativar o usuário que está logado.');
     }
 
     const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: false } });
@@ -287,7 +287,7 @@ export class UsersService {
     // Impedir auto-exclusão permanente
     const autorId = this.request.user?.sub;
     if (autorId && autorId === id) {
-      throw new BadRequestException('Você não pode excluir a sua própria conta do sistema.');
+      throw new BadRequestException('Não é possível excluir o usuário que está logado.');
     }
 
     const result = await this.prisma.user.update({ where: { id }, data: { excluido: true } });

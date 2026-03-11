@@ -24,10 +24,10 @@ export class AuthService {
 
     // 2b. Bloqueio para contas excluídas ou inativas ──────────────────────────
     if (user.excluido) {
-      throw new UnauthorizedException('Esta conta foi excluída do sistema. Contate o administrador.');
+      throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
     }
     if (!user.statusAtivo) {
-      throw new UnauthorizedException('Esta conta está desativada. Contate o administrador.');
+      throw new UnauthorizedException('Esta conta está desativada. Procure o administrador do sistema.');
     }
 
     const isPasswordValid = await bcrypt.compare(loginDto.senha, user.senha);
@@ -72,7 +72,7 @@ export class AuthService {
 
     // Bloqueia renovação de token para contas inativas/excluídas
     if (user.excluido || !user.statusAtivo) {
-      throw new UnauthorizedException('Sua conta foi desativada ou excluída. Contate o administrador.');
+      throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
     }
 
     // 2. Compara a Chave Mestra Limpa que veio do Angular com a Hasheada na Tabela
