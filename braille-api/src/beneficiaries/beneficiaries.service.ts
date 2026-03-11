@@ -617,15 +617,18 @@ export class BeneficiariesService {
       // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
       // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
 
-      // ── Pré-gerar matrículas com simples contador ─────────────
+      // ── Pré-gerar matrículas e IDs com simples contador ─────────────
       // Evita findUnique+loop que causava P2028 com NeonDB serverless.
-      // O count retorna a base; geramos o próximo sequencial para cada aluno.
+      // E atribuir UUID localmente permite que tenhamos o ID para a auditoria individual.
       const ano = new Date().getFullYear();
       const prefix = `${ano}`;
       let baseCount = await this.prisma.aluno.count({
         where: { matricula: { startsWith: prefix } },
       });
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const crypto = require('crypto');
       for (const aluno of paraInserir) {
+        aluno.id = crypto.randomUUID();
         aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
       }
 
@@ -642,17 +645,16 @@ export class BeneficiariesService {
         throw err;
       }
 
-      // ── Auditoria em background (por lote) ──────────────────────
+      // ── Auditoria em background (invididual) ───────────────────
       Promise.resolve().then(async () => {
-        await this.auditService.registrar({
-          entidade: 'Aluno',
-          registroId: 'importacao-lote',
-          acao: AuditAcao.CRIAR,
-          newValue: {
-            quantidade: paraInserir.length,
-            matriculas: paraInserir.map(a => a.matricula),
-          },
-        }).catch(() => { });
+        for (const aluno of paraInserir) {
+          await this.auditService.registrar({
+            entidade: 'Aluno',
+            registroId: aluno.id,
+            acao: AuditAcao.CRIAR,
+            newValue: aluno,
+          }).catch(() => { });
+        }
       });
     }
 
