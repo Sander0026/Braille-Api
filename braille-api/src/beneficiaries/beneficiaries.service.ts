@@ -633,7 +633,7 @@ export class BeneficiariesService {
       await this.prisma.$transaction(async (tx) => {
         for (const aluno of paraInserir) {
           // Garante a matrícula gerada para a pessoa importada
-          aluno.matricula = await gerarMatriculaAluno(tx as any);
+          aluno.matricula = await gerarMatriculaAluno(tx);
           const criacao = await tx.aluno.create({ data: aluno });
           inseridos.push(criacao);
 

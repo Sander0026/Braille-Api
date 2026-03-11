@@ -8,13 +8,17 @@
  * O formato usa o ano atual + sequencial de 5 dígitos zero-padded.
  */
 
-import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+
+// Aceita tanto PrismaService quanto o cliente de transação (Prisma.$transaction callback)
+type PrismaClientOrTx = Prisma.TransactionClient | { aluno: Prisma.TransactionClient['aluno']; user: Prisma.TransactionClient['user'] };
 
 /**
  * Gera o próximo número de matrícula para Aluno.
  * Forma: YYYY + 5 dígitos baseado no total de alunos +1.
+ * Funciona tanto fora quanto dentro de $transaction.
  */
-export async function gerarMatriculaAluno(prisma: PrismaService): Promise<string> {
+export async function gerarMatriculaAluno(prisma: PrismaClientOrTx): Promise<string> {
     const ano = new Date().getFullYear();
     const prefix = `${ano}`;
 
@@ -38,8 +42,9 @@ export async function gerarMatriculaAluno(prisma: PrismaService): Promise<string
 /**
  * Gera o próximo número de matrícula para Staff (Prefixo P).
  * Forma: P + YYYY + 5 dígitos baseado no total de users +1.
+ * Funciona tanto fora quanto dentro de $transaction.
  */
-export async function gerarMatriculaStaff(prisma: PrismaService): Promise<string> {
+export async function gerarMatriculaStaff(prisma: PrismaClientOrTx): Promise<string> {
     const ano = new Date().getFullYear();
     const prefix = `P${ano}`;
 
