@@ -593,24 +593,49 @@ export class BeneficiariesService {
       // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
       // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
 
+      // ── Pré-gerar matrículas FORA da transação ─────────────────
+      // O gerarMatriculaAluno dentro de $transaction causava P2028 (timeout de 5s)
+      // porque fazia múltiplas queries por aluno. Geramos tudo antes da transação.
+      const ano = new Date().getFullYear();
+      const prefix = `${ano}`;
+      let sequencialBase = await this.prisma.aluno.count({
+        where: { matricula: { startsWith: prefix } },
+      });
+
+      for (const aluno of paraInserir) {
+        let matricula: string;
+        do {
+          sequencialBase++;
+          matricula = `${prefix}${String(sequencialBase).padStart(5, '0')}`;
+        } while (await this.prisma.aluno.findUnique({ where: { matricula } }));
+        aluno.matricula = matricula;
+      }
+
+      // ── Inserir em lote (transação apenas com inserts simples) ──
       const auditPayloads: any[] = [];
       const inseridos: any[] = [];
 
-      await this.prisma.$transaction(async (tx) => {
-        for (const aluno of paraInserir) {
-          // Garante a matrícula gerada para a pessoa importada
-          aluno.matricula = await gerarMatriculaAluno(tx);
-          const criacao = await tx.aluno.create({ data: aluno });
-          inseridos.push(criacao);
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          for (const aluno of paraInserir) {
+            const criacao = await tx.aluno.create({ data: aluno });
+            inseridos.push(criacao);
 
-          auditPayloads.push({
-            entidade: 'Aluno',
-            registroId: criacao.id,
-            acao: AuditAcao.CRIAR,
-            newValue: criacao,
-          });
-        }
-      });
+            auditPayloads.push({
+              entidade: 'Aluno',
+              registroId: criacao.id,
+              acao: AuditAcao.CRIAR,
+              newValue: criacao,
+            });
+          }
+        }, { timeout: 30000 }); // 30s de segurança extra
+      } catch (err: any) {
+        console.error('🔥 ERRO NO IMPORT - Tipo:', err?.constructor?.name);
+        console.error('🔥 ERRO NO IMPORT - Código Prisma:', err?.code ?? 'N/A');
+        console.error('🔥 ERRO NO IMPORT - Meta:', JSON.stringify(err?.meta ?? {}));
+        console.error('🔥 ERRO NO IMPORT - Mensagem:', err?.message?.substring(0, 500));
+        throw err;
+      }
 
       // Dispara a auditoria sequencial no background
       Promise.resolve().then(async () => {
