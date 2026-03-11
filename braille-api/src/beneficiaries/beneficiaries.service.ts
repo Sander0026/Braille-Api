@@ -593,55 +593,42 @@ export class BeneficiariesService {
       // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
       // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
 
-      // ── Pré-gerar matrículas FORA da transação ─────────────────
-      // O gerarMatriculaAluno dentro de $transaction causava P2028 (timeout de 5s)
-      // porque fazia múltiplas queries por aluno. Geramos tudo antes da transação.
+      // ── Pré-gerar matrículas com simples contador ─────────────
+      // Evita findUnique+loop que causava P2028 com NeonDB serverless.
+      // O count retorna a base; geramos o próximo sequencial para cada aluno.
       const ano = new Date().getFullYear();
       const prefix = `${ano}`;
-      let sequencialBase = await this.prisma.aluno.count({
+      let baseCount = await this.prisma.aluno.count({
         where: { matricula: { startsWith: prefix } },
       });
-
       for (const aluno of paraInserir) {
-        let matricula: string;
-        do {
-          sequencialBase++;
-          matricula = `${prefix}${String(sequencialBase).padStart(5, '0')}`;
-        } while (await this.prisma.aluno.findUnique({ where: { matricula } }));
-        aluno.matricula = matricula;
+        aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
       }
 
-      // ── Inserir em lote (transação apenas com inserts simples) ──
-      const auditPayloads: any[] = [];
-      const inseridos: any[] = [];
-
+      // ── Inserir em lote com createMany (single SQL — sem $transaction interativa) ──
+      // createMany é um único INSERT com múltiplos VALUES — execução atômica sem
+      // o protocolo de transação interativa do Prisma que gerava P2028.
       try {
-        await this.prisma.$transaction(async (tx) => {
-          for (const aluno of paraInserir) {
-            const criacao = await tx.aluno.create({ data: aluno });
-            inseridos.push(criacao);
-
-            auditPayloads.push({
-              entidade: 'Aluno',
-              registroId: criacao.id,
-              acao: AuditAcao.CRIAR,
-              newValue: criacao,
-            });
-          }
-        }, { timeout: 30000 }); // 30s de segurança extra
+        await this.prisma.aluno.createMany({
+          data: paraInserir,
+          skipDuplicates: false, // queremos falhar se houver conflito de CPF/RG
+        });
       } catch (err: any) {
-        console.error('🔥 ERRO NO IMPORT - Tipo:', err?.constructor?.name);
-        console.error('🔥 ERRO NO IMPORT - Código Prisma:', err?.code ?? 'N/A');
-        console.error('🔥 ERRO NO IMPORT - Meta:', JSON.stringify(err?.meta ?? {}));
-        console.error('🔥 ERRO NO IMPORT - Mensagem:', err?.message?.substring(0, 500));
+        console.error('🔥 ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
         throw err;
       }
 
-      // Dispara a auditoria sequencial no background
+      // ── Auditoria em background (por lote) ──────────────────────
       Promise.resolve().then(async () => {
-        for (const payload of auditPayloads) {
-          await this.auditService.registrar(payload).catch(() => { });
-        }
+        await this.auditService.registrar({
+          entidade: 'Aluno',
+          registroId: 'importacao-lote',
+          acao: AuditAcao.CRIAR,
+          newValue: {
+            quantidade: paraInserir.length,
+            matriculas: paraInserir.map(a => a.matricula),
+          },
+        }).catch(() => { });
       });
     }
 
