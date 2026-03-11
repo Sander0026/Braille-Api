@@ -96,7 +96,7 @@ model User {
   excluido     Boolean      @default(false)
   criadoEm     DateTime     @default(now())
   atualizadoEm DateTime     @updatedAt
-  turmas       Turma[]
+  turmas       Turma[]      @relation("TurmaProfessorPrincipal")
   comunicados  Comunicado[]
 
   @@index([statusAtivo, excluido])
@@ -185,11 +185,12 @@ model Turma {
   atualizadoEm     DateTime    @updatedAt
 
   // Relacionamentos
-  professorId       String
-  professor         User               @relation(fields: [professorId], references: [id])
-  matriculasOficina MatriculaOficina[]
-  frequencias       Frequencia[]
-  gradeHoraria      GradeHoraria[] // Turnos estruturados da turma
+  professorId            String
+  professor              User               @relation("TurmaProfessorPrincipal", fields: [professorId], references: [id])
+  professorAuxiliarId    String?            // Substituto ou co-professor (opcional)
+  matriculasOficina      MatriculaOficina[]
+  frequencias            Frequencia[]
+  gradeHoraria           GradeHoraria[]     // Turnos estruturados da turma
 
   @@index([statusAtivo, excluido])
   @@index([professorId])
@@ -211,7 +212,9 @@ model MatriculaOficina {
   turmaId String
   turma   Turma  @relation(fields: [turmaId], references: [id])
 
-  @@unique([alunoId, turmaId])
+  // RAÚNCO: sem @@unique aqui — a validação de duplicidade simultânea
+  // fica no NestJS ("aluno já tem matrícula ATIVA nessa turma?").
+  // Isso permite que o aluno volte à mesma turma após cancelamento/evasão.
   @@index([alunoId])
   @@index([turmaId, status])
 }
@@ -235,13 +238,16 @@ model GradeHoraria {
 
 // Tabela de Frequência (Chamada)
 model Frequencia {
-  id         String    @id @default(uuid())
-  dataAula   DateTime  @default(now())
-  presente   Boolean   @default(false)
+  id         String   @id @default(uuid())
+  // @db.Date: salva apenas 2026-03-11 (sem horas), garantindo que o
+  // @@unique funcione como "1 chamada por aluno por turma por dia",
+  // sem falsos negativos por milissegundos diferentes.
+  dataAula   DateTime @db.Date
+  presente   Boolean  @default(false)
   observacao String?
-  fechado    Boolean   @default(false) // true = diário encerrado, só ADMIN pode reabrir
+  fechado    Boolean  @default(false) // true = diário encerrado, só ADMIN pode reabrir
   fechadoEm  DateTime? // quando foi encerrado
-  fechadoPor String? // userId de quem fechou
+  fechadoPor String?  // userId de quem fechou
 
   // Relacionamentos
   alunoId String
@@ -249,9 +255,9 @@ model Frequencia {
   turmaId String
   turma   Turma  @relation(fields: [turmaId], references: [id])
 
-  @@unique([dataAula, alunoId, turmaId]) // Evita dar falta e presença pro mesmo aluno no mesmo dia
-  @@index([alunoId]) // consultas de frequencia por aluno
-  @@index([turmaId, dataAula]) // consultas de chamada por turma e data
+  @@unique([dataAula, alunoId, turmaId]) // 1 registro por aluno por turma por dia
+  @@index([alunoId])                     // consultas de frequência por aluno
+  @@index([turmaId, dataAula])           // consultas de chamada por turma e data
 }
 
 model Comunicado {
