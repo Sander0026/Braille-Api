@@ -86,6 +86,27 @@ export class BeneficiariesService {
     return result;
   }
 
+  /** Verificação rápida: retorna se um CPF/RG já existe no sistema (sem lançar exceção) */
+  async checkCpfRg(cpfRg: string): Promise<
+    | { status: 'livre' }
+    | { status: 'ativo'; id: string; nomeCompleto: string; matricula: string | null }
+    | { status: 'inativo'; id: string; nomeCompleto: string; matricula: string | null; excluido: boolean }
+  > {
+    const cpfRgLimpo = (cpfRg ?? '').replace(/\D/g, '');
+    if (!cpfRgLimpo) return { status: 'livre' };
+
+    const aluno = await this.prisma.aluno.findUnique({
+      where: { cpfRg: cpfRgLimpo },
+      select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true, excluido: true },
+    });
+
+    if (!aluno) return { status: 'livre' };
+    if (aluno.statusAtivo && !aluno.excluido) {
+      return { status: 'ativo', id: aluno.id, nomeCompleto: aluno.nomeCompleto, matricula: aluno.matricula };
+    }
+    return { status: 'inativo', id: aluno.id, nomeCompleto: aluno.nomeCompleto, matricula: aluno.matricula, excluido: aluno.excluido };
+  }
+
   async findAll(query: QueryBeneficiaryDto) {
     const {
       page = 1, limit = 10,
