@@ -472,7 +472,8 @@ export class BeneficiariesService {
     const sheetName = workbook.SheetNames[0];
     const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
       defval: '',
-      range: 1, // Pula a linha 1 (cabeçalho descritivo) e usa a linha 2 (chaves do sistema) como header
+      range: 1,       // Pula a linha 1 (cabeçalho descritivo) e usa a linha 2 (chaves do sistema) como header
+      cellDates: true, // Converte seriais de data do Excel (ex: 32906) para Date objects automaticamente
     });
 
     const erros: { linha: number; cpfRg: string; motivo: string }[] = [];
@@ -485,12 +486,12 @@ export class BeneficiariesService {
 
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
       const cpfRg = String(row['CPF_RG'] ?? '').trim();
-      const dataNascimentoRaw = String(row['DataNascimento'] ?? '').trim();
+      const dataNascimentoCell = row['DataNascimento'];
 
       // ── Campos obrigatórios ─────────────────────────────────
       if (!nomeCompleto) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
       if (!cpfRg) { erros.push({ linha, cpfRg: '—', motivo: 'Campo obrigatório ausente: CPF_RG' }); continue; }
-      if (!dataNascimentoRaw) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+      if (!dataNascimentoCell) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
 
       // ── Duplicata interna ────────────────────────────────────
       if (cpfRgsNaPlanilha.has(cpfRg)) {
@@ -500,17 +501,25 @@ export class BeneficiariesService {
       cpfRgsNaPlanilha.add(cpfRg);
 
       // ── Data de nascimento ───────────────────────────────────
+      // cellDates:true converte seriais do Excel para Date objects automaticamente.
+      // Também suportamos string DD/MM/AAAA para quem digita manualmente.
       let dataNascimento: Date;
       try {
-        if (dataNascimentoRaw.includes('/')) {
-          const [dia, mes, ano] = dataNascimentoRaw.split('/');
-          dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+        if (dataNascimentoCell instanceof Date) {
+          // Excel com cellDates:true → já é um Date válido
+          dataNascimento = dataNascimentoCell;
         } else {
-          dataNascimento = new Date(dataNascimentoRaw);
+          const dataNascimentoStr = String(dataNascimentoCell).trim();
+          if (dataNascimentoStr.includes('/')) {
+            const [dia, mes, ano] = dataNascimentoStr.split('/');
+            dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+          } else {
+            dataNascimento = new Date(dataNascimentoStr);
+          }
         }
-        if (isNaN(dataNascimento.getTime())) throw new Error();
+        if (Number.isNaN(dataNascimento.getTime())) throw new Error('Data inválida');
       } catch {
-        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoRaw}". Use DD/MM/AAAA` });
+        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoCell}". Use DD/MM/AAAA` });
         continue;
       }
 
