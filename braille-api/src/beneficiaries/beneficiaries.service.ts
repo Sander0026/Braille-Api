@@ -63,9 +63,12 @@ export class BeneficiariesService {
     const aluno = await this.prisma.aluno.findUnique({ where: { id } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
+    // Gera nova matrícula a cada reativação (regra de negócio)
+    const matricula = await gerarMatriculaAluno(this.prisma);
+
     const result = await this.prisma.aluno.update({
       where: { id },
-      data: { statusAtivo: true, excluido: false },
+      data: { statusAtivo: true, excluido: false, matricula },
       select: {
         id: true, nomeCompleto: true, cpfRg: true, matricula: true,
         statusAtivo: true, criadoEm: true,
@@ -77,7 +80,7 @@ export class BeneficiariesService {
       registroId: id,
       acao: AuditAcao.RESTAURAR,
       oldValue: { statusAtivo: false },
-      newValue: { statusAtivo: true },
+      newValue: { statusAtivo: true, matricula },
     });
 
     return result;
@@ -153,6 +156,7 @@ export class BeneficiariesService {
           id: true,
           nomeCompleto: true,
           cpfRg: true,
+          matricula: true,
           dataNascimento: true,
           telefoneContato: true,
           tipoDeficiencia: true,
@@ -208,7 +212,7 @@ export class BeneficiariesService {
       where,
       orderBy: { nomeCompleto: 'asc' },
       select: {
-        nomeCompleto: true, cpfRg: true, dataNascimento: true, genero: true,
+        nomeCompleto: true, cpfRg: true, matricula: true, dataNascimento: true, genero: true,
         estadoCivil: true, telefoneContato: true, email: true,
         cep: true, rua: true, numero: true, bairro: true, cidade: true, uf: true,
         tipoDeficiencia: true, causaDeficiencia: true, prefAcessibilidade: true,
