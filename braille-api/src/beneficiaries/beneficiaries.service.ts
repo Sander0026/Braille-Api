@@ -470,10 +470,30 @@ export class BeneficiariesService {
     const XLSX = require('xlsx');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-      defval: '',
-      range: 1,       // Pula a linha 1 (cabeçalho descritivo) e usa a linha 2 (chaves do sistema) como header
-      cellDates: true, // Converte seriais de data do Excel (ex: 32906) para Date objects automaticamente
+
+    // Lê como array de arrays para controlar linhas manualmente
+    const rawRows: any[][] = XLSX.utils.sheet_to_json(
+      workbook.Sheets[sheetName],
+      { header: 1, defval: '', cellDates: true },
+    );
+
+    if (rawRows.length < 3) {
+      return { importados: 0, ignorados: 0, erros: [{ linha: 0, cpfRg: '—', motivo: 'Planilha vazia ou sem dados.' }] };
+    }
+
+    // Linha 0 = labels descritivos (ignorar)
+    // Linha 1 = cabeçalhos técnicos (NomeCompleto, CPF_RG, ...)
+    // Linha 2+ = dados reais
+    const headers: string[] = rawRows[1].map((h: any) => String(h ?? '').trim());
+    const dataRows = rawRows.slice(2);
+
+    // Mapeia cada linha para um objeto usando os cabeçalhos técnicos
+    const rows: Record<string, any>[] = dataRows.map((row) => {
+      const obj: Record<string, any> = {};
+      headers.forEach((key, idx) => {
+        obj[key] = row[idx] ?? '';
+      });
+      return obj;
     });
 
     const erros: { linha: number; cpfRg: string; motivo: string }[] = [];
@@ -481,17 +501,20 @@ export class BeneficiariesService {
     const cpfRgsNaPlanilha = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const linha = i + 2; // linha 1 = cabeçalho no Excel
+      const linha = i + 3; // +3: linha 1=labels, linha 2=cabeçalhos, dados a partir da 3
       const row = rows[i];
 
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
       const cpfRg = String(row['CPF_RG'] ?? '').trim();
-      const dataNascimentoCell = row['DataNascimento'];
+      const dataNascimentoRaw = row['DataNascimento'];
+
+      // Pular linhas completamente vazias
+      if (!nomeCompleto && !cpfRg && !dataNascimentoRaw) continue;
 
       // ── Campos obrigatórios ─────────────────────────────────
       if (!nomeCompleto) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
       if (!cpfRg) { erros.push({ linha, cpfRg: '—', motivo: 'Campo obrigatório ausente: CPF_RG' }); continue; }
-      if (!dataNascimentoCell) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+      if (!dataNascimentoRaw && dataNascimentoRaw !== 0) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
 
       // ── Duplicata interna ────────────────────────────────────
       if (cpfRgsNaPlanilha.has(cpfRg)) {
@@ -500,38 +523,24 @@ export class BeneficiariesService {
       }
       cpfRgsNaPlanilha.add(cpfRg);
 
-      // ── Data de nascimento ───────────────────────────────────
-      // cellDates:true converte seriais do Excel para Date objects automaticamente.
-      // Também suportamos string DD/MM/AAAA para quem digita manualmente.
+      // ── Data de nascimento ─────────────────────────────────
+      // Aceita: string DD/MM/AAAA, string AAAA-MM-DD, ou objeto Date (do cellDates:true)
       let dataNascimento: Date;
       try {
-        if (dataNascimentoCell instanceof Date) {
-          // Excel com cellDates:true → já é um Date válido
-          dataNascimento = dataNascimentoCell;
+        if (dataNascimentoRaw instanceof Date) {
+            dataNascimento = dataNascimentoRaw;
         } else {
-          const dataNascimentoStr = String(dataNascimentoCell).trim();
-          if (dataNascimentoStr.includes('/')) {
-            const [dia, mes, ano] = dataNascimentoStr.split('/');
-            dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
-          } else if (!Number.isNaN(Number(dataNascimentoCell))) {
-            // Excel serial numérico puro: dias desde 30/12/1899
-            const excelEpoch = new Date(1899, 11, 30);
-            dataNascimento = new Date(excelEpoch.getTime() + Number(dataNascimentoCell) * 86400000);
-          } else {
-            // Último recurso: parser nativo do JS
-            dataNascimento = new Date(dataNascimentoStr);
-          }
+            const rawStr = String(dataNascimentoRaw).trim();
+            if (rawStr.includes('/')) {
+              const [dia, mes, ano] = rawStr.split('/');
+              dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+            } else {
+              dataNascimento = new Date(rawStr);
+            }
         }
-        
-        // Verifica se é uma data válida no JS
-        if (Number.isNaN(dataNascimento.getTime())) throw new Error('Data inválida');
-        
-        // Verifica se o ano é humanamente aceitável para o banco PostgreSQL
-        const ano = dataNascimento.getFullYear();
-        if (ano < 1900 || ano > 2100) throw new Error('Ano fora de limite (1900-2100)');
-        
-      } catch (err: any) {
-        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida ou absurda: "${dataNascimentoCell}". Use DD/MM/AAAA` });
+        if (Number.isNaN(dataNascimento.getTime())) throw new Error();
+      } catch {
+        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoRaw}". Use DD/MM/AAAA` });
         continue;
       }
 
@@ -614,47 +623,40 @@ export class BeneficiariesService {
 
     // ── Inserir em lote ──────────────────────────────────────
     if (paraInserir.length > 0) {
-      // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
-      // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
-
-      // ── Pré-gerar matrículas e IDs com simples contador ─────────────
-      // Evita findUnique+loop que causava P2028 com NeonDB serverless.
-      // E atribuir UUID localmente permite que tenhamos o ID para a auditoria individual.
+      // ── Pré-gerar matrículas com simples contador ─────────────
+      // Evita chamadas de API em loop dentro de transação que causavam P2028 com NeonDB serverless.
       const ano = new Date().getFullYear();
       const prefix = `${ano}`;
       let baseCount = await this.prisma.aluno.count({
         where: { matricula: { startsWith: prefix } },
       });
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const crypto = require('crypto');
+
       for (const aluno of paraInserir) {
-        aluno.id = crypto.randomUUID();
         aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
       }
 
       // ── Inserir em lote com createMany (single SQL — sem $transaction interativa) ──
-      // createMany é um único INSERT com múltiplos VALUES — execução atômica sem
-      // o protocolo de transação interativa do Prisma que gerava P2028.
       try {
         await this.prisma.aluno.createMany({
           data: paraInserir,
-          skipDuplicates: false, // queremos falhar se houver conflito de CPF/RG
+          skipDuplicates: false,
         });
       } catch (err: any) {
         console.error('🔥 ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
         throw err;
       }
 
-      // ── Auditoria em background (invididual) ───────────────────
+      // ── Auditoria em background (por lote) ──────────────────────
       Promise.resolve().then(async () => {
-        for (const aluno of paraInserir) {
-          await this.auditService.registrar({
-            entidade: 'Aluno',
-            registroId: aluno.id,
-            acao: AuditAcao.CRIAR,
-            newValue: aluno,
-          }).catch(() => { });
-        }
+        await this.auditService.registrar({
+          entidade: 'Aluno',
+          registroId: 'importacao-lote',
+          acao: AuditAcao.CRIAR,
+          newValue: {
+            quantidade: paraInserir.length,
+            matriculas: paraInserir.map(a => a.matricula),
+          },
+        }).catch(() => { });
       });
     }
 
