@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException, Inject } from '@nestjs/common';
+﻿import { Injectable, ConflictException, NotFoundException, Inject } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
@@ -17,9 +17,13 @@ export class BeneficiariesService {
   ) { }
 
   async create(createBeneficiaryDto: CreateBeneficiaryDto) {
-    const alunoExistente = await this.prisma.aluno.findUnique({
-      where: { cpfRg: createBeneficiaryDto.cpfRg }
-    });
+    const orCondition: any[] = [];
+    if (createBeneficiaryDto.cpf) orCondition.push({ cpf: createBeneficiaryDto.cpf });
+    if (createBeneficiaryDto.rg) orCondition.push({ rg: createBeneficiaryDto.rg });
+
+    const alunoExistente = orCondition.length > 0 
+      ? await this.prisma.aluno.findFirst({ where: { OR: orCondition } })
+      : null;
 
     if (alunoExistente) {
       // Se está ativo, bloqueia com conflito real
@@ -72,9 +76,9 @@ export class BeneficiariesService {
       where: { id },
       data: { statusAtivo: true, excluido: false, matricula },
       select: {
-        id: true, nomeCompleto: true, cpfRg: true, matricula: true,
+        id: true, nomeCompleto: true, cpf: true, rg: true, matricula: true,
         statusAtivo: true, criadoEm: true,
-      },
+      }
     });
 
     this.auditService.registrar({
@@ -89,16 +93,21 @@ export class BeneficiariesService {
   }
 
   /** Verificação rápida: retorna se um CPF/RG já existe no sistema (sem lançar exceção) */
-  async checkCpfRg(cpfRg: string): Promise<
+  async checkCpfRg(cpf?: string, rg?: string): Promise<
     | { status: 'livre' }
     | { status: 'ativo'; id: string; nomeCompleto: string; matricula: string | null }
     | { status: 'inativo'; id: string; nomeCompleto: string; matricula: string | null; excluido: boolean }
   > {
-    const cpfRgLimpo = (cpfRg ?? '').replace(/\D/g, '');
-    if (!cpfRgLimpo) return { status: 'livre' };
+    const cpfLimpo = (cpf ?? '').replace(/\D/g, '');
+    const rgLimpo = (rg ?? '').trim();
+    if (!cpfLimpo && !rgLimpo) return { status: 'livre' };
 
-    const aluno = await this.prisma.aluno.findUnique({
-      where: { cpfRg: cpfRgLimpo },
+    const orCondition: any[] = [];
+    if (cpfLimpo) orCondition.push({ cpf: cpfLimpo });
+    if (rgLimpo) orCondition.push({ rg: rgLimpo });
+
+    const aluno = await this.prisma.aluno.findFirst({
+      where: { OR: orCondition },
       select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true, excluido: true },
     });
 
@@ -178,7 +187,8 @@ export class BeneficiariesService {
         select: {
           id: true,
           nomeCompleto: true,
-          cpfRg: true,
+          cpf: true,
+          rg: true,
           matricula: true,
           dataNascimento: true,
           telefoneContato: true,
@@ -235,7 +245,7 @@ export class BeneficiariesService {
       where,
       orderBy: { nomeCompleto: 'asc' },
       select: {
-        nomeCompleto: true, cpfRg: true, matricula: true, dataNascimento: true, genero: true,
+        nomeCompleto: true, cpf: true, rg: true, matricula: true, dataNascimento: true, genero: true,
         estadoCivil: true, telefoneContato: true, email: true,
         cep: true, rua: true, numero: true, bairro: true, cidade: true, uf: true,
         tipoDeficiencia: true, causaDeficiencia: true, prefAcessibilidade: true,
@@ -258,7 +268,7 @@ export class BeneficiariesService {
     // Cabeçalho estilizado
     const headers = [
       { header: 'Nome Completo', key: 'nome', width: 35 },
-      { header: 'CPF / RG', key: 'cpf', width: 18 },
+      { header: 'CPF/RG', key: 'documento', width: 22 },
       { header: 'Nascimento', key: 'nasc', width: 14 },
       { header: 'Gênero', key: 'genero', width: 14 },
       { header: 'Estado Civil', key: 'estCivil', width: 16 },
@@ -306,7 +316,7 @@ export class BeneficiariesService {
     alunos.forEach((a, idx) => {
       const row = sheet.addRow({
         nome: a.nomeCompleto,
-        cpf: a.cpfRg,
+        documento: (a.cpf || '') + (a.cpf && a.rg ? ' / ' : '') + (a.rg || ''),
         nasc: fmtData(a.dataNascimento),
         genero: a.genero ?? '',
         estCivil: a.estadoCivil ?? '',
@@ -385,8 +395,8 @@ export class BeneficiariesService {
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.EXCLUIR,
-      oldValue: { statusAtivo: true },
-      newValue: { statusAtivo: false },
+      oldValue: beneficiarioAntigo,
+      newValue: { ...beneficiarioAntigo, statusAtivo: false },
     });
     return result;
   }
@@ -400,8 +410,8 @@ export class BeneficiariesService {
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.RESTAURAR,
-      oldValue: { statusAtivo: false },
-      newValue: { statusAtivo: true },
+      oldValue: beneficiarioAntigo,
+      newValue: { ...beneficiarioAntigo, statusAtivo: true },
     });
     return result;
   }
@@ -415,8 +425,8 @@ export class BeneficiariesService {
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.ARQUIVAR,
-      oldValue: { excluido: false },
-      newValue: { excluido: true },
+      oldValue: beneficiarioAntigo,
+      newValue: { ...beneficiarioAntigo, excluido: true },
     });
     return result;
   }
@@ -461,97 +471,100 @@ export class BeneficiariesService {
     };
   }
 
+
   async importFromSheet(buffer: Buffer): Promise<{
     importados: number;
     ignorados: number;
-    erros: { linha: number; cpfRg: string; motivo: string }[];
+    erros: { linha: number; documento: string; motivo: string }[];
   }> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const XLSX = require('xlsx');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
 
-    // Lê como array de arrays para controlar linhas manualmente
+    // Sem cellDates — evita bug de timezone com seriais do Excel
     const rawRows: any[][] = XLSX.utils.sheet_to_json(
       workbook.Sheets[sheetName],
-      { header: 1, defval: '', cellDates: true },
+      { header: 1, defval: '' },
     );
 
     if (rawRows.length < 3) {
-      return { importados: 0, ignorados: 0, erros: [{ linha: 0, cpfRg: '—', motivo: 'Planilha vazia ou sem dados.' }] };
+      return { importados: 0, ignorados: 0, erros: [{ linha: 0, documento: '—', motivo: 'Planilha vazia ou sem dados.' }] };
     }
 
-    // Linha 0 = labels descritivos (ignorar)
-    // Linha 1 = cabeçalhos técnicos (NomeCompleto, CPF_RG, ...)
-    // Linha 2+ = dados reais
+    // Linha 0 = labels | Linha 1 = cabeçalhos | Linha 2+ = dados
     const headers: string[] = rawRows[1].map((h: any) => String(h ?? '').trim());
     const dataRows = rawRows.slice(2);
 
-    // Mapeia cada linha para um objeto usando os cabeçalhos técnicos
     const rows: Record<string, any>[] = dataRows.map((row) => {
       const obj: Record<string, any> = {};
-      headers.forEach((key, idx) => {
-        obj[key] = row[idx] ?? '';
-      });
+      headers.forEach((key, idx) => { obj[key] = row[idx] ?? ''; });
       return obj;
     });
 
-    const erros: { linha: number; cpfRg: string; motivo: string }[] = [];
+    const erros: { linha: number; documento: string; motivo: string }[] = [];
     const validos: any[] = [];
-    const cpfRgsNaPlanilha = new Set<string>();
+    const cpfsNaPlanilha = new Set<string>();
+    const rgsNaPlanilha = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const linha = i + 3; // +3: linha 1=labels, linha 2=cabeçalhos, dados a partir da 3
+      const linha = i + 3;
       const row = rows[i];
 
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
-      const cpfRg = String(row['CPF_RG'] ?? '').trim();
+      const cpf = String(row['CPF'] ?? row['CPF_RG'] ?? '').trim();
+      const rg = String(row['RG'] ?? '').trim();
       const dataNascimentoRaw = row['DataNascimento'];
 
-      // Pular linhas completamente vazias
-      if (!nomeCompleto && !cpfRg && !dataNascimentoRaw) continue;
+      if (!nomeCompleto && !cpf && !rg && !dataNascimentoRaw) continue;
 
-      // ── Campos obrigatórios ─────────────────────────────────
-      if (!nomeCompleto) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
-      if (!cpfRg) { erros.push({ linha, cpfRg: '—', motivo: 'Campo obrigatório ausente: CPF_RG' }); continue; }
-      if (!dataNascimentoRaw && dataNascimentoRaw !== 0) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+      const documentoVisivel = cpf || rg || '—';
 
-      // ── Duplicata interna ────────────────────────────────────
-      if (cpfRgsNaPlanilha.has(cpfRg)) {
-        erros.push({ linha, cpfRg, motivo: 'CPF/RG duplicado na mesma planilha' });
+      if (!nomeCompleto) { erros.push({ linha, documento: documentoVisivel, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
+      if (!cpf && !rg) { erros.push({ linha, documento: '—', motivo: 'Campo obrigatório ausente: CPF ou RG' }); continue; }
+      if (!dataNascimentoRaw && dataNascimentoRaw !== 0) { erros.push({ linha, documento: documentoVisivel, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+
+      if ((cpf && cpfsNaPlanilha.has(cpf)) || (rg && rgsNaPlanilha.has(rg))) {
+        erros.push({ linha, documento: documentoVisivel, motivo: 'CPF ou RG duplicado na mesma planilha' });
         continue;
       }
-      cpfRgsNaPlanilha.add(cpfRg);
+      if (cpf) cpfsNaPlanilha.add(cpf);
+      if (rg) rgsNaPlanilha.add(rg);
 
-      // ── Data de nascimento ─────────────────────────────────
-      // Aceita: string DD/MM/AAAA, string AAAA-MM-DD, ou objeto Date (do cellDates:true)
+      // Parse de data: serial Excel, DD/MM/AAAA ou AAAA-MM-DD
       let dataNascimento: Date;
       try {
-        if (dataNascimentoRaw instanceof Date) {
-            dataNascimento = dataNascimentoRaw;
+        if (typeof dataNascimentoRaw === 'number') {
+          const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+          dataNascimento = new Date(excelEpoch.getTime() + Math.round(dataNascimentoRaw) * 86400000);
+        } else if (dataNascimentoRaw instanceof Date) {
+          const d = dataNascimentoRaw as Date;
+          dataNascimento = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
         } else {
-            const rawStr = String(dataNascimentoRaw).trim();
-            if (rawStr.includes('/')) {
-              const [dia, mes, ano] = rawStr.split('/');
-              dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
-            } else {
-              dataNascimento = new Date(rawStr);
-            }
+          const rawStr = String(dataNascimentoRaw).trim();
+          if (rawStr.includes('/')) {
+            const [dia, mes, ano] = rawStr.split('/');
+            dataNascimento = new Date(Date.UTC(Number(ano), Number(mes) - 1, Number(dia)));
+          } else {
+            const parts = rawStr.split('-');
+            dataNascimento = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+          }
         }
-        if (Number.isNaN(dataNascimento.getTime())) throw new Error();
+        if (Number.isNaN(dataNascimento.getTime())) throw new Error('NaN');
+        const anoNasc = dataNascimento.getUTCFullYear();
+        if (anoNasc < 1900 || anoNasc > new Date().getFullYear()) throw new Error(`Ano invalido: ${anoNasc}`);
       } catch {
-        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoRaw}". Use DD/MM/AAAA` });
+        erros.push({ linha, documento: documentoVisivel, motivo: `DataNascimento invalida: "${dataNascimentoRaw}". Use DD/MM/AAAA ou AAAA-MM-DD` });
         continue;
       }
 
-      // ── Normalizar enums ─────────────────────────────────────
       const rTipo = this.normalizarEnum(
         String(row['TipoDeficiencia'] ?? '').trim(),
         this.TIPO_DEFICIENCIA_MAP,
         ['CEGUEIRA_TOTAL', 'BAIXA_VISAO', 'VISAO_MONOCULAR'],
         'TipoDeficiencia',
       );
-      if (rTipo.erro) { erros.push({ linha, cpfRg, motivo: rTipo.erro }); continue; }
+      if (rTipo.erro) { erros.push({ linha, documento: documentoVisivel, motivo: rTipo.erro }); continue; }
 
       const rCausa = this.normalizarEnum(
         String(row['CausaDeficiencia'] ?? '').trim(),
@@ -559,7 +572,7 @@ export class BeneficiariesService {
         ['CONGENITA', 'ADQUIRIDA'],
         'CausaDeficiencia',
       );
-      if (rCausa.erro) { erros.push({ linha, cpfRg, motivo: rCausa.erro }); continue; }
+      if (rCausa.erro) { erros.push({ linha, documento: documentoVisivel, motivo: rCausa.erro }); continue; }
 
       const rPref = this.normalizarEnum(
         String(row['PrefAcessibilidade'] ?? '').trim(),
@@ -567,12 +580,12 @@ export class BeneficiariesService {
         ['BRAILLE', 'FONTE_AMPLIADA', 'ARQUIVO_DIGITAL', 'AUDIO'],
         'PrefAcessibilidade',
       );
-      if (rPref.erro) { erros.push({ linha, cpfRg, motivo: rPref.erro }); continue; }
+      if (rPref.erro) { erros.push({ linha, documento: documentoVisivel, motivo: rPref.erro }); continue; }
 
-      // ── Montar registro ──────────────────────────────────────
       validos.push({
         nomeCompleto,
-        cpfRg,
+        cpf: cpf || null,
+        rg: rg || null,
         dataNascimento,
         genero: String(row['Genero'] ?? '').trim() || null,
         estadoCivil: String(row['EstadoCivil'] ?? '').trim() || null,
@@ -601,62 +614,66 @@ export class BeneficiariesService {
       return { importados: 0, ignorados: 0, erros };
     }
 
-    // ── Verificar duplicatas no banco (1 única query) ─────────
-    const cpfRgsValidos = validos.map(v => v.cpfRg);
-    const existentes = await this.prisma.aluno.findMany({
-      where: { cpfRg: { in: cpfRgsValidos } },
-      select: { cpfRg: true },
-    });
-    const cpfRgsExistentes = new Set(existentes.map(e => e.cpfRg));
+    // Verificar duplicatas no banco (1 query)
+    const cpfsValidos = validos.map(v => v.cpf).filter(Boolean);
+    const rgsValidos = validos.map(v => v.rg).filter(Boolean);
+
+    let existentes: any[] = [];
+    if (cpfsValidos.length > 0 || rgsValidos.length > 0) {
+      const orParams: any[] = [];
+      if (cpfsValidos.length) orParams.push({ cpf: { in: cpfsValidos } });
+      if (rgsValidos.length) orParams.push({ rg: { in: rgsValidos } });
+      existentes = await this.prisma.aluno.findMany({
+        where: { OR: orParams },
+        select: { cpf: true, rg: true },
+      });
+    }
+
+    const cpfsExistentes = new Set(existentes.map(e => e.cpf).filter(Boolean));
+    const rgsExistentes = new Set(existentes.map(e => e.rg).filter(Boolean));
 
     const paraInserir: any[] = [];
     let ignorados = 0;
 
     for (const aluno of validos) {
-      if (cpfRgsExistentes.has(aluno.cpfRg)) {
-        erros.push({ linha: 0, cpfRg: aluno.cpfRg, motivo: 'CPF/RG já cadastrado no sistema' });
+      if ((aluno.cpf && cpfsExistentes.has(aluno.cpf)) || (aluno.rg && rgsExistentes.has(aluno.rg))) {
+        erros.push({ linha: 0, documento: aluno.cpf || aluno.rg, motivo: 'CPF ou RG ja cadastrado no sistema' });
         ignorados++;
       } else {
         paraInserir.push(aluno);
       }
     }
 
-    // ── Inserir em lote ──────────────────────────────────────
     if (paraInserir.length > 0) {
-      // ── Pré-gerar matrículas com simples contador ─────────────
-      // Evita chamadas de API em loop dentro de transação que causavam P2028 com NeonDB serverless.
       const ano = new Date().getFullYear();
       const prefix = `${ano}`;
       let baseCount = await this.prisma.aluno.count({
         where: { matricula: { startsWith: prefix } },
       });
-
       for (const aluno of paraInserir) {
         aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
       }
 
-      // ── Inserir em lote com createMany (single SQL — sem $transaction interativa) ──
       try {
         await this.prisma.aluno.createMany({
           data: paraInserir,
           skipDuplicates: false,
         });
       } catch (err: any) {
-        console.error('🔥 ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
+        console.error('ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
         throw err;
       }
 
-      // ── Auditoria em background (por lote) ──────────────────────
+      // Auditoria individual por aluno (background)
       Promise.resolve().then(async () => {
-        await this.auditService.registrar({
-          entidade: 'Aluno',
-          registroId: 'importacao-lote',
-          acao: AuditAcao.CRIAR,
-          newValue: {
-            quantidade: paraInserir.length,
-            matriculas: paraInserir.map(a => a.matricula),
-          },
-        }).catch(() => { });
+        for (const aluno of paraInserir) {
+          await this.auditService.registrar({
+            entidade: 'Aluno',
+            registroId: aluno.matricula ?? 'sem-matricula',
+            acao: AuditAcao.CRIAR,
+            newValue: { ...aluno, origem: 'importacao-planilha' },
+          }).catch(() => { });
+        }
       });
     }
 

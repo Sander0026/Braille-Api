@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum, IsDateString, ValidateIf } from 'class-validator';
 import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade } from '@prisma/client';
 
 export class CreateBeneficiaryDto {
@@ -13,10 +13,17 @@ export class CreateBeneficiaryDto {
   @IsNotEmpty()
   dataNascimento: string;
 
-  @ApiProperty({ description: 'CPF ou RG' })
+  @ApiPropertyOptional({ description: 'CPF do beneficiário' })
+  @ValidateIf(o => !o.rg)
   @IsString()
-  @IsNotEmpty()
-  cpfRg: string;
+  @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
+  cpf?: string;
+
+  @ApiPropertyOptional({ description: 'RG do beneficiário' })
+  @ValidateIf(o => !o.cpf)
+  @IsString()
+  @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
+  rg?: string;
 
   @ApiPropertyOptional()
   @IsString()

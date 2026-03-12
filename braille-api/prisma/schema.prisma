@@ -115,7 +115,8 @@ model Aluno {
   nomeCompleto   String
   dataNascimento DateTime
   fotoPerfil     String?
-  cpfRg          String   @unique
+  cpf            String?  @unique
+  rg             String?  @unique
   genero         String?
   estadoCivil    String?
 
@@ -168,7 +169,8 @@ model Aluno {
   @@index([statusAtivo, excluido]) // listagem de alunos ativos/inativos
   @@index([nomeCompleto]) // busca full-text por nome
   @@index([matricula]) // busca por número de matrícula
-  @@index([cpfRg]) // O(log N) para buscas numéricas frequentes
+  @@index([cpf]) // O(log N) para buscas numéricas frequentes
+  @@index([rg])
   @@index([email]) // otimiza recuperação de contatos
 }
 
