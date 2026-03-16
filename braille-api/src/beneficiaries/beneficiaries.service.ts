@@ -463,7 +463,11 @@ export class BeneficiariesService {
     'parda': 'PARDA', 'pardo': 'PARDA',
     'amarela': 'AMARELA', 'amarelo': 'AMARELA',
     'indígena': 'INDIGENA', 'indigena': 'INDIGENA',
-    'prefiro não responder': 'NAO_DECLARADO', 'não declarado': 'NAO_DECLARADO', 'nao declarado': 'NAO_DECLARADO',
+    'prefiro não responder': 'NAO_DECLARADO', 
+    'não declarado': 'NAO_DECLARADO', 
+    'nao declarado': 'NAO_DECLARADO',
+    'prefiro não responder / não declarado': 'NAO_DECLARADO',
+    'prefiro nao responder / nao declarado': 'NAO_DECLARADO'
   };
 
   private normalizarEnum<T extends string>(
