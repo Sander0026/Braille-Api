@@ -27,4 +27,9 @@ export class QueryUserDto {
     @Type(() => Boolean)
     @IsOptional()
     inativos?: boolean = false;
+
+    @ApiPropertyOptional({ description: 'Filtrar por perfil (role) do usuário' })
+    @IsString()
+    @IsOptional()
+    role?: string;
 }
