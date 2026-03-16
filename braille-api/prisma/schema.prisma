@@ -67,6 +67,15 @@ enum CategoriaComunicado {
   GERAL
 }
 
+enum CorRaca {
+  BRANCA
+  PRETA
+  PARDA
+  AMARELA
+  INDIGENA
+  NAO_DECLARADO
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -119,6 +128,7 @@ model Aluno {
   rg             String?  @unique
   genero         String?
   estadoCivil    String?
+  corRaca        CorRaca?
 
   // 2. Contato e Localização
   cep               String?

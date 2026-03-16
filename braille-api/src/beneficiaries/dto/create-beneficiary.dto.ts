@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum, IsDateString, ValidateIf } from 'class-validator';
-import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade } from '@prisma/client';
+import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade, CorRaca } from '@prisma/client';
 
 export class CreateBeneficiaryDto {
   @ApiProperty({ description: 'Nome completo do beneficiário' })
@@ -34,6 +34,11 @@ export class CreateBeneficiaryDto {
   @IsString()
   @IsOptional()
   estadoCivil?: string;
+
+  @ApiPropertyOptional({ enum: CorRaca })
+  @IsEnum(CorRaca)
+  @IsOptional()
+  corRaca?: CorRaca;
 
   @ApiPropertyOptional() @IsString() @IsOptional() cep?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() rua?: string;

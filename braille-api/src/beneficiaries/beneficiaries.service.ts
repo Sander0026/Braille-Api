@@ -1,4 +1,4 @@
-﻿import { Injectable, ConflictException, NotFoundException, Inject } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, Inject } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
@@ -124,7 +124,7 @@ export class BeneficiariesService {
       busca, nome,   // busca = campo novo (OR em nome+matrícula); nome = legado
       inativos,
       tipoDeficiencia, causaDeficiencia, prefAcessibilidade, precisaAcompanhante,
-      genero, estadoCivil, cidade, uf,
+      genero, corRaca, estadoCivil, cidade, uf,
       escolaridade, rendaFamiliar,
       dataCadastroInicio, dataCadastroFim,
     } = query;
@@ -156,6 +156,7 @@ export class BeneficiariesService {
 
     // Filtros de Dados Pessoais (texto — case-insensitive)
     if (genero?.trim()) where.genero = { contains: genero.trim(), mode: 'insensitive' };
+    if (corRaca) where.corRaca = corRaca;
     if (estadoCivil?.trim()) where.estadoCivil = { contains: estadoCivil.trim(), mode: 'insensitive' };
 
     // Filtros de Localização (texto — case-insensitive)
@@ -212,7 +213,7 @@ export class BeneficiariesService {
     const {
       nome, inativos,
       tipoDeficiencia, causaDeficiencia, prefAcessibilidade, precisaAcompanhante,
-      genero, estadoCivil, cidade, uf,
+      genero, corRaca, estadoCivil, cidade, uf,
       escolaridade, rendaFamiliar,
       dataCadastroInicio, dataCadastroFim,
     } = query;
@@ -225,6 +226,7 @@ export class BeneficiariesService {
     if (prefAcessibilidade) where.prefAcessibilidade = prefAcessibilidade;
     if (precisaAcompanhante !== undefined) where.precisaAcompanhante = precisaAcompanhante;
     if (genero?.trim()) where.genero = { contains: genero.trim(), mode: 'insensitive' };
+    if (corRaca) where.corRaca = corRaca;
     if (estadoCivil?.trim()) where.estadoCivil = { contains: estadoCivil.trim(), mode: 'insensitive' };
     if (cidade?.trim()) where.cidade = { contains: cidade.trim(), mode: 'insensitive' };
     if (uf?.trim()) where.uf = { contains: uf.trim().toUpperCase(), mode: 'insensitive' };
@@ -252,6 +254,7 @@ export class BeneficiariesService {
         precisaAcompanhante: true, tecAssistivas: true,
         escolaridade: true, profissao: true, rendaFamiliar: true, beneficiosGov: true,
         statusAtivo: true, criadoEm: true,
+        corRaca: true,
       },
     });
 
@@ -285,6 +288,7 @@ export class BeneficiariesService {
       { header: 'Pref. Acessibilidade', key: 'pref', width: 22 },
       { header: 'Acompanhante', key: 'acomp', width: 14 },
       { header: 'Tec. Assistivas', key: 'tec', width: 24 },
+      { header: 'Cor/Raça', key: 'corRaca', width: 20 },
       { header: 'Escolaridade', key: 'esc', width: 22 },
       { header: 'Profissão', key: 'prof', width: 20 },
       { header: 'Renda Familiar', key: 'renda', width: 22 },
@@ -333,6 +337,7 @@ export class BeneficiariesService {
         pref: a.prefAcessibilidade?.replace(/_/g, ' ') ?? '',
         acomp: a.precisaAcompanhante ? 'Sim' : 'Não',
         tec: a.tecAssistivas ?? '',
+        corRaca: a.corRaca?.replace('_', ' ') ?? '',
         esc: a.escolaridade ?? '',
         prof: a.profissao ?? '',
         renda: a.rendaFamiliar ?? '',
@@ -450,6 +455,15 @@ export class BeneficiariesService {
     'fonte ampliada': 'FONTE_AMPLIADA', 'fonte_ampliada': 'FONTE_AMPLIADA',
     'arquivo digital': 'ARQUIVO_DIGITAL', 'arquivo_digital': 'ARQUIVO_DIGITAL',
     'audio': 'AUDIO', 'áudio': 'AUDIO',
+  };
+
+  private readonly COR_RACA_MAP: Record<string, string> = {
+    'branca': 'BRANCA', 'branco': 'BRANCA',
+    'preta': 'PRETA', 'preto': 'PRETA',
+    'parda': 'PARDA', 'pardo': 'PARDA',
+    'amarela': 'AMARELA', 'amarelo': 'AMARELA',
+    'indígena': 'INDIGENA', 'indigena': 'INDIGENA',
+    'prefiro não responder': 'NAO_DECLARADO', 'não declarado': 'NAO_DECLARADO', 'nao declarado': 'NAO_DECLARADO',
   };
 
   private normalizarEnum<T extends string>(
@@ -582,6 +596,17 @@ export class BeneficiariesService {
       );
       if (rPref.erro) { erros.push({ linha, documento: documentoVisivel, motivo: rPref.erro }); continue; }
 
+      const rCorRaca = this.normalizarEnum(
+        String(row['CorRaca'] ?? '').trim(),
+        this.COR_RACA_MAP,
+        ['BRANCA', 'PRETA', 'PARDA', 'AMARELA', 'INDIGENA', 'NAO_DECLARADO'],
+        'CorRaca',
+      );
+      if (rCorRaca.erro && String(row['CorRaca'] ?? '').trim() !== '') { 
+          erros.push({ linha, documento: documentoVisivel, motivo: rCorRaca.erro }); 
+          continue; 
+      }
+
       validos.push({
         nomeCompleto,
         cpf: cpf || null,
@@ -607,6 +632,7 @@ export class BeneficiariesService {
         tecAssistivas: String(row['TecAssistivas'] ?? '').trim() || null,
         precisaAcompanhante: String(row['PrecisaAcompanhante'] ?? '').toUpperCase() === 'SIM',
         prefAcessibilidade: rPref.valor,
+        corRaca: rCorRaca.valor,
       });
     }
 
