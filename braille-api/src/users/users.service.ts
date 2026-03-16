@@ -153,7 +153,7 @@ export class UsersService {
   }
 
   async findAll(query: QueryUserDto) {
-    const { page = 1, limit = 10, nome, inativos } = query;
+    const { page = 1, limit = 10, nome, inativos, role } = query;
     const skip = (page - 1) * limit;
 
     const whereCondicao: any = {
@@ -163,6 +163,10 @@ export class UsersService {
 
     if (nome) {
       whereCondicao.nome = { contains: nome, mode: 'insensitive' };
+    }
+    
+    if (role) {
+      whereCondicao.role = role;
     }
 
     const [users, total] = await Promise.all([
