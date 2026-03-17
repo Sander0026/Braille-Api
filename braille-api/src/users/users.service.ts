@@ -153,7 +153,7 @@ export class UsersService {
   }
 
   async findAll(query: QueryUserDto) {
-    const { page = 1, limit = 10, nome, inativos } = query;
+    const { page = 1, limit = 10, nome, inativos, role } = query;
     const skip = (page - 1) * limit;
 
     const whereCondicao: any = {
@@ -163,6 +163,10 @@ export class UsersService {
 
     if (nome) {
       whereCondicao.nome = { contains: nome, mode: 'insensitive' };
+    }
+    
+    if (role) {
+      whereCondicao.role = role;
     }
 
     const [users, total] = await Promise.all([
@@ -220,6 +224,13 @@ export class UsersService {
   async remove(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Impedir auto-exclusão: um admin não pode desativar a si mesmo
+    const autorId = this.request.user?.sub;
+    if (autorId && autorId === id) {
+      throw new BadRequestException('Não é possível desativar o usuário que está logado.');
+    }
+
     const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: false } });
 
     this.auditService.registrar({
@@ -276,6 +287,13 @@ export class UsersService {
   async removeHard(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Impedir auto-exclusão permanente
+    const autorId = this.request.user?.sub;
+    if (autorId && autorId === id) {
+      throw new BadRequestException('Não é possível excluir o usuário que está logado.');
+    }
+
     const result = await this.prisma.user.update({ where: { id }, data: { excluido: true } });
 
     this.auditService.registrar({

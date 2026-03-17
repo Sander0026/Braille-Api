@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UsePipes } from '@nestjs/common';
 import { ComunicadosService } from './comunicados.service';
+import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
 import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -15,6 +16,7 @@ export class ComunicadosController {
   @Post()
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
+  @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Criar um novo comunicado' })
   create(@Body() createComunicadoDto: CreateComunicadoDto) {
     return this.comunicadosService.create(createComunicadoDto);
@@ -38,6 +40,7 @@ export class ComunicadosController {
   @Patch(':id')
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
+  @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Editar um comunicado' })
   update(@Param('id') id: string, @Body() updateComunicadoDto: UpdateComunicadoDto) {
     return this.comunicadosService.update(id, updateComunicadoDto);

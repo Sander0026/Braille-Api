@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum, IsDateString } from 'class-validator';
-import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade } from '@prisma/client';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum, IsDateString, ValidateIf } from 'class-validator';
+import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade, CorRaca } from '@prisma/client';
 
 export class CreateBeneficiaryDto {
   @ApiProperty({ description: 'Nome completo do beneficiário' })
@@ -13,10 +13,17 @@ export class CreateBeneficiaryDto {
   @IsNotEmpty()
   dataNascimento: string;
 
-  @ApiProperty({ description: 'CPF ou RG' })
+  @ApiPropertyOptional({ description: 'CPF do beneficiário' })
+  @ValidateIf(o => !o.rg)
   @IsString()
-  @IsNotEmpty()
-  cpfRg: string;
+  @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
+  cpf?: string;
+
+  @ApiPropertyOptional({ description: 'RG do beneficiário' })
+  @ValidateIf(o => !o.cpf)
+  @IsString()
+  @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
+  rg?: string;
 
   @ApiPropertyOptional()
   @IsString()
@@ -27,6 +34,11 @@ export class CreateBeneficiaryDto {
   @IsString()
   @IsOptional()
   estadoCivil?: string;
+
+  @ApiPropertyOptional({ enum: CorRaca })
+  @IsEnum(CorRaca)
+  @IsOptional()
+  corRaca?: CorRaca;
 
   @ApiPropertyOptional() @IsString() @IsOptional() cep?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() rua?: string;

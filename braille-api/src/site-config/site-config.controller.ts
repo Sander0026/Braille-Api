@@ -1,5 +1,6 @@
 import { Controller, Get, Patch, Body, UseGuards, Param, UsePipes, ValidationPipe } from '@nestjs/common';
 import { SiteConfigService } from './site-config.service';
+import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 
@@ -31,7 +32,7 @@ export class SiteConfigController {
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
     @Patch()
-    @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
+    @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }), new SanitizeHtmlPipe())
     @ApiOperation({ summary: 'Atualiza configurações gerais do site' })
     updateAll(@Body() body: Record<string, string>) {
         return this.service.updateMany(body);
@@ -40,7 +41,7 @@ export class SiteConfigController {
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
     @Patch('secoes/:secao')
-    @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
+    @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }), new SanitizeHtmlPipe())
     @ApiOperation({ summary: 'Atualiza o conteúdo de uma seção' })
     updateSecao(@Param('secao') secao: string, @Body() body: Record<string, string>) {
         return this.service.updateSecao(secao, body);

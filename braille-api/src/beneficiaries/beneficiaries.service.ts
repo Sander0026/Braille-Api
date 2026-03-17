@@ -17,9 +17,13 @@ export class BeneficiariesService {
   ) { }
 
   async create(createBeneficiaryDto: CreateBeneficiaryDto) {
-    const alunoExistente = await this.prisma.aluno.findUnique({
-      where: { cpfRg: createBeneficiaryDto.cpfRg }
-    });
+    const orCondition: any[] = [];
+    if (createBeneficiaryDto.cpf) orCondition.push({ cpf: createBeneficiaryDto.cpf });
+    if (createBeneficiaryDto.rg) orCondition.push({ rg: createBeneficiaryDto.rg });
+
+    const alunoExistente = orCondition.length > 0 
+      ? await this.prisma.aluno.findFirst({ where: { OR: orCondition } })
+      : null;
 
     if (alunoExistente) {
       // Se está ativo, bloqueia com conflito real
@@ -63,13 +67,18 @@ export class BeneficiariesService {
     const aluno = await this.prisma.aluno.findUnique({ where: { id } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
+    // RA ÚNCO: O RA (matrícula) nunca muda. É o "CPF interno" do Instituto.
+    // Se o aluno já tem matrícula, preserva. Só gera nova se estava vazio
+    // (cenário de migração de dados legados sem matrícula gerada).
+    const matricula = aluno.matricula ?? await gerarMatriculaAluno(this.prisma);
+
     const result = await this.prisma.aluno.update({
       where: { id },
-      data: { statusAtivo: true, excluido: false },
+      data: { statusAtivo: true, excluido: false, matricula },
       select: {
-        id: true, nomeCompleto: true, cpfRg: true, matricula: true,
+        id: true, nomeCompleto: true, cpf: true, rg: true, matricula: true,
         statusAtivo: true, criadoEm: true,
-      },
+      }
     });
 
     this.auditService.registrar({
@@ -83,13 +92,39 @@ export class BeneficiariesService {
     return result;
   }
 
+  /** Verificação rápida: retorna se um CPF/RG já existe no sistema (sem lançar exceção) */
+  async checkCpfRg(cpf?: string, rg?: string): Promise<
+    | { status: 'livre' }
+    | { status: 'ativo'; id: string; nomeCompleto: string; matricula: string | null }
+    | { status: 'inativo'; id: string; nomeCompleto: string; matricula: string | null; excluido: boolean }
+  > {
+    const cpfLimpo = (cpf ?? '').replace(/\D/g, '');
+    const rgLimpo = (rg ?? '').trim();
+    if (!cpfLimpo && !rgLimpo) return { status: 'livre' };
+
+    const orCondition: any[] = [];
+    if (cpfLimpo) orCondition.push({ cpf: cpfLimpo });
+    if (rgLimpo) orCondition.push({ rg: rgLimpo });
+
+    const aluno = await this.prisma.aluno.findFirst({
+      where: { OR: orCondition },
+      select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true, excluido: true },
+    });
+
+    if (!aluno) return { status: 'livre' };
+    if (aluno.statusAtivo && !aluno.excluido) {
+      return { status: 'ativo', id: aluno.id, nomeCompleto: aluno.nomeCompleto, matricula: aluno.matricula };
+    }
+    return { status: 'inativo', id: aluno.id, nomeCompleto: aluno.nomeCompleto, matricula: aluno.matricula, excluido: aluno.excluido };
+  }
+
   async findAll(query: QueryBeneficiaryDto) {
     const {
       page = 1, limit = 10,
       busca, nome,   // busca = campo novo (OR em nome+matrícula); nome = legado
       inativos,
       tipoDeficiencia, causaDeficiencia, prefAcessibilidade, precisaAcompanhante,
-      genero, estadoCivil, cidade, uf,
+      genero, corRaca, estadoCivil, cidade, uf,
       escolaridade, rendaFamiliar,
       dataCadastroInicio, dataCadastroFim,
     } = query;
@@ -121,6 +156,7 @@ export class BeneficiariesService {
 
     // Filtros de Dados Pessoais (texto — case-insensitive)
     if (genero?.trim()) where.genero = { contains: genero.trim(), mode: 'insensitive' };
+    if (corRaca) where.corRaca = corRaca;
     if (estadoCivil?.trim()) where.estadoCivil = { contains: estadoCivil.trim(), mode: 'insensitive' };
 
     // Filtros de Localização (texto — case-insensitive)
@@ -152,7 +188,9 @@ export class BeneficiariesService {
         select: {
           id: true,
           nomeCompleto: true,
-          cpfRg: true,
+          cpf: true,
+          rg: true,
+          matricula: true,
           dataNascimento: true,
           telefoneContato: true,
           tipoDeficiencia: true,
@@ -175,7 +213,7 @@ export class BeneficiariesService {
     const {
       nome, inativos,
       tipoDeficiencia, causaDeficiencia, prefAcessibilidade, precisaAcompanhante,
-      genero, estadoCivil, cidade, uf,
+      genero, corRaca, estadoCivil, cidade, uf,
       escolaridade, rendaFamiliar,
       dataCadastroInicio, dataCadastroFim,
     } = query;
@@ -188,6 +226,7 @@ export class BeneficiariesService {
     if (prefAcessibilidade) where.prefAcessibilidade = prefAcessibilidade;
     if (precisaAcompanhante !== undefined) where.precisaAcompanhante = precisaAcompanhante;
     if (genero?.trim()) where.genero = { contains: genero.trim(), mode: 'insensitive' };
+    if (corRaca) where.corRaca = corRaca;
     if (estadoCivil?.trim()) where.estadoCivil = { contains: estadoCivil.trim(), mode: 'insensitive' };
     if (cidade?.trim()) where.cidade = { contains: cidade.trim(), mode: 'insensitive' };
     if (uf?.trim()) where.uf = { contains: uf.trim().toUpperCase(), mode: 'insensitive' };
@@ -208,13 +247,14 @@ export class BeneficiariesService {
       where,
       orderBy: { nomeCompleto: 'asc' },
       select: {
-        nomeCompleto: true, cpfRg: true, dataNascimento: true, genero: true,
+        nomeCompleto: true, cpf: true, rg: true, matricula: true, dataNascimento: true, genero: true,
         estadoCivil: true, telefoneContato: true, email: true,
         cep: true, rua: true, numero: true, bairro: true, cidade: true, uf: true,
         tipoDeficiencia: true, causaDeficiencia: true, prefAcessibilidade: true,
         precisaAcompanhante: true, tecAssistivas: true,
         escolaridade: true, profissao: true, rendaFamiliar: true, beneficiosGov: true,
         statusAtivo: true, criadoEm: true,
+        corRaca: true,
       },
     });
 
@@ -231,7 +271,7 @@ export class BeneficiariesService {
     // Cabeçalho estilizado
     const headers = [
       { header: 'Nome Completo', key: 'nome', width: 35 },
-      { header: 'CPF / RG', key: 'cpf', width: 18 },
+      { header: 'CPF/RG', key: 'documento', width: 22 },
       { header: 'Nascimento', key: 'nasc', width: 14 },
       { header: 'Gênero', key: 'genero', width: 14 },
       { header: 'Estado Civil', key: 'estCivil', width: 16 },
@@ -248,6 +288,7 @@ export class BeneficiariesService {
       { header: 'Pref. Acessibilidade', key: 'pref', width: 22 },
       { header: 'Acompanhante', key: 'acomp', width: 14 },
       { header: 'Tec. Assistivas', key: 'tec', width: 24 },
+      { header: 'Cor/Raça', key: 'corRaca', width: 20 },
       { header: 'Escolaridade', key: 'esc', width: 22 },
       { header: 'Profissão', key: 'prof', width: 20 },
       { header: 'Renda Familiar', key: 'renda', width: 22 },
@@ -279,7 +320,7 @@ export class BeneficiariesService {
     alunos.forEach((a, idx) => {
       const row = sheet.addRow({
         nome: a.nomeCompleto,
-        cpf: a.cpfRg,
+        documento: (a.cpf || '') + (a.cpf && a.rg ? ' / ' : '') + (a.rg || ''),
         nasc: fmtData(a.dataNascimento),
         genero: a.genero ?? '',
         estCivil: a.estadoCivil ?? '',
@@ -296,6 +337,7 @@ export class BeneficiariesService {
         pref: a.prefAcessibilidade?.replace(/_/g, ' ') ?? '',
         acomp: a.precisaAcompanhante ? 'Sim' : 'Não',
         tec: a.tecAssistivas ?? '',
+        corRaca: a.corRaca?.replace('_', ' ') ?? '',
         esc: a.escolaridade ?? '',
         prof: a.profissao ?? '',
         renda: a.rendaFamiliar ?? '',
@@ -358,8 +400,8 @@ export class BeneficiariesService {
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.EXCLUIR,
-      oldValue: { statusAtivo: true },
-      newValue: { statusAtivo: false },
+      oldValue: beneficiarioAntigo,
+      newValue: { ...beneficiarioAntigo, statusAtivo: false },
     });
     return result;
   }
@@ -373,8 +415,8 @@ export class BeneficiariesService {
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.RESTAURAR,
-      oldValue: { statusAtivo: false },
-      newValue: { statusAtivo: true },
+      oldValue: beneficiarioAntigo,
+      newValue: { ...beneficiarioAntigo, statusAtivo: true },
     });
     return result;
   }
@@ -388,8 +430,8 @@ export class BeneficiariesService {
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.ARQUIVAR,
-      oldValue: { excluido: false },
-      newValue: { excluido: true },
+      oldValue: beneficiarioAntigo,
+      newValue: { ...beneficiarioAntigo, excluido: true },
     });
     return result;
   }
@@ -415,6 +457,19 @@ export class BeneficiariesService {
     'audio': 'AUDIO', 'áudio': 'AUDIO',
   };
 
+  private readonly COR_RACA_MAP: Record<string, string> = {
+    'branca': 'BRANCA', 'branco': 'BRANCA',
+    'preta': 'PRETA', 'preto': 'PRETA',
+    'parda': 'PARDA', 'pardo': 'PARDA',
+    'amarela': 'AMARELA', 'amarelo': 'AMARELA',
+    'indígena': 'INDIGENA', 'indigena': 'INDIGENA',
+    'prefiro não responder': 'NAO_DECLARADO', 
+    'não declarado': 'NAO_DECLARADO', 
+    'nao declarado': 'NAO_DECLARADO',
+    'prefiro não responder / não declarado': 'NAO_DECLARADO',
+    'prefiro nao responder / nao declarado': 'NAO_DECLARADO'
+  };
+
   private normalizarEnum<T extends string>(
     valor: string,
     mapa: Record<string, string>,
@@ -434,64 +489,100 @@ export class BeneficiariesService {
     };
   }
 
+
   async importFromSheet(buffer: Buffer): Promise<{
     importados: number;
     ignorados: number;
-    erros: { linha: number; cpfRg: string; motivo: string }[];
+    erros: { linha: number; documento: string; motivo: string }[];
   }> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const XLSX = require('xlsx');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
 
-    const erros: { linha: number; cpfRg: string; motivo: string }[] = [];
+    // Sem cellDates — evita bug de timezone com seriais do Excel
+    const rawRows: any[][] = XLSX.utils.sheet_to_json(
+      workbook.Sheets[sheetName],
+      { header: 1, defval: '' },
+    );
+
+    if (rawRows.length < 3) {
+      return { importados: 0, ignorados: 0, erros: [{ linha: 0, documento: '—', motivo: 'Planilha vazia ou sem dados.' }] };
+    }
+
+    // Linha 0 = labels | Linha 1 = cabeçalhos | Linha 2+ = dados
+    const headers: string[] = rawRows[1].map((h: any) => String(h ?? '').trim());
+    const dataRows = rawRows.slice(2);
+
+    const rows: Record<string, any>[] = dataRows.map((row) => {
+      const obj: Record<string, any> = {};
+      headers.forEach((key, idx) => { obj[key] = row[idx] ?? ''; });
+      return obj;
+    });
+
+    const erros: { linha: number; documento: string; motivo: string }[] = [];
     const validos: any[] = [];
-    const cpfRgsNaPlanilha = new Set<string>();
+    const cpfsNaPlanilha = new Set<string>();
+    const rgsNaPlanilha = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const linha = i + 2; // linha 1 = cabeçalho no Excel
+      const linha = i + 3;
       const row = rows[i];
 
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
-      const cpfRg = String(row['CPF_RG'] ?? '').trim();
-      const dataNascimentoRaw = String(row['DataNascimento'] ?? '').trim();
+      const cpf = String(row['CPF'] ?? row['CPF_RG'] ?? '').trim();
+      const rg = String(row['RG'] ?? '').trim();
+      const dataNascimentoRaw = row['DataNascimento'];
 
-      // ── Campos obrigatórios ─────────────────────────────────
-      if (!nomeCompleto) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
-      if (!cpfRg) { erros.push({ linha, cpfRg: '—', motivo: 'Campo obrigatório ausente: CPF_RG' }); continue; }
-      if (!dataNascimentoRaw) { erros.push({ linha, cpfRg, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+      if (!nomeCompleto && !cpf && !rg && !dataNascimentoRaw) continue;
 
-      // ── Duplicata interna ────────────────────────────────────
-      if (cpfRgsNaPlanilha.has(cpfRg)) {
-        erros.push({ linha, cpfRg, motivo: 'CPF/RG duplicado na mesma planilha' });
+      const documentoVisivel = cpf || rg || '—';
+
+      if (!nomeCompleto) { erros.push({ linha, documento: documentoVisivel, motivo: 'Campo obrigatório ausente: NomeCompleto' }); continue; }
+      if (!cpf && !rg) { erros.push({ linha, documento: '—', motivo: 'Campo obrigatório ausente: CPF ou RG' }); continue; }
+      if (!dataNascimentoRaw && dataNascimentoRaw !== 0) { erros.push({ linha, documento: documentoVisivel, motivo: 'Campo obrigatório ausente: DataNascimento' }); continue; }
+
+      if ((cpf && cpfsNaPlanilha.has(cpf)) || (rg && rgsNaPlanilha.has(rg))) {
+        erros.push({ linha, documento: documentoVisivel, motivo: 'CPF ou RG duplicado na mesma planilha' });
         continue;
       }
-      cpfRgsNaPlanilha.add(cpfRg);
+      if (cpf) cpfsNaPlanilha.add(cpf);
+      if (rg) rgsNaPlanilha.add(rg);
 
-      // ── Data de nascimento ───────────────────────────────────
+      // Parse de data: serial Excel, DD/MM/AAAA ou AAAA-MM-DD
       let dataNascimento: Date;
       try {
-        if (dataNascimentoRaw.includes('/')) {
-          const [dia, mes, ano] = dataNascimentoRaw.split('/');
-          dataNascimento = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`);
+        if (typeof dataNascimentoRaw === 'number') {
+          const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+          dataNascimento = new Date(excelEpoch.getTime() + Math.round(dataNascimentoRaw) * 86400000);
+        } else if (dataNascimentoRaw instanceof Date) {
+          const d = dataNascimentoRaw as Date;
+          dataNascimento = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
         } else {
-          dataNascimento = new Date(dataNascimentoRaw);
+          const rawStr = String(dataNascimentoRaw).trim();
+          if (rawStr.includes('/')) {
+            const [dia, mes, ano] = rawStr.split('/');
+            dataNascimento = new Date(Date.UTC(Number(ano), Number(mes) - 1, Number(dia)));
+          } else {
+            const parts = rawStr.split('-');
+            dataNascimento = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+          }
         }
-        if (isNaN(dataNascimento.getTime())) throw new Error();
+        if (Number.isNaN(dataNascimento.getTime())) throw new Error('NaN');
+        const anoNasc = dataNascimento.getUTCFullYear();
+        if (anoNasc < 1900 || anoNasc > new Date().getFullYear()) throw new Error(`Ano invalido: ${anoNasc}`);
       } catch {
-        erros.push({ linha, cpfRg, motivo: `DataNascimento inválida: "${dataNascimentoRaw}". Use DD/MM/AAAA` });
+        erros.push({ linha, documento: documentoVisivel, motivo: `DataNascimento invalida: "${dataNascimentoRaw}". Use DD/MM/AAAA ou AAAA-MM-DD` });
         continue;
       }
 
-      // ── Normalizar enums ─────────────────────────────────────
       const rTipo = this.normalizarEnum(
         String(row['TipoDeficiencia'] ?? '').trim(),
         this.TIPO_DEFICIENCIA_MAP,
         ['CEGUEIRA_TOTAL', 'BAIXA_VISAO', 'VISAO_MONOCULAR'],
         'TipoDeficiencia',
       );
-      if (rTipo.erro) { erros.push({ linha, cpfRg, motivo: rTipo.erro }); continue; }
+      if (rTipo.erro) { erros.push({ linha, documento: documentoVisivel, motivo: rTipo.erro }); continue; }
 
       const rCausa = this.normalizarEnum(
         String(row['CausaDeficiencia'] ?? '').trim(),
@@ -499,7 +590,7 @@ export class BeneficiariesService {
         ['CONGENITA', 'ADQUIRIDA'],
         'CausaDeficiencia',
       );
-      if (rCausa.erro) { erros.push({ linha, cpfRg, motivo: rCausa.erro }); continue; }
+      if (rCausa.erro) { erros.push({ linha, documento: documentoVisivel, motivo: rCausa.erro }); continue; }
 
       const rPref = this.normalizarEnum(
         String(row['PrefAcessibilidade'] ?? '').trim(),
@@ -507,12 +598,23 @@ export class BeneficiariesService {
         ['BRAILLE', 'FONTE_AMPLIADA', 'ARQUIVO_DIGITAL', 'AUDIO'],
         'PrefAcessibilidade',
       );
-      if (rPref.erro) { erros.push({ linha, cpfRg, motivo: rPref.erro }); continue; }
+      if (rPref.erro) { erros.push({ linha, documento: documentoVisivel, motivo: rPref.erro }); continue; }
 
-      // ── Montar registro ──────────────────────────────────────
+      const rCorRaca = this.normalizarEnum(
+        String(row['CorRaca'] ?? '').trim(),
+        this.COR_RACA_MAP,
+        ['BRANCA', 'PRETA', 'PARDA', 'AMARELA', 'INDIGENA', 'NAO_DECLARADO'],
+        'CorRaca',
+      );
+      if (rCorRaca.erro && String(row['CorRaca'] ?? '').trim() !== '') { 
+          erros.push({ linha, documento: documentoVisivel, motivo: rCorRaca.erro }); 
+          continue; 
+      }
+
       validos.push({
         nomeCompleto,
-        cpfRg,
+        cpf: cpf || null,
+        rg: rg || null,
         dataNascimento,
         genero: String(row['Genero'] ?? '').trim() || null,
         estadoCivil: String(row['EstadoCivil'] ?? '').trim() || null,
@@ -534,6 +636,7 @@ export class BeneficiariesService {
         tecAssistivas: String(row['TecAssistivas'] ?? '').trim() || null,
         precisaAcompanhante: String(row['PrecisaAcompanhante'] ?? '').toUpperCase() === 'SIM',
         prefAcessibilidade: rPref.valor,
+        corRaca: rCorRaca.valor,
       });
     }
 
@@ -541,54 +644,65 @@ export class BeneficiariesService {
       return { importados: 0, ignorados: 0, erros };
     }
 
-    // ── Verificar duplicatas no banco (1 única query) ─────────
-    const cpfRgsValidos = validos.map(v => v.cpfRg);
-    const existentes = await this.prisma.aluno.findMany({
-      where: { cpfRg: { in: cpfRgsValidos } },
-      select: { cpfRg: true },
-    });
-    const cpfRgsExistentes = new Set(existentes.map(e => e.cpfRg));
+    // Verificar duplicatas no banco (1 query)
+    const cpfsValidos = validos.map(v => v.cpf).filter(Boolean);
+    const rgsValidos = validos.map(v => v.rg).filter(Boolean);
+
+    let existentes: any[] = [];
+    if (cpfsValidos.length > 0 || rgsValidos.length > 0) {
+      const orParams: any[] = [];
+      if (cpfsValidos.length) orParams.push({ cpf: { in: cpfsValidos } });
+      if (rgsValidos.length) orParams.push({ rg: { in: rgsValidos } });
+      existentes = await this.prisma.aluno.findMany({
+        where: { OR: orParams },
+        select: { cpf: true, rg: true },
+      });
+    }
+
+    const cpfsExistentes = new Set(existentes.map(e => e.cpf).filter(Boolean));
+    const rgsExistentes = new Set(existentes.map(e => e.rg).filter(Boolean));
 
     const paraInserir: any[] = [];
     let ignorados = 0;
 
     for (const aluno of validos) {
-      if (cpfRgsExistentes.has(aluno.cpfRg)) {
-        erros.push({ linha: 0, cpfRg: aluno.cpfRg, motivo: 'CPF/RG já cadastrado no sistema' });
+      if ((aluno.cpf && cpfsExistentes.has(aluno.cpf)) || (aluno.rg && rgsExistentes.has(aluno.rg))) {
+        erros.push({ linha: 0, documento: aluno.cpf || aluno.rg, motivo: 'CPF ou RG ja cadastrado no sistema' });
         ignorados++;
       } else {
         paraInserir.push(aluno);
       }
     }
 
-    // ── Inserir em lote ──────────────────────────────────────
     if (paraInserir.length > 0) {
-      // Como queremos registrar a auditoria, não usamos createMany que não nos devolve os IDs. 
-      // Em vez disso transacionamos a inserção e rodamos o log sequencial como em chamadas.
-
-      const auditPayloads: any[] = [];
-      const inseridos: any[] = [];
-
-      await this.prisma.$transaction(async (tx) => {
-        for (const aluno of paraInserir) {
-          // Garante a matrícula gerada para a pessoa importada
-          aluno.matricula = await gerarMatriculaAluno(tx as any);
-          const criacao = await tx.aluno.create({ data: aluno });
-          inseridos.push(criacao);
-
-          auditPayloads.push({
-            entidade: 'Aluno',
-            registroId: criacao.id,
-            acao: AuditAcao.CRIAR,
-            newValue: criacao,
-          });
-        }
+      const ano = new Date().getFullYear();
+      const prefix = `${ano}`;
+      let baseCount = await this.prisma.aluno.count({
+        where: { matricula: { startsWith: prefix } },
       });
+      for (const aluno of paraInserir) {
+        aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
+      }
 
-      // Dispara a auditoria sequencial no background
+      try {
+        await this.prisma.aluno.createMany({
+          data: paraInserir,
+          skipDuplicates: false,
+        });
+      } catch (err: any) {
+        console.error('ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
+        throw err;
+      }
+
+      // Auditoria individual por aluno (background)
       Promise.resolve().then(async () => {
-        for (const payload of auditPayloads) {
-          await this.auditService.registrar(payload).catch(() => { });
+        for (const aluno of paraInserir) {
+          await this.auditService.registrar({
+            entidade: 'Aluno',
+            registroId: aluno.matricula ?? 'sem-matricula',
+            acao: AuditAcao.CRIAR,
+            newValue: { ...aluno, origem: 'importacao-planilha' },
+          }).catch(() => { });
         }
       });
     }

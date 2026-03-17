@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsInt, Min, Max, IsEnum, IsDateString, IsBoolean } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade } from '@prisma/client';
+import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade, CorRaca } from '@prisma/client';
 
 export class QueryBeneficiaryDto {
   @ApiPropertyOptional({ description: 'Página atual (Padrão: 1)', default: 1 })
@@ -62,6 +62,11 @@ export class QueryBeneficiaryDto {
   @IsString()
   @IsOptional()
   genero?: string;
+
+  @ApiPropertyOptional({ enum: CorRaca, description: 'Filtrar por cor/raça' })
+  @IsOptional()
+  @IsEnum(CorRaca)
+  corRaca?: CorRaca;
 
   @ApiPropertyOptional({ description: 'Filtrar por estado civil' })
   @IsString()
