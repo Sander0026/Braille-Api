@@ -43,6 +43,32 @@ export class UploadService {
     });
   }
 
+  uploadPdf(
+    file: Express.Multer.File,
+    folder: 'braille_lgpd' | 'braille_atestados',
+  ): Promise<{ url: string }> {
+    return new Promise((resolve, reject) => {
+      if (file.mimetype !== 'application/pdf') {
+        return reject(new BadRequestException('Apenas arquivos PDF são permitidos neste endpoint.'));
+      }
+
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder,
+          resource_type: 'raw', // PDF deve ser tratado como 'raw' no Cloudinary
+          format: 'pdf',
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar PDF.'));
+          resolve({ url: result.secure_url });
+        },
+      );
+
+      streamifier.createReadStream(file.buffer).pipe(uploadStream);
+    });
+  }
+
   async deleteFile(fileUrl: string): Promise<{ success: boolean; message: string }> {
     if (!fileUrl) {
       throw new BadRequestException('A URL do arquivo é obrigatória.');

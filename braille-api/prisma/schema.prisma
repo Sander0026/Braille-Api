@@ -151,6 +151,13 @@ model Aluno {
   laudoUrl         String? // URL da imagem do laudo no Cloudinary
   tecAssistivas    String? // Ex: Bengala, cão-guia, NVDA
 
+  // 3b. Documentos Legais e Compliance
+  termoLgpdAceito   Boolean   @default(false)           // Aluno aceitou o Termo LGPD?
+  termoLgpdAceitoEm DateTime?                           // Timestamp do aceite
+  termoLgpdUrl      String?                             // URL do PDF do Termo LGPD assinado (Cloudinary)
+  atestadoUrl       String?                             // URL do Atestado Médico em PDF (Cloudinary)
+  atestadoEmitidoEm DateTime?                           // Data de emissão do atestado
+
   // 4. Situação Socioeconômica
   escolaridade       String?
   profissao          String?
