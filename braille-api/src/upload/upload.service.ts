@@ -55,8 +55,9 @@ export class UploadService {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder,
-          resource_type: 'raw', // PDF deve ser tratado como 'raw' no Cloudinary
-          format: 'pdf',
+          resource_type: 'auto', // 'auto' permite visualização pública de PDFs
+          use_filename: true,
+          unique_filename: true,
         },
         (error, result) => {
           if (error) return reject(error);
@@ -89,8 +90,8 @@ export class UploadService {
       const filename = filenameWithExtension.split('.')[0];
       const publicId = `${folder}/${filename}`;
 
-      // Determinar o tipo do arquivo (necessário para apagar raw/pdfs)
-      const resourceType = fileUrl.toLowerCase().includes('.pdf') ? 'raw' : 'image';
+      // Determinar o tipo do arquivo (necessário para apagar corretamente)
+      const resourceType = fileUrl.toLowerCase().includes('.pdf') ? 'auto' : 'image';
 
       const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
 
