@@ -43,6 +43,33 @@ export class UploadService {
     });
   }
 
+  uploadPdf(
+    file: Express.Multer.File,
+    folder: 'braille_lgpd' | 'braille_atestados',
+  ): Promise<{ url: string }> {
+    return new Promise((resolve, reject) => {
+      if (file.mimetype !== 'application/pdf') {
+        return reject(new BadRequestException('Apenas arquivos PDF são permitidos neste endpoint.'));
+      }
+
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder,
+          resource_type: 'auto', // 'auto' permite visualização pública de PDFs
+          use_filename: true,
+          unique_filename: true,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar PDF.'));
+          resolve({ url: result.secure_url });
+        },
+      );
+
+      streamifier.createReadStream(file.buffer).pipe(uploadStream);
+    });
+  }
+
   async deleteFile(fileUrl: string): Promise<{ success: boolean; message: string }> {
     if (!fileUrl) {
       throw new BadRequestException('A URL do arquivo é obrigatória.');
@@ -63,7 +90,7 @@ export class UploadService {
       const filename = filenameWithExtension.split('.')[0];
       const publicId = `${folder}/${filename}`;
 
-      // Determinar o tipo do arquivo (necessário para apagar raw/pdfs)
+      // Determinar o tipo do arquivo (necessário para apagar corretamente)
       const resourceType = fileUrl.toLowerCase().includes('.pdf') ? 'raw' : 'image';
 
       const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
