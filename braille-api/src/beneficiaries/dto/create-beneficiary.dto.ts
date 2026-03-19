@@ -147,4 +147,31 @@ export class CreateBeneficiaryDto {
   @IsEnum(PreferenciaAcessibilidade)
   @IsOptional()
   prefAcessibilidade?: PreferenciaAcessibilidade;
+
+  // ── LGPD & Documentos Legais ─────────────────────────────────────────────
+
+  @ApiPropertyOptional({ description: 'Aluno aceitou o Termo LGPD?' })
+  @IsBoolean()
+  @IsOptional()
+  termoLgpdAceito?: boolean;
+
+  @ApiPropertyOptional({ description: 'Data/hora do aceite do Termo LGPD (ISO 8601)' })
+  @IsDateString()
+  @IsOptional()
+  termoLgpdAceitoEm?: string;
+
+  @ApiPropertyOptional({ description: 'URL do PDF do Termo LGPD assinado (Cloudinary)' })
+  @IsString()
+  @IsOptional()
+  termoLgpdUrl?: string;
+
+  @ApiPropertyOptional({ description: 'URL do Atestado Médico em PDF (Cloudinary)' })
+  @IsString()
+  @IsOptional()
+  atestadoUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Data de emissão do Atestado Médico (ISO 8601)' })
+  @IsDateString()
+  @IsOptional()
+  atestadoEmitidoEm?: string;
 }

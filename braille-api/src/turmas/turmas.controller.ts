@@ -99,4 +99,14 @@ export class TurmasController {
   removeAluno(@Param('id') id: string, @Param('alunoId') alunoId: string) {
     return this.turmasService.removeAluno(id, alunoId);
   }
+
+  @Patch(':id/cancelar')
+  cancelar(@Param('id') id: string) {
+    return this.turmasService.cancelar(id);
+  }
+
+  @Patch(':id/concluir')
+  concluir(@Param('id') id: string) {
+    return this.turmasService.concluir(id);
+  }
 }
