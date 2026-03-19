@@ -432,5 +432,19 @@ export class TurmasService {
 
     return result;
   }
+
+  async cancelar(id: string) {
+    return this.prisma.turma.update({
+      where: { id },
+      data: { status: 'CANCELADA' },
+    });
+  }
+
+  async concluir(id: string) {
+    return this.prisma.turma.update({
+      where: { id },
+      data: { status: 'CONCLUIDA' },
+    });
+  }
 }
 

@@ -199,9 +199,12 @@ model Turma {
   capacidadeMaxima Int?
   statusAtivo      Boolean     @default(true)
   excluido         Boolean     @default(false)
-  status           TurmaStatus @default(ANDAMENTO) // Status acadêmico da turma
+  status           TurmaStatus @default(PREVISTA) // Status acadêmico da turma
   criadoEm         DateTime    @default(now())
   atualizadoEm     DateTime    @updatedAt
+
+  dataInicio     DateTime?
+  dataFim        DateTime?
 
   // Relacionamentos
   professorId            String
