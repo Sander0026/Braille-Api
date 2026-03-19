@@ -91,7 +91,7 @@ export class UploadService {
       const publicId = `${folder}/${filename}`;
 
       // Determinar o tipo do arquivo (necessário para apagar corretamente)
-      const resourceType = fileUrl.toLowerCase().includes('.pdf') ? 'auto' : 'image';
+      const resourceType = fileUrl.toLowerCase().includes('.pdf') ? 'raw' : 'image';
 
       const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
 
