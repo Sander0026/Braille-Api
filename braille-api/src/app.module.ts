@@ -19,6 +19,7 @@ import { UploadModule } from './upload/upload.module';
 import { SiteConfigModule } from './site-config/site-config.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { AtestadosModule } from './atestados/atestados.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     UploadModule,
     SiteConfigModule,
     AuditLogModule,   // Fase 5
+    AtestadosModule,  // Módulo de Justificativas de Falta
   ],
   controllers: [AppController],
   providers: [

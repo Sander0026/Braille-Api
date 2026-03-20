@@ -76,6 +76,12 @@ enum CorRaca {
   NAO_DECLARADO
 }
 
+enum StatusFrequencia {
+  PRESENTE
+  FALTA
+  FALTA_JUSTIFICADA
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -182,6 +188,7 @@ model Aluno {
   // Relacionamentos
   matriculasOficina MatriculaOficina[]
   frequencias       Frequencia[]
+  atestados         Atestado[]
 
   @@index([statusAtivo, excluido]) // listagem de alunos ativos/inativos
   @@index([nomeCompleto]) // busca full-text por nome
@@ -260,16 +267,21 @@ model GradeHoraria {
 
 // Tabela de Frequência (Chamada)
 model Frequencia {
-  id         String   @id @default(uuid())
+  id         String           @id @default(uuid())
   // @db.Date: salva apenas 2026-03-11 (sem horas), garantindo que o
   // @@unique funcione como "1 chamada por aluno por turma por dia",
   // sem falsos negativos por milissegundos diferentes.
-  dataAula   DateTime @db.Date
-  presente   Boolean  @default(false)
+  dataAula   DateTime         @db.Date
+  presente   Boolean          @default(false)       // mantido por compatibilidade
+  status     StatusFrequencia @default(FALTA)       // novo campo — substitui presente no longo prazo
   observacao String?
-  fechado    Boolean  @default(false) // true = diário encerrado, só ADMIN pode reabrir
-  fechadoEm  DateTime? // quando foi encerrado
-  fechadoPor String?  // userId de quem fechou
+  fechado    Boolean          @default(false)       // true = diário encerrado, só ADMIN pode reabrir
+  fechadoEm  DateTime?                             // quando foi encerrado
+  fechadoPor String?                               // userId de quem fechou
+
+  // Justificativa por Atestado (opcional)
+  justificativaId String?
+  justificativa   Atestado? @relation(fields: [justificativaId], references: [id])
 
   // Relacionamentos
   alunoId String
@@ -280,6 +292,26 @@ model Frequencia {
   @@unique([dataAula, alunoId, turmaId]) // 1 registro por aluno por turma por dia
   @@index([alunoId])                     // consultas de frequência por aluno
   @@index([turmaId, dataAula])           // consultas de chamada por turma e data
+  @@index([justificativaId])             // busca de frequências por atestado
+}
+
+// ── Atestados / Justificativas de Falta ───────────────────────────
+model Atestado {
+  id              String     @id @default(uuid())
+  dataInicio      DateTime   @db.Date               // primeiro dia coberto
+  dataFim         DateTime   @db.Date               // último dia coberto
+  motivo          String                             // Ex: "Consulta Médica"
+  arquivoUrl      String?                            // URL PDF/imagem no Cloudinary
+  registradoPorId String                             // userId da Secretaria que cadastrou
+  criadoEm        DateTime   @default(now())
+
+  // Relacionamentos
+  alunoId     String
+  aluno       Aluno        @relation(fields: [alunoId], references: [id])
+  frequencias Frequencia[]                           // faltas justificadas por este atestado
+
+  @@index([alunoId])
+  @@index([dataInicio, dataFim])
 }
 
 model Comunicado {
