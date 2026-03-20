@@ -271,7 +271,9 @@ export class BeneficiariesService {
     // Cabeçalho estilizado
     const headers = [
       { header: 'Nome Completo', key: 'nome', width: 35 },
-      { header: 'CPF/RG', key: 'documento', width: 22 },
+      { header: 'Matrícula', key: 'matricula', width: 14 },
+      { header: 'CPF', key: 'cpf', width: 16 },
+      { header: 'RG', key: 'rg', width: 14 },
       { header: 'Nascimento', key: 'nasc', width: 14 },
       { header: 'Gênero', key: 'genero', width: 14 },
       { header: 'Estado Civil', key: 'estCivil', width: 16 },
@@ -320,7 +322,9 @@ export class BeneficiariesService {
     alunos.forEach((a, idx) => {
       const row = sheet.addRow({
         nome: a.nomeCompleto,
-        documento: (a.cpf || '') + (a.cpf && a.rg ? ' / ' : '') + (a.rg || ''),
+        matricula: a.matricula ?? '',
+        cpf: a.cpf ?? '',
+        rg: a.rg ?? '',
         nasc: fmtData(a.dataNascimento),
         genero: a.genero ?? '',
         estCivil: a.estadoCivil ?? '',
