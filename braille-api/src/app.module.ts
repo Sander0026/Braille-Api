@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -33,6 +34,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
       limit: 30,
     }]),
     PrismaModule,
+    ScheduleModule.forRoot(),  // Habilita @Cron, @Interval, @Timeout globalmente
     AuthModule,
     UsersModule,
     BeneficiariesModule,
