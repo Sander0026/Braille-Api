@@ -380,6 +380,15 @@ export class BeneficiariesService {
     const beneficiarioAntigo = await this.findOne(id);
     (this.request as any).auditOldValue = beneficiarioAntigo;
 
+    // Se a foto de perfil for atualizada, deleta o arquivo antigo do Cloudinary
+    if (updateBeneficiaryDto.fotoPerfil !== undefined && beneficiarioAntigo.fotoPerfil && updateBeneficiaryDto.fotoPerfil !== beneficiarioAntigo.fotoPerfil) {
+      try {
+        await this.uploadService.deleteFile(beneficiarioAntigo.fotoPerfil);
+      } catch (e: any) {
+        console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
+      }
+    }
+
     // Se o termo LGPD for atualizado, deleta o arquivo antigo do Cloudinary
     if (updateBeneficiaryDto.termoLgpdUrl && beneficiarioAntigo.termoLgpdUrl && updateBeneficiaryDto.termoLgpdUrl !== beneficiarioAntigo.termoLgpdUrl) {
       try {

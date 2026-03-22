@@ -8,6 +8,7 @@ import { gerarMatriculaStaff } from '../common/helpers/matricula.helper';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAcao, Role } from '@prisma/client';
 import { REQUEST } from '@nestjs/core';
+import { UploadService } from '../upload/upload.service';
 
 // Senha padrão definida pela instituição (deve ser trocada no primeiro login)
 const SENHA_PADRAO = 'Ilbes@123';
@@ -38,6 +39,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private auditService: AuditLogService,
+    private uploadService: UploadService,
     @Inject(REQUEST) private request: any,
   ) { }
 
@@ -193,6 +195,15 @@ export class UsersService {
   async update(id: string, updateUserDto: UpdateUserDto) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Se a foto de perfil for atualizada, deleta o arquivo antigo do Cloudinary
+    if (updateUserDto.fotoPerfil !== undefined && user.fotoPerfil && updateUserDto.fotoPerfil !== user.fotoPerfil) {
+      try {
+        await this.uploadService.deleteFile(user.fotoPerfil);
+      } catch (e: any) {
+        console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
+      }
+    }
 
     if (updateUserDto.senha) {
       updateUserDto.senha = await bcrypt.hash(updateUserDto.senha, 10);
