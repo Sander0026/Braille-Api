@@ -186,9 +186,10 @@ model Aluno {
   atualizadoEm DateTime @updatedAt
 
   // Relacionamentos
-  matriculasOficina MatriculaOficina[]
-  frequencias       Frequencia[]
-  atestados         Atestado[]
+  matriculasOficina   MatriculaOficina[]
+  frequencias         Frequencia[]
+  atestados           Atestado[]
+  laudos              LaudoMedico[]
 
   @@index([statusAtivo, excluido]) // listagem de alunos ativos/inativos
   @@index([nomeCompleto]) // busca full-text por nome
@@ -342,6 +343,22 @@ model MensagemContato {
   mensagem String
   lida     Boolean  @default(false)
   criadoEm DateTime @default(now())
+}
+
+// ── Laudos Médicos (Histórico Múltiplo) ───────────────────────────
+model LaudoMedico {
+  id                String   @id @default(uuid())
+  alunoId           String
+  aluno             Aluno    @relation(fields: [alunoId], references: [id])
+  dataEmissao       DateTime @db.Date
+  medicoResponsavel String?
+  descricao         String?
+  arquivoUrl        String
+  registradoPorId   String?  // ID do criador (auditoria via auth token depois)
+  criadoEm          DateTime @default(now())
+
+  @@index([alunoId])
+  @@index([dataEmissao])
 }
 
 // ══════════════════ CMS — Configurações do Site ══════════════════

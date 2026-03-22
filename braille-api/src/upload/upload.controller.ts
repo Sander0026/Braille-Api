@@ -63,9 +63,9 @@ export class UploadController {
   @ApiOperation({ summary: 'Upload de PDF (Termo LGPD ou Atestado Médico)' })
   @ApiQuery({
     name: 'tipo',
-    enum: ['lgpd', 'atestado'],
+    enum: ['lgpd', 'atestado', 'laudo'],
     required: true,
-    description: 'Tipo do documento: "lgpd" grava em braille_lgpd/ e "atestado" em braille_atestados/',
+    description: 'Tipo do documento: "lgpd" grava em braille_lgpd/, "atestado" em braille_atestados/ e "laudo" em braille_laudos/',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -76,13 +76,13 @@ export class UploadController {
   })
   async uploadPdf(
     @UploadedFile() file: Express.Multer.File,
-    @Query('tipo') tipo: 'lgpd' | 'atestado',
+    @Query('tipo') tipo: 'lgpd' | 'atestado' | 'laudo',
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo PDF foi enviado.');
-    if (tipo !== 'lgpd' && tipo !== 'atestado') {
-      throw new BadRequestException('O parâmetro "tipo" deve ser "lgpd" ou "atestado".');
+    if (tipo !== 'lgpd' && tipo !== 'atestado' && tipo !== 'laudo') {
+      throw new BadRequestException('O parâmetro "tipo" deve ser "lgpd", "atestado" ou "laudo".');
     }
-    const folder = tipo === 'lgpd' ? 'braille_lgpd' : 'braille_atestados';
+    const folder = tipo === 'lgpd' ? 'braille_lgpd' : (tipo === 'laudo' ? 'braille_laudos' : 'braille_atestados');
     return this.uploadService.uploadPdf(file, folder);
   }
 }
