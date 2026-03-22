@@ -3,15 +3,17 @@ import { CreateComunicadoDto } from './dto/create-comunicado.dto';
 import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { UploadService } from '../upload/upload.service';
 import { AuditAcao, Role } from '@prisma/client';
 import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class ComunicadosService {
   constructor(
-    private prisma: PrismaService,
-    private auditService: AuditLogService,
-    @Inject(REQUEST) private request: any,
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditLogService,
+    private readonly uploadService: UploadService,
+    @Inject(REQUEST) private readonly request: any,
   ) { }
 
   private getAutor() {
@@ -112,6 +114,16 @@ export class ComunicadosService {
       }
     });
 
+    if (comunicadoAntigo.imagemCapa &&
+        updateComunicadoDto.imagemCapa !== undefined &&
+        comunicadoAntigo.imagemCapa !== updateComunicadoDto.imagemCapa) {
+      try {
+        await this.uploadService.deleteFile(comunicadoAntigo.imagemCapa);
+      } catch (e) {
+        console.error('Erro ao deletar imagem de capa antiga do comunicado:', e);
+      }
+    }
+
     this.auditService.registrar({
       entidade: 'Comunicado',
       registroId: id,
@@ -127,6 +139,14 @@ export class ComunicadosService {
   async remove(id: string) {
     const comunicado = await this.findOne(id);
     const result = await this.prisma.comunicado.delete({ where: { id } });
+
+    if (comunicado.imagemCapa) {
+      try {
+        await this.uploadService.deleteFile(comunicado.imagemCapa);
+      } catch (e) {
+        console.error('Erro ao deletar imagem de capa do comunicado excluído:', e);
+      }
+    }
 
     this.auditService.registrar({
       entidade: 'Comunicado',
