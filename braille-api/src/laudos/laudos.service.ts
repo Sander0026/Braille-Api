@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLaudoDto } from './dto/create-laudo.dto';
+import { UpdateLaudoDto } from './dto/update-laudo.dto';
 import { UploadService } from '../upload/upload.service';
 
 @Injectable()
@@ -40,6 +41,37 @@ export class LaudosService {
       orderBy: { dataEmissao: 'desc' },
     });
     return laudos;
+  }
+
+  async atualizar(id: string, dto: UpdateLaudoDto) {
+    const laudo = await this.prisma.laudoMedico.findUnique({
+      where: { id },
+    });
+
+    if (!laudo) {
+      throw new NotFoundException('Laudo não encontrado.');
+    }
+
+    // Se a imagem no DTO for diferente da salva, podemos tentar deletar a antiga
+    if (dto.arquivoUrl && laudo.arquivoUrl && dto.arquivoUrl !== laudo.arquivoUrl) {
+      try {
+        await this.uploadService.deleteFile(laudo.arquivoUrl);
+      } catch (e: any) {
+        console.warn('Arquivo antigo não removido do Cloudinary:', e.message);
+      }
+    }
+
+    const laudoAtualizado = await this.prisma.laudoMedico.update({
+      where: { id },
+      data: {
+        ...(dto.dataEmissao ? { dataEmissao: new Date(dto.dataEmissao) } : {}),
+        ...(dto.medicoResponsavel !== undefined ? { medicoResponsavel: dto.medicoResponsavel } : {}),
+        ...(dto.descricao !== undefined ? { descricao: dto.descricao } : {}),
+        ...(dto.arquivoUrl !== undefined ? { arquivoUrl: dto.arquivoUrl } : {}),
+      },
+    });
+
+    return laudoAtualizado;
   }
 
   async remover(id: string) {
