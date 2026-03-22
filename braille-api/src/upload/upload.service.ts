@@ -45,7 +45,7 @@ export class UploadService {
 
   uploadPdf(
     file: Express.Multer.File,
-    folder: 'braille_lgpd' | 'braille_atestados',
+    folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos',
   ): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
       if (file.mimetype !== 'application/pdf') {
