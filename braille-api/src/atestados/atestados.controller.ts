@@ -8,10 +8,12 @@ import {
   Query,
   Req,
   UseGuards,
+  Patch,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AtestadosService } from './atestados.service';
 import { CreateAtestadoDto } from './dto/create-atestado.dto';
+import { UpdateAtestadoDto } from './dto/update-atestado.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { Role } from '@prisma/client';
 
@@ -69,5 +71,11 @@ export class AtestadoController {
   @ApiOperation({ summary: 'Remover atestado e reverter faltas justificadas (somente ADMIN)' })
   remover(@Param('id') id: string, @Req() req: any) {
     return this.atestadosService.remover(id, req.user?.role as Role);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Atualizar dados básicos de um atestado (Motivo e Arquivo URL)' })
+  atualizar(@Param('id') id: string, @Body() updateAtestadoDto: UpdateAtestadoDto) {
+    return this.atestadosService.atualizar(id, updateAtestadoDto);
   }
 }

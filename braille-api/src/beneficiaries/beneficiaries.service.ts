@@ -7,12 +7,14 @@ import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
 import { gerarMatriculaAluno } from '../common/helpers/matricula.helper';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAcao } from '@prisma/client';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class BeneficiariesService {
   constructor(
     private prisma: PrismaService,
     private auditService: AuditLogService,
+    private uploadService: UploadService,
     @Inject(REQUEST) private request: any
   ) { }
 
@@ -377,6 +379,24 @@ export class BeneficiariesService {
   async update(id: string, updateBeneficiaryDto: UpdateBeneficiaryDto) {
     const beneficiarioAntigo = await this.findOne(id);
     (this.request as any).auditOldValue = beneficiarioAntigo;
+
+    // Se a foto de perfil for atualizada, deleta o arquivo antigo do Cloudinary
+    if (updateBeneficiaryDto.fotoPerfil !== undefined && beneficiarioAntigo.fotoPerfil && updateBeneficiaryDto.fotoPerfil !== beneficiarioAntigo.fotoPerfil) {
+      try {
+        await this.uploadService.deleteFile(beneficiarioAntigo.fotoPerfil);
+      } catch (e: any) {
+        console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
+      }
+    }
+
+    // Se o termo LGPD for atualizado, deleta o arquivo antigo do Cloudinary
+    if (updateBeneficiaryDto.termoLgpdUrl && beneficiarioAntigo.termoLgpdUrl && updateBeneficiaryDto.termoLgpdUrl !== beneficiarioAntigo.termoLgpdUrl) {
+      try {
+        await this.uploadService.deleteFile(beneficiarioAntigo.termoLgpdUrl);
+      } catch (e: any) {
+        console.warn('Documento LGPD antigo não removido do Cloudinary:', e.message);
+      }
+    }
 
     let dadosParaAtualizar: any = { ...updateBeneficiaryDto };
     if (updateBeneficiaryDto.dataNascimento) {

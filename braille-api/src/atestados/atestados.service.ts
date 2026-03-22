@@ -7,13 +7,16 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAtestadoDto } from './dto/create-atestado.dto';
+import { UpdateAtestadoDto } from './dto/update-atestado.dto';
 import { Role, StatusFrequencia } from '@prisma/client';
 import { REQUEST } from '@nestjs/core';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class AtestadosService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly uploadService: UploadService,
     @Inject(REQUEST) private readonly request: any,
   ) {}
 
@@ -106,6 +109,41 @@ export class AtestadosService {
 
     if (!atestado) throw new NotFoundException('Atestado não encontrado.');
     return atestado;
+  }
+
+  // ── Atualizar Atestado (apenas Motivo e Arquivo) ─────────────────────────
+  async atualizar(id: string, dto: UpdateAtestadoDto) {
+    const atestado = await this.prisma.atestado.findUnique({ where: { id } });
+    if (!atestado) throw new NotFoundException('Atestado não encontrado.');
+
+    // Se a imagem no DTO for diferente da salva, podemos tentar deletar a antiga
+    if (dto.arquivoUrl && atestado.arquivoUrl && dto.arquivoUrl !== atestado.arquivoUrl) {
+      try {
+        await this.uploadService.deleteFile(atestado.arquivoUrl);
+      } catch (e: any) {
+        console.warn('Arquivo antigo não removido do Cloudinary:', e.message);
+      }
+    }
+
+    const atestadoAtualizado = await this.prisma.atestado.update({
+      where: { id },
+      data: {
+        ...(dto.motivo !== undefined ? { motivo: dto.motivo } : {}),
+        ...(dto.arquivoUrl !== undefined ? { arquivoUrl: dto.arquivoUrl } : {}),
+      },
+      include: {
+        frequencias: {
+          select: {
+            id: true,
+            dataAula: true,
+            status: true,
+            turma: { select: { id: true, nome: true } },
+          },
+        },
+      },
+    });
+
+    return atestadoAtualizado;
   }
 
   // ── Remover Atestado + Reverter Faltas (ADMIN) ─────────────────────────────
