@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, BadRequestException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -27,6 +27,14 @@ export class UsersController {
   @ApiOperation({ summary: 'Listar todos os usuários da instituição' })
   findAll(@Query() query: QueryUserDto) {
     return this.usersService.findAll(query);
+  }
+
+  @Get('check-cpf')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Verifica se um CPF já existe no sistema' })
+  async checkCpf(@Query('cpf') cpf?: string) {
+    if (!cpf) throw new BadRequestException('Informe o CPF para verificação.');
+    return this.usersService.checkCpf(cpf);
   }
 
   @Patch(':id')

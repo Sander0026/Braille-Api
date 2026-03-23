@@ -1,5 +1,4 @@
-import { PartialType } from '@nestjs/swagger';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsStrongPassword } from 'class-validator';
 import { CreateUserDto } from './create-user.dto';
 
@@ -18,4 +17,13 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
     @IsString()
     @IsOptional()
     fotoPerfil?: string;
+
+    @ApiPropertyOptional() @IsString() @IsOptional() telefone?: string;
+    @ApiPropertyOptional() @IsString() @IsOptional() cep?: string;
+    @ApiPropertyOptional() @IsString() @IsOptional() rua?: string;
+    @ApiPropertyOptional() @IsString() @IsOptional() numero?: string;
+    @ApiPropertyOptional() @IsString() @IsOptional() complemento?: string;
+    @ApiPropertyOptional() @IsString() @IsOptional() bairro?: string;
+    @ApiPropertyOptional() @IsString() @IsOptional() cidade?: string;
+    @ApiPropertyOptional() @IsString() @IsOptional() uf?: string;
 }

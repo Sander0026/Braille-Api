@@ -8,8 +8,12 @@ export class ApoiadoresService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createApoiadorDto: CreateApoiadorDto) {
+    const { acoes, ...rest } = createApoiadorDto;
     return this.prisma.apoiador.create({
-      data: createApoiadorDto,
+      data: {
+        ...rest,
+        acoes: acoes && acoes.length > 0 ? { create: acoes } : undefined,
+      },
     });
   }
 
@@ -63,11 +67,11 @@ export class ApoiadoresService {
   }
 
   async update(id: string, updateApoiadorDto: UpdateApoiadorDto) {
-    // verifica a existencia para dar erro 404 antes
+    const { acoes, ...rest } = updateApoiadorDto;
     await this.findOne(id);
     return this.prisma.apoiador.update({
       where: { id },
-      data: updateApoiadorDto,
+      data: rest,
     });
   }
 
@@ -76,6 +80,37 @@ export class ApoiadoresService {
     return this.prisma.apoiador.update({
       where: { id },
       data: { logoUrl },
+    });
+  }
+
+  // ---- Histórico de Ações (Tracking Relacional) ----
+  
+  async addAcao(apoiadorId: string, dataEvento: Date, descricaoAcao: string) {
+    await this.findOne(apoiadorId); // garante existencia
+    return this.prisma.acaoApoiador.create({
+      data: {
+        dataEvento: new Date(dataEvento), // Força a deserialização da string vinda do POST
+        descricaoAcao,
+        apoiadorId,
+      },
+    });
+  }
+  
+  async getAcoes(apoiadorId: string) {
+    await this.findOne(apoiadorId);
+    return this.prisma.acaoApoiador.findMany({
+      where: { apoiadorId },
+      orderBy: { dataEvento: 'desc' },
+    });
+  }
+
+  async removeAcao(apoiadorId: string, acaoId: string) {
+    const acao = await this.prisma.acaoApoiador.findFirst({
+      where: { id: acaoId, apoiadorId },
+    });
+    if (!acao) throw new NotFoundException('Ação não encontrada nesse perfil.');
+    return this.prisma.acaoApoiador.delete({
+      where: { id: acaoId },
     });
   }
 
