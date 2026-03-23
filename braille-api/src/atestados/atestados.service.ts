@@ -146,10 +146,10 @@ export class AtestadosService {
     return atestadoAtualizado;
   }
 
-  // ── Remover Atestado + Reverter Faltas (ADMIN) ─────────────────────────────
+  // ── Remover Atestado + Reverter Faltas (ADMIN e SECRETARIA) ─────────────────────────────
   async remover(id: string, role: Role) {
-    if (role !== Role.ADMIN) {
-      throw new ForbiddenException('Somente administradores podem remover atestados.');
+    if (role !== Role.ADMIN && role !== Role.SECRETARIA) {
+      throw new ForbiddenException('Somente administradores e secretarias podem remover atestados.');
     }
 
     const atestado = await this.prisma.atestado.findUnique({ where: { id } });

@@ -23,7 +23,7 @@ export class ContatosController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard, RolesGuard)
   @Get()
-  @Roles('ADMIN', 'COMUNICACAO')
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @ApiOperation({ summary: 'Listar mensagens com paginação e filtro por lida/não lida' })
   findAll(@Query() query: QueryContatoDto) {
     return this.contatosService.findAll(query);
@@ -32,7 +32,7 @@ export class ContatosController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard, RolesGuard)
   @Get(':id')
-  @Roles('ADMIN', 'COMUNICACAO')
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @ApiOperation({ summary: 'Ver mensagem específica' })
   findOne(@Param('id') id: string) {
     return this.contatosService.findOne(id);
@@ -41,7 +41,7 @@ export class ContatosController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard, RolesGuard)
   @Patch(':id/lida')
-  @Roles('ADMIN', 'COMUNICACAO')
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @ApiOperation({ summary: 'Marcar mensagem como lida' })
   marcarComoLida(@Param('id') id: string) {
     return this.contatosService.marcarComoLida(id);
@@ -50,7 +50,7 @@ export class ContatosController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard, RolesGuard)
   @Delete(':id')
-  @Roles('ADMIN', 'COMUNICACAO')
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @ApiOperation({ summary: 'Excluir mensagem' })
   remove(@Param('id') id: string) {
     return this.contatosService.remove(id);
