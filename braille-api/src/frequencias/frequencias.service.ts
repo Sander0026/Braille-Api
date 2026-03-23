@@ -141,11 +141,18 @@ export class FrequenciasService {
 
           if (existente) {
             oldValue = existente;
-            frequenciaFinal = await tx.frequencia.update({
-              where: { id: existente.id },
-              data: { presente: aluno.presente },
-            });
-            acaoAudit = AuditAcao.ATUALIZAR;
+
+            // Se já é FALTA_JUSTIFICADA, não sobrescreve o status (preserva o atestado)
+            if (existente.status === 'FALTA_JUSTIFICADA') {
+              frequenciaFinal = existente; // não altera
+              acaoAudit = AuditAcao.ATUALIZAR;
+            } else {
+              frequenciaFinal = await tx.frequencia.update({
+                where: { id: existente.id },
+                data: { presente: aluno.presente },
+              });
+              acaoAudit = AuditAcao.ATUALIZAR;
+            }
           } else {
             frequenciaFinal = await tx.frequencia.create({
               data: {
@@ -156,6 +163,31 @@ export class FrequenciasService {
               },
             });
             acaoAudit = AuditAcao.CRIAR;
+          }
+
+          // ── Auto-justificativa por Atestado Ativo ────────────────────────────
+          // Se o aluno foi marcado como FALTA, verificar se existe atestado cobrindo esse dia.
+          // Isso garante que faltas lançadas EM DATAS FUTURAS já cobertas por atestado sejam
+          // automaticamente justificadas sem precisar reemitir o atestado.
+          if (!aluno.presente && frequenciaFinal.status !== 'FALTA_JUSTIFICADA') {
+            const atestadoAtivo = await tx.atestado.findFirst({
+              where: {
+                alunoId: aluno.alunoId,
+                dataInicio: { lte: dataConvertida },
+                dataFim:    { gte: dataConvertida },
+              },
+              select: { id: true },
+            });
+
+            if (atestadoAtivo) {
+              frequenciaFinal = await tx.frequencia.update({
+                where: { id: frequenciaFinal.id },
+                data: {
+                  status: 'FALTA_JUSTIFICADA',
+                  justificativaId: atestadoAtivo.id,
+                },
+              });
+            }
           }
 
           // Coleta o log em vez de disparar concorrência pesada no meio da transação
