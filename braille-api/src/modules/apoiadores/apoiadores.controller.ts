@@ -82,4 +82,31 @@ export class ApoiadoresController {
   remove(@Param('id') id: string) {
     return this.apoiadoresService.remove(id);
   }
+
+  // ---- Histórico de Ações (Tracking Relacional) ----
+  
+  @Post(':id/acoes')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  addAcao(
+    @Param('id') id: string, 
+    @Body('dataEvento') dataEvento: Date, 
+    @Body('descricaoAcao') descricaoAcao: string
+  ) {
+    return this.apoiadoresService.addAcao(id, dataEvento, descricaoAcao);
+  }
+
+  @Get(':id/acoes')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  getAcoes(@Param('id') id: string) {
+    return this.apoiadoresService.getAcoes(id);
+  }
+
+  @Delete(':id/acoes/:acaoId')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  removeAcao(@Param('id') id: string, @Param('acaoId') acaoId: string) {
+    return this.apoiadoresService.removeAcao(id, acaoId);
+  }
 }

@@ -1,5 +1,14 @@
-import { IsString, IsOptional, IsEnum, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, ValidateNested, IsDateString } from 'class-validator';
+import { Type } from 'class-transformer';
 import { TipoApoiador } from '@prisma/client';
+
+export class CreateAcaoApoiadorDto {
+  @IsDateString()
+  dataEvento: string;
+
+  @IsString()
+  descricaoAcao: string;
+}
 
 export class CreateApoiadorDto {
   @IsEnum(TipoApoiador)
@@ -47,6 +56,11 @@ export class CreateApoiadorDto {
   @IsOptional()
   @IsBoolean()
   ativo?: boolean;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateAcaoApoiadorDto)
+  acoes?: CreateAcaoApoiadorDto[];
 }
 
 export class UpdateApoiadorDto extends CreateApoiadorDto {}
