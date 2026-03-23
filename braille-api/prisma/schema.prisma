@@ -82,6 +82,30 @@ enum StatusFrequencia {
   FALTA_JUSTIFICADA
 }
 
+enum AuditAcao {
+  CRIAR
+  ATUALIZAR
+  EXCLUIR
+  ARQUIVAR
+  RESTAURAR
+  LOGIN
+  LOGOUT
+  MATRICULAR
+  DESMATRICULAR
+  FECHAR_DIARIO
+  REABRIR_DIARIO
+  MUDAR_STATUS
+}
+
+enum TipoApoiador {
+  VOLUNTARIO
+  EMPRESA
+  IMPRENSA
+  PROFISSIONAL_LIBERAL
+  ONG
+  OUTRO
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -226,7 +250,6 @@ model Turma {
   @@index([professorId])
 }
 
-// ── Histórico de Matrículas (Vínculo Aluno <> Turma) ──────────────
 model MatriculaOficina {
   id               String          @id @default(uuid())
   status           MatriculaStatus @default(ATIVA)
@@ -381,22 +404,8 @@ model ConteudoSecao {
   @@id([secao, chave])
 }
 
-// ─── FASE 5: Auditoria Central ─────────────────────────────────────────────
+// ───  Auditoria Central ─────────────────────────────────────────────
 
-enum AuditAcao {
-  CRIAR
-  ATUALIZAR
-  EXCLUIR
-  ARQUIVAR
-  RESTAURAR
-  LOGIN
-  LOGOUT
-  MATRICULAR
-  DESMATRICULAR
-  FECHAR_DIARIO
-  REABRIR_DIARIO
-  MUDAR_STATUS
-}
 
 /// Registro imutável de toda ação crítica no sistema.
 /// Nunca deve ser alterado ou deletado — apenas inserido.
@@ -418,4 +427,32 @@ model AuditLog {
   @@index([autorId])
   @@index([criadoEm])
   @@index([acao])
+}
+
+
+// ─── Módulo Apoiadores ─────────────────────────────────────────────
+model Apoiador {
+  id                     String       @id @default(uuid())
+  tipo                   TipoApoiador
+  nomeRazaoSocial        String
+  nomeFantasia           String?
+  cpfCnpj                String?
+  
+  // Contato e Localização
+  contatoPessoa          String?
+  telefone               String?
+  email                  String?
+  endereco               String?
+  
+  // CRM e Segmentação
+  atividadeEspecialidade String?     // Ex: "Jornalista TV Gazeta", "Advogado"
+  observacoes            String?       @db.Text
+  
+  // Imagem e Presença Pública
+  logoUrl                String?
+  exibirNoSite           Boolean       @default(false)
+  
+  ativo                  Boolean       @default(true)
+  criadoEm               DateTime      @default(now())
+  atualizadoEm           DateTime      @updatedAt
 }
