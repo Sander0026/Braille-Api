@@ -155,6 +155,32 @@ export class UsersService {
     };
   }
 
+  async checkCpf(cpf?: string) {
+    const cpfLimpo = (cpf ?? '').replace(/\D/g, '');
+    if (!cpfLimpo) return { status: 'livre' };
+
+    const user = await this.prisma.user.findUnique({
+      where: { cpf: cpfLimpo },
+    });
+
+    if (!user) return { status: 'livre' };
+
+    if (user.statusAtivo && !user.excluido) {
+      return { status: 'ativo', id: user.id, nome: user.nome, matricula: user.matricula };
+    }
+    
+    if (user.excluido) {
+      return { 
+        status: 'excluido', id: user.id, nome: user.nome, matricula: user.matricula, excluido: true,
+        email: user.email, telefone: user.telefone, cep: user.cep, rua: user.rua, 
+        numero: user.numero, complemento: user.complemento, bairro: user.bairro, 
+        cidade: user.cidade, uf: user.uf, role: user.role
+      };
+    }
+
+    return { status: 'inativo', id: user.id, nome: user.nome, matricula: user.matricula, excluido: user.excluido };
+  }
+
   async findAll(query: QueryUserDto) {
     const { page = 1, limit = 10, nome, inativos, role } = query;
     const skip = (page - 1) * limit;
@@ -180,7 +206,8 @@ export class UsersService {
         select: {
           id: true, nome: true, username: true, email: true, role: true,
           fotoPerfil: true, precisaTrocarSenha: true, matricula: true,
-          cpf: true, telefone: true, cidade: true, uf: true,
+          cpf: true, telefone: true, cep: true, rua: true, numero: true,
+          complemento: true, bairro: true, cidade: true, uf: true,
         },
         orderBy: { nome: 'asc' },
       }),
@@ -204,6 +231,15 @@ export class UsersService {
       } catch (e: any) {
         console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
       }
+    }
+
+    if (updateUserDto.cpf) {
+      const cpfLimpo = updateUserDto.cpf.replace(/\D/g, '');
+      const cpfExists = await this.prisma.user.findUnique({ where: { cpf: cpfLimpo } });
+      if (cpfExists && cpfExists.id !== id) {
+        throw new ConflictException('Este CPF já está sendo usado por outro usuário no sistema.');
+      }
+      updateUserDto.cpf = cpfLimpo;
     }
 
     if (updateUserDto.senha) {

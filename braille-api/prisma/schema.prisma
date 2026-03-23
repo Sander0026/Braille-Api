@@ -455,4 +455,21 @@ model Apoiador {
   ativo                  Boolean       @default(true)
   criadoEm               DateTime      @default(now())
   atualizadoEm           DateTime      @updatedAt
+
+  acoes                  AcaoApoiador[]
+}
+
+model AcaoApoiador {
+  id            String    @id @default(uuid())
+  dataEvento    DateTime  @db.Date
+  descricaoAcao String    @db.Text
+  
+  apoiadorId    String
+  apoiador      Apoiador  @relation(fields: [apoiadorId], references: [id], onDelete: Cascade)
+  
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+
+  @@index([apoiadorId])
+  @@index([dataEvento])
 }
