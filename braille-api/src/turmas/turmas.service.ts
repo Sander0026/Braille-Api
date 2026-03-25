@@ -49,7 +49,7 @@ export class TurmasService {
   }
 
   async create(createTurmaDto: CreateTurmaDto) {
-    const { gradeHoraria, ...dadosTurma } = createTurmaDto;
+    const { gradeHoraria, dataInicio, dataFim, ...dadosTurma } = createTurmaDto;
 
     const professor = await this.prisma.user.findUnique({ where: { id: createTurmaDto.professorId } });
     if (!professor) throw new NotFoundException('Professor não encontrado.');
@@ -62,6 +62,8 @@ export class TurmasService {
     const turmaNova = await this.prisma.turma.create({
       data: {
         ...dadosTurma,
+        ...(dataInicio && { dataInicio: new Date(dataInicio) }),
+        ...(dataFim && { dataFim: new Date(dataFim) }),
         ...(gradeHoraria?.length && {
           gradeHoraria: {
             create: gradeHoraria.map(g => ({
@@ -143,7 +145,7 @@ export class TurmasService {
     const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
 
-    const { gradeHoraria, ...dadosTurma } = updateTurmaDto as any;
+    const { gradeHoraria, dataInicio, dataFim, ...dadosTurma } = updateTurmaDto as any;
 
     // Se o professor está mudando E há grade horária nova, validar colisão do novo professor
     const professorId = dadosTurma.professorId ?? turma.professorId;
@@ -155,9 +157,11 @@ export class TurmasService {
       where: { id },
       data: {
         ...dadosTurma,
+        ...(dataInicio && { dataInicio: new Date(dataInicio) }),
+        ...(dataFim && { dataFim: new Date(dataFim) }),
         ...(gradeHoraria !== undefined && {
           gradeHoraria: {
-            deleteMany: {},                  // Remove todos os horários antigos
+            deleteMany: {},
             create: gradeHoraria.map((g: GradeHorariaDto) => ({
               dia: g.dia,
               horaInicio: g.horaInicio,
@@ -315,6 +319,70 @@ export class TurmasService {
 
     if (!turma) throw new NotFoundException('Turma não encontrada.');
     return turma;
+  }
+
+  /**
+   * Retorna alunos que podem ser matriculados nesta turma sem conflito de horário.
+   * Filtra: alunos já matriculados E alunos com choque de grade horária.
+   */
+  async findAlunosDisponiveis(turmaId: string, nome?: string) {
+    // 1. Dados da turma destino (grade + matriculados)
+    const turma = await this.prisma.turma.findUnique({
+      where: { id: turmaId },
+      include: { gradeHoraria: true },
+    });
+    if (!turma) throw new NotFoundException('Turma não encontrada.');
+
+    const gradeDestino = turma.gradeHoraria;
+
+    // 2. IDs dos já matriculados nesta turma
+    const matriculadosNaTurma = await this.prisma.matriculaOficina.findMany({
+      where: { turmaId, status: 'ATIVA' },
+      select: { alunoId: true },
+    });
+    const idsJaMatriculados = new Set(matriculadosNaTurma.map(m => m.alunoId));
+
+    // 3. Buscar todos os alunos (com filtro por nome se fornecido)
+    const todosAlunos = await this.prisma.aluno.findMany({
+      where: {
+        excluido: false,
+        ...(nome ? { nomeCompleto: { contains: nome, mode: 'insensitive' } } : {}),
+      },
+      select: { id: true, nomeCompleto: true, matricula: true },
+      orderBy: { nomeCompleto: 'asc' },
+    });
+
+    // Se a turma não tem grade horária, só filtra já matriculados
+    if (gradeDestino.length === 0) {
+      return todosAlunos.filter(a => !idsJaMatriculados.has(a.id));
+    }
+
+    // 4. IDs dos alunos com conflito de horário
+    const idsCandidatos = todosAlunos
+      .filter(a => !idsJaMatriculados.has(a.id))
+      .map(a => a.id);
+
+    const matriculasAtivas = await this.prisma.matriculaOficina.findMany({
+      where: {
+        alunoId: { in: idsCandidatos },
+        status: 'ATIVA',
+        turmaId: { not: turmaId },
+      },
+      include: { turma: { include: { gradeHoraria: true } } },
+    });
+
+    const idsComConflito = new Set<string>();
+    for (const matricula of matriculasAtivas) {
+      for (const horExistente of matricula.turma.gradeHoraria) {
+        for (const horNovo of gradeDestino) {
+          if (horExistente.dia === horNovo.dia && intervalosColidem(horExistente, horNovo)) {
+            idsComConflito.add(matricula.alunoId);
+          }
+        }
+      }
+    }
+
+    return todosAlunos.filter(a => !idsJaMatriculados.has(a.id) && !idsComConflito.has(a.id));
   }
 
   // ══ VALIDAÇÕES PRIVADAS (Anti-Colisão) ══════════════════════════════════
