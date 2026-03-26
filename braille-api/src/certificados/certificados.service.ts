@@ -152,6 +152,33 @@ export class CertificadosService {
       throw new BadRequestException('O Aluno não cursa ou não está matriculado nesta turma.');
     }
 
+    // ── Verificação de Frequência Mínima (≥ 75%) ──────────────────────────
+    // Compatibilidade: registros antigos usam `presente: true` (campo legado);
+    // registros novos usam `status: PRESENTE | FALTA_JUSTIFICADA`.
+    // O OR garante que ambos os formatos sejam reconhecidos como presença.
+    const totalAulas = await this.prisma.frequencia.count({
+      where: { turmaId: dto.turmaId, alunoId: dto.alunoId },
+    });
+    if (totalAulas > 0) {
+      const presencas = await this.prisma.frequencia.count({
+        where: {
+          turmaId: dto.turmaId,
+          alunoId: dto.alunoId,
+          OR: [
+            { presente: true },
+            { status: { in: ['PRESENTE', 'FALTA_JUSTIFICADA'] } },
+          ],
+        },
+      });
+      const taxaPresenca = Math.round((presencas / totalAulas) * 100);
+      if (taxaPresenca < 75) {
+        throw new BadRequestException(
+          `O aluno possui apenas ${taxaPresenca}% de frequência. É necessário pelo menos 75% para emitir o certificado.`,
+        );
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     const aluno = await this.prisma.aluno.findUnique({ where: { id: dto.alunoId } });
     if (!aluno) throw new NotFoundException('Aluno inativo ou não encontrado.');
 
@@ -179,11 +206,12 @@ export class CertificadosService {
       }
     });
 
-    // Pinta o PDF
+    // Pinta o PDF — passa nomeAluno para renderizar a tag posicionável {{NOME_ALUNO}}
     const buffer = await this.pdfService.construirPdfBase(
       turma.modeloCertificado as any,
       textoPronto,
-      hashUnique
+      hashUnique,
+      aluno.nomeCompleto,
     );
     return buffer;
   }

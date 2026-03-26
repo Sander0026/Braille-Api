@@ -6,6 +6,7 @@ import { QueryTurmaDto } from './dto/query-turma.dto';
 import { AuditAcao, DiaSemana, Role, TurmaStatus } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { REQUEST } from '@nestjs/core';
+import { calcularCargaHorariaTotal } from '../common/helpers/data.helper';
 
 // Transições permitidas de status
 const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
@@ -49,7 +50,7 @@ export class TurmasService {
   }
 
   async create(createTurmaDto: CreateTurmaDto) {
-    const { gradeHoraria, dataInicio, dataFim, ...dadosTurma } = createTurmaDto;
+    const { gradeHoraria, dataInicio, dataFim, cargaHoraria, ...dadosTurma } = createTurmaDto;
 
     const professor = await this.prisma.user.findUnique({ where: { id: createTurmaDto.professorId } });
     if (!professor) throw new NotFoundException('Professor não encontrado.');
@@ -59,15 +60,25 @@ export class TurmasService {
       await this.validarColisaoProfessor(createTurmaDto.professorId, gradeHoraria);
     }
 
+    const start = dataInicio ? new Date(dataInicio) : undefined;
+    const end = dataFim ? new Date(dataFim) : undefined;
+    
+    // Cálculo Automático Dinâmico de Carga Horária
+    let cargaFinalStr = cargaHoraria;
+    if (start && end && gradeHoraria?.length) {
+      cargaFinalStr = calcularCargaHorariaTotal(start, end, gradeHoraria as any);
+    }
+
     const turmaNova = await this.prisma.turma.create({
       data: {
         ...dadosTurma,
-        ...(dataInicio && { dataInicio: new Date(dataInicio) }),
-        ...(dataFim && { dataFim: new Date(dataFim) }),
+        ...(start && { dataInicio: start }),
+        ...(end && { dataFim: end }),
+        ...(cargaFinalStr && { cargaHoraria: cargaFinalStr }),
         ...(gradeHoraria?.length && {
           gradeHoraria: {
             create: gradeHoraria.map(g => ({
-              dia: g.dia,
+              dia: g.dia as DiaSemana,
               horaInicio: g.horaInicio,
               horaFim: g.horaFim,
             })),
@@ -142,36 +153,69 @@ export class TurmasService {
   }
 
   async update(id: string, updateTurmaDto: UpdateTurmaDto) {
-    const turma = await this.prisma.turma.findUnique({ where: { id } });
+    const turma = await this.prisma.turma.findUnique({ where: { id }, include: { gradeHoraria: true } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
 
-    const { gradeHoraria, dataInicio, dataFim, ...dadosTurma } = updateTurmaDto as any;
+    const { gradeHoraria, dataInicio, dataFim, cargaHoraria, ...dadosTurma } = updateTurmaDto as any;
 
     // Se o professor está mudando E há grade horária nova, validar colisão do novo professor
     const professorId = dadosTurma.professorId ?? turma.professorId;
+    const gradeConsiderada = (gradeHoraria !== undefined) ? gradeHoraria : (turma as any).gradeHoraria;
+    
     if (gradeHoraria?.length) {
       await this.validarColisaoProfessor(professorId, gradeHoraria, id);
     }
+    
+    // Mesclar DTO com banco para cálculo
+    const start = dataInicio ? new Date(dataInicio) : turma.dataInicio;
+    const end = dataFim ? new Date(dataFim) : turma.dataFim;
+    
+    // Cálculo Automático 
+    let cargaFinalStr = cargaHoraria || turma.cargaHoraria;
+    if (start && end && gradeConsiderada?.length) {
+      cargaFinalStr = calcularCargaHorariaTotal(start, end, gradeConsiderada);
+    }
 
-    const turmaAtualizada = await this.prisma.turma.update({
-      where: { id },
-      data: {
-        ...dadosTurma,
-        ...(dataInicio && { dataInicio: new Date(dataInicio) }),
-        ...(dataFim && { dataFim: new Date(dataFim) }),
-        ...(gradeHoraria !== undefined && {
-          gradeHoraria: {
-            deleteMany: {},
-            create: gradeHoraria.map((g: GradeHorariaDto) => ({
-              dia: g.dia,
-              horaInicio: g.horaInicio,
-              horaFim: g.horaFim,
-            })),
-          },
-        }),
-      },
-      include: { gradeHoraria: true, professor: { select: { id: true, nome: true } } },
+    // ── Cascata de Status nas Matrículas ──────────────────────────────
+    // Quando a turma muda para CONCLUIDA ou CANCELADA, as matrículas ATIVAS
+    // também recebem o novo status para que o perfil do aluno reflita corretamente.
+    const novoStatusTurma: string | undefined = dadosTurma.status;
+    let statusMatricula: string | null = null;
+    if (novoStatusTurma === 'CONCLUIDA') statusMatricula = 'CONCLUIDA';
+    if (novoStatusTurma === 'CANCELADA') statusMatricula = 'CANCELADA';
+
+    const [turmaAtualizada] = await this.prisma.$transaction(async (tx) => {
+      const t = await tx.turma.update({
+        where: { id },
+        data: {
+          ...dadosTurma,
+          ...(start !== undefined && { dataInicio: start }),
+          ...(end !== undefined && { dataFim: end }),
+          ...(cargaFinalStr !== undefined && { cargaHoraria: cargaFinalStr }),
+          ...(gradeHoraria !== undefined && {
+            gradeHoraria: {
+              deleteMany: {},
+              create: gradeHoraria.map((g: GradeHorariaDto) => ({
+                dia: g.dia as DiaSemana,
+                horaInicio: g.horaInicio,
+                horaFim: g.horaFim,
+              })),
+            },
+          }),
+        },
+        include: { gradeHoraria: true, professor: { select: { id: true, nome: true } } },
+      });
+
+      if (statusMatricula) {
+        await tx.matriculaOficina.updateMany({
+          where: { turmaId: id, status: 'ATIVA' },
+          data: { status: statusMatricula as any, dataEncerramento: new Date() },
+        });
+      }
+
+      return [t];
     });
+    // ───────────────────────────────────────────────────────────────
 
     this.auditService.registrar({
       entidade: 'Turma',
