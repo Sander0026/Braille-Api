@@ -41,6 +41,12 @@ export class TurmasController {
     return this.turmasService.findProfessoresAtivos();
   }
 
+  @Get(':id/alunos-disponiveis')
+  @ApiOperation({ summary: 'Lista alunos sem conflito de horário para esta turma' })
+  findAlunosDisponiveis(@Param('id') id: string, @Query('nome') nome?: string) {
+    return this.turmasService.findAlunosDisponiveis(id, nome);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Buscar uma turma específica e ver seus alunos' })
   findOne(@Param('id') id: string) {

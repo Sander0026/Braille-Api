@@ -35,6 +35,11 @@ export class AuditLogService {
      * para não interromper o fluxo principal da aplicação.
      */
     async registrar(opts: AuditOptions): Promise<void> {
+        // Serialização segura: descarta funções e objetos binários (ex: StreamableFile)
+        const safeJson = (val: any): any => {
+            if (val === undefined || val === null) return null;
+            try { return JSON.parse(JSON.stringify(val)); } catch { return null; }
+        };
         try {
             await this.prisma.auditLog.create({
                 data: {
@@ -46,8 +51,8 @@ export class AuditLogService {
                     autorRole: opts.autorRole,
                     ip: opts.ip,
                     userAgent: opts.userAgent,
-                    oldValue: opts.oldValue as any,
-                    newValue: opts.newValue as any,
+                    oldValue: safeJson(opts.oldValue),
+                    newValue: safeJson(opts.newValue),
                 },
             });
         } catch (err) {

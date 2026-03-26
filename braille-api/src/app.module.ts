@@ -22,6 +22,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { AtestadosModule } from './atestados/atestados.module';
 import { LaudosModule } from './laudos/laudos.module';
 import { ApoiadoresModule } from './modules/apoiadores/apoiadores.module';
+import { CertificadosModule } from './certificados/certificados.module';
 
 @Module({
   imports: [
@@ -50,7 +51,7 @@ import { ApoiadoresModule } from './modules/apoiadores/apoiadores.module';
     SiteConfigModule,
     AuditLogModule,   // Fase 5
     AtestadosModule,  // Módulo de Justificativas de Falta
-    LaudosModule, ApoiadoresModule,     // Módulo de Múltiplos Laudos Médicos
+    LaudosModule, ApoiadoresModule, CertificadosModule,     // Módulo de Múltiplos Laudos Médicos
   ],
   controllers: [AppController],
   providers: [
