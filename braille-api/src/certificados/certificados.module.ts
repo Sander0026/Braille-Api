@@ -5,10 +5,11 @@ import { CertificadosPublicoController } from './certificados-publico.controller
 import { UploadModule } from '../upload/upload.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from './pdf.service';
+import { ImageProcessingService } from './image-processing.service';
 
 @Module({
   imports: [UploadModule],
   controllers: [CertificadosController, CertificadosPublicoController],
-  providers: [CertificadosService, PrismaService, PdfService],
+  providers: [CertificadosService, PrismaService, PdfService, ImageProcessingService],
 })
 export class CertificadosModule {}
