@@ -6,6 +6,7 @@ import { UpdateCertificadoDto } from './dto/update-certificado.dto';
 import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
 import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
 import { PdfService } from './pdf.service';
+import { ImageProcessingService } from './image-processing.service';
 import { randomBytes } from 'node:crypto';
 
 @Injectable()
@@ -14,7 +15,20 @@ export class CertificadosService {
     private readonly prisma: PrismaService,
     private readonly uploadService: UploadService,
     private readonly pdfService: PdfService,
+    private readonly imageProcessing: ImageProcessingService,
   ) {}
+
+  /** Processa assinatura (remove fundo branco) e faz upload como PNG transparente */
+  private async uploadAssinatura(file: Express.Multer.File) {
+    const pngBuffer = await this.imageProcessing.removerFundoBrancoAssinatura(file.buffer);
+    const pngFile: Express.Multer.File = {
+      ...file,
+      buffer: pngBuffer,
+      mimetype: 'image/png',
+      originalname: file.originalname.replace(/\.[^.]+$/, '.png'),
+    };
+    return this.uploadService.uploadImage(pngFile);
+  }
 
   async create(createDto: CreateCertificadoDto, arteBaseFile?: Express.Multer.File, assinaturaFile?: Express.Multer.File, assinatura2File?: Express.Multer.File) {
     let arteBaseUrl = '';
@@ -27,12 +41,12 @@ export class CertificadosService {
     }
 
     if (assinaturaFile) {
-      const uploadAssinatura = await this.uploadService.uploadImage(assinaturaFile);
+      const uploadAssinatura = await this.uploadAssinatura(assinaturaFile);
       assinaturaUrl = uploadAssinatura.url;
     }
 
     if (assinatura2File) {
-      const uploadAssinatura2 = await this.uploadService.uploadImage(assinatura2File);
+      const uploadAssinatura2 = await this.uploadAssinatura(assinatura2File);
       assinaturaUrl2 = uploadAssinatura2.url;
     }
 
@@ -87,13 +101,13 @@ export class CertificadosService {
 
     if (assinaturaFile) {
       if (modelo.assinaturaUrl) await this.uploadService.deleteFile(modelo.assinaturaUrl);
-      const uploadAssinatura = await this.uploadService.uploadImage(assinaturaFile);
+      const uploadAssinatura = await this.uploadAssinatura(assinaturaFile);
       assinaturaUrl = uploadAssinatura.url;
     }
 
     if (assinatura2File) {
       if (modelo.assinaturaUrl2) await this.uploadService.deleteFile(modelo.assinaturaUrl2);
-      const uploadAssinatura2 = await this.uploadService.uploadImage(assinatura2File);
+      const uploadAssinatura2 = await this.uploadAssinatura(assinatura2File);
       assinaturaUrl2 = uploadAssinatura2.url;
     }
 
