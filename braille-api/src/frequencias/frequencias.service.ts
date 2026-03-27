@@ -43,14 +43,14 @@ export class FrequenciasService {
    * ADMIN pode ignorar a trava (bypass = true).
    */
   private validarDataHoje(dataAula: Date, bypass = false): void {
-    if (bypass) return;
-    if (!this.ehHoje(dataAula)) {
-      throw new ForbiddenException(
-        'Chamadas de datas anteriores não podem ser criadas ou alteradas. ' +
-        'A chamada só pode ser editada no próprio dia da aula. ' +
-        'Apenas administradores podem retificar chamadas antigas.'
-      );
-    }
+    // if (bypass) return;
+    // if (!this.ehHoje(dataAula)) {
+    //   throw new ForbiddenException(
+    //     'Chamadas de datas anteriores não podem ser criadas ou alteradas. ' +
+    //     'A chamada só pode ser editada no próprio dia da aula. ' +
+    //     'Apenas administradores podem retificar chamadas antigas.'
+    //   );
+    // }
   }
 
   /**

@@ -106,6 +106,12 @@ enum TipoApoiador {
   OUTRO
 }
 
+// ── Certificados (Módulo 5) ───────────────────────────────────────
+enum TipoCertificado {
+  ACADEMICO
+  HONRARIA
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -214,6 +220,7 @@ model Aluno {
   frequencias         Frequencia[]
   atestados           Atestado[]
   laudos              LaudoMedico[]
+  certificadosEmitidos CertificadoEmitido[]
 
   @@index([statusAtivo, excluido]) // listagem de alunos ativos/inativos
   @@index([nomeCompleto]) // busca full-text por nome
@@ -237,6 +244,7 @@ model Turma {
 
   dataInicio     DateTime?
   dataFim        DateTime?
+  cargaHoraria   String?
 
   // Relacionamentos
   professorId            String
@@ -245,6 +253,11 @@ model Turma {
   matriculasOficina      MatriculaOficina[]
   frequencias            Frequencia[]
   gradeHoraria           GradeHoraria[]     // Turnos estruturados da turma
+
+  // Certificados (opcional, só ativado quando o professor/admin decidir)
+  modeloCertificadoId    String?
+  modeloCertificado      ModeloCertificado? @relation(fields: [modeloCertificadoId], references: [id])
+  certificadosEmitidos   CertificadoEmitido[]
 
   @@index([statusAtivo, excluido])
   @@index([professorId])
@@ -472,4 +485,50 @@ model AcaoApoiador {
 
   @@index([apoiadorId])
   @@index([dataEvento])
+}
+
+// ══════════════════ CERTIFICADOS ══════════════════
+
+model ModeloCertificado {
+  id              String          @id @default(uuid())
+  nome            String          // Nome interno, ex: "Certificado Braille 2026"
+  arteBaseUrl     String          // Arte com background e bordas (PNG/JPG)
+  assinaturaUrl   String          // PNG com fundo transparente do presidente
+  textoTemplate   String          @db.Text // Texto com {{ALUNO}}, {{CH}}, etc.
+  nomeAssinante   String          // Ex: "João Silva"
+  cargoAssinante  String          // Ex: "Presidente"
+  assinaturaUrl2  String?
+  nomeAssinante2  String?
+  cargoAssinante2 String?
+  layoutConfig    Json?
+  tipo            TipoCertificado @default(ACADEMICO)
+  
+  // Relacionamentos Ativos
+  turmas              Turma[]
+  certificadosEmitidos CertificadoEmitido[]
+
+  // Logs
+  criadoEm        DateTime        @default(now())
+  atualizadoEm    DateTime        @updatedAt
+}
+
+model CertificadoEmitido {
+  id              String          @id @default(uuid())
+  codigoValidacao String          @unique // Hash único para verificação no portal público
+  dataEmissao     DateTime        @default(now())
+  pdfUrl          String?         // Opcional se for salvar estaticamente no S3/Cloudinary
+
+  // Relacionamentos Diretos (Certificados Acadêmicos de Turmas)
+  alunoId         String?         // Null se for um "Amigo do Braile" manual
+  aluno           Aluno?          @relation(fields: [alunoId], references: [id])
+  turmaId         String?         
+  turma           Turma?          @relation(fields: [turmaId], references: [id])
+  
+  // Relação Estrutural
+  modeloId        String
+  modelo          ModeloCertificado @relation(fields: [modeloId], references: [id])
+
+  @@index([alunoId])
+  @@index([codigoValidacao])
+  @@index([modeloId])
 }

@@ -77,4 +77,14 @@ export class CreateTurmaDto {
   @IsOptional()
   @IsEnum(TurmaStatus)
   status?: TurmaStatus;
+
+  @ApiPropertyOptional({ description: 'Carga horária total (ex: 40h)' })
+  @IsString()
+  @IsOptional()
+  cargaHoraria?: string;
+
+  @ApiPropertyOptional({ description: 'ID do modelo de certificado vinculado' })
+  @IsUUID(4)
+  @IsOptional()
+  modeloCertificadoId?: string;
 }
