@@ -55,7 +55,7 @@ export class UploadService {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder,
-          resource_type: 'auto', // 'auto' permite visualização pública de PDFs
+          resource_type: 'auto',
           use_filename: true,
           unique_filename: true,
         },
@@ -67,6 +67,36 @@ export class UploadService {
       );
 
       streamifier.createReadStream(file.buffer).pipe(uploadStream);
+    });
+  }
+
+  /**
+   * Faz upload de um PDF gerado em memória (Buffer) sem depências do Multer.
+   * Usado para persistir certificados gerados dinamicamente no Cloudinary.
+   */
+  uploadPdfBuffer(
+    buffer: Buffer,
+    fileName: string,
+    folder = 'braille_certificados',
+  ): Promise<{ url: string }> {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder,
+          resource_type: 'raw', // 'raw' para PDFs (download direto)
+          public_id: fileName.replace(/\.pdf$/i, ''),
+          use_filename: false,
+          unique_filename: false,
+          overwrite: true,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          if (!result) return reject(new BadRequestException('Erro ao enviar PDF para o Cloudinary.'));
+          resolve({ url: result.secure_url });
+        },
+      );
+
+      streamifier.createReadStream(buffer).pipe(uploadStream);
     });
   }
 

@@ -470,6 +470,7 @@ model Apoiador {
   atualizadoEm           DateTime      @updatedAt
 
   acoes                  AcaoApoiador[]
+  certificados           CertificadoEmitido[]
 }
 
 model AcaoApoiador {
@@ -485,6 +486,8 @@ model AcaoApoiador {
 
   @@index([apoiadorId])
   @@index([dataEvento])
+
+  certificadosEmitidos   CertificadoEmitido[]
 }
 
 // ══════════════════ CERTIFICADOS ══════════════════
@@ -519,16 +522,25 @@ model CertificadoEmitido {
   pdfUrl          String?         // Opcional se for salvar estaticamente no S3/Cloudinary
 
   // Relacionamentos Diretos (Certificados Acadêmicos de Turmas)
-  alunoId         String?         // Null se for um "Amigo do Braile" manual
+  alunoId         String?         // Null se for honraria a apoiador
   aluno           Aluno?          @relation(fields: [alunoId], references: [id])
   turmaId         String?         
   turma           Turma?          @relation(fields: [turmaId], references: [id])
+
+  // Relacionamento para Apoiadores (Honraria "Amigo do Braille")
+  apoiadorId           String?
+  apoiador             Apoiador?          @relation(fields: [apoiadorId], references: [id])
+  acaoId               String?            // Ação/evento que motivou a honraria
+  acao                 AcaoApoiador?      @relation(fields: [acaoId], references: [id])
+  motivoPersonalizado  String?            @db.Text  // Texto livre para a tag {{MOTIVO}}
   
   // Relação Estrutural
   modeloId        String
   modelo          ModeloCertificado @relation(fields: [modeloId], references: [id])
 
   @@index([alunoId])
+  @@index([apoiadorId])
+  @@index([acaoId])
   @@index([codigoValidacao])
   @@index([modeloId])
 }

@@ -8,7 +8,17 @@ export class CreateAcaoApoiadorDto {
 
   @IsString()
   descricaoAcao: string;
+
+  @IsOptional()
+  @IsString()
+  modeloCertificadoId?: string;
+
+  @IsOptional()
+  @IsString()
+  motivoPersonalizado?: string;
 }
+
+export class UpdateAcaoApoiadorDto extends CreateAcaoApoiadorDto {}
 
 export class CreateApoiadorDto {
   @IsEnum(TipoApoiador)
