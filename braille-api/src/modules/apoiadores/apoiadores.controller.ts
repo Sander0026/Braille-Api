@@ -1,6 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseInterceptors, UploadedFile, BadRequestException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseInterceptors, UploadedFile, BadRequestException, UseGuards, Res, NotFoundException } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApoiadoresService } from './apoiadores.service';
-import { CreateApoiadorDto, UpdateApoiadorDto } from './dto/apoiador.dto';
+import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
+import { EmitirCertificadoApoiadorDto } from './dto/emitir-certificado-apoiador.dto';
 import { TipoApoiador } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from '../../upload/upload.service';
@@ -29,13 +31,15 @@ export class ApoiadoresController {
     @Query('skip') skip?: string,
     @Query('take') take?: string,
     @Query('tipo') tipo?: TipoApoiador,
-    @Query('search') search?: string
+    @Query('search') search?: string,
+    @Query('ativo') ativo?: string,
   ) {
     return this.apoiadoresService.findAll({
       skip: skip ? Number(skip) : undefined,
       take: take ? Number(take) : undefined,
       tipo,
       search,
+      ativo: ativo !== undefined ? ativo !== 'false' : undefined,
     });
   }
 
@@ -76,11 +80,18 @@ export class ApoiadoresController {
     return this.apoiadoresService.updateLogo(id, uploaded.url);
   }
 
-  @Delete(':id')
+  @Patch(':id/inativar')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN') // Apenas ADMIN pode deletar apoiadores (soft delete)
-  remove(@Param('id') id: string) {
-    return this.apoiadoresService.remove(id);
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  inativar(@Param('id') id: string) {
+    return this.apoiadoresService.inativar(id);
+  }
+
+  @Patch(':id/reativar')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  reativar(@Param('id') id: string) {
+    return this.apoiadoresService.reativar(id);
   }
 
   // ---- Histórico de Ações (Tracking Relacional) ----
@@ -90,10 +101,20 @@ export class ApoiadoresController {
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   addAcao(
     @Param('id') id: string, 
-    @Body('dataEvento') dataEvento: Date, 
-    @Body('descricaoAcao') descricaoAcao: string
+    @Body() dto: CreateAcaoApoiadorDto
   ) {
-    return this.apoiadoresService.addAcao(id, dataEvento, descricaoAcao);
+    return this.apoiadoresService.addAcao(id, dto);
+  }
+
+  @Patch(':id/acoes/:acaoId')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  updateAcao(
+    @Param('id') id: string,
+    @Param('acaoId') acaoId: string,
+    @Body() dto: UpdateAcaoApoiadorDto
+  ) {
+    return this.apoiadoresService.updateAcao(id, acaoId, dto);
   }
 
   @Get(':id/acoes')
@@ -109,4 +130,51 @@ export class ApoiadoresController {
   removeAcao(@Param('id') id: string, @Param('acaoId') acaoId: string) {
     return this.apoiadoresService.removeAcao(id, acaoId);
   }
+
+  // ---- Certificados da Parte de Honrarias ----
+
+  @Post(':id/certificados')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  emitirCertificado(
+    @Param('id') id: string,
+    @Body() emitirDto: EmitirCertificadoApoiadorDto,
+  ) {
+    return this.apoiadoresService.emitirCertificado(id, emitirDto);
+  }
+
+  @Get(':id/certificados')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  getCertificados(@Param('id') id: string) {
+    return this.apoiadoresService.getCertificados(id);
+  }
+
+  @Get(':id/certificados/:certId/pdf')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  async getPdfCertificado(
+    @Param('id') id: string,
+    @Param('certId') certId: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const pdfBuffer = await this.apoiadoresService.gerarPdfCertificado(id, certId);
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="certificado-${certId}.pdf"`,
+        'Content-Length': pdfBuffer.length,
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      // Sinal especial: modelo excluído mas PDF persistido no Cloudinary
+      if (err instanceof NotFoundException && err.message?.startsWith('__USE_PDF_URL__:')) {
+        const pdfUrl = err.message.replace('__USE_PDF_URL__:', '');
+        res.redirect(301, pdfUrl);
+        return;
+      }
+      throw err;
+    }
+  }
 }
+

@@ -11,5 +11,6 @@ import { ImageProcessingService } from './image-processing.service';
   imports: [UploadModule],
   controllers: [CertificadosController, CertificadosPublicoController],
   providers: [CertificadosService, PrismaService, PdfService, ImageProcessingService],
+  exports: [PdfService],
 })
 export class CertificadosModule {}
