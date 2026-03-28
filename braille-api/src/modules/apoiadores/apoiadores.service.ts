@@ -1,11 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateApoiadorDto, UpdateApoiadorDto } from './dto/apoiador.dto';
+import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
+import { EmitirCertificadoApoiadorDto } from './dto/emitir-certificado-apoiador.dto';
 import { Prisma, TipoApoiador } from '@prisma/client';
+import { PdfService } from '../../certificados/pdf.service';
+import { UploadService } from '../../upload/upload.service';
+import * as crypto from 'node:crypto';
 
 @Injectable()
 export class ApoiadoresService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pdfService: PdfService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   async create(createApoiadorDto: CreateApoiadorDto) {
     const { acoes, ...rest } = createApoiadorDto;
@@ -17,9 +25,16 @@ export class ApoiadoresService {
     });
   }
 
-  async findAll(params: { skip?: number; take?: number; tipo?: TipoApoiador; search?: string }) {
-    const { skip, take, tipo, search } = params;
+  async findAll(params: { skip?: number; take?: number; tipo?: TipoApoiador; search?: string; ativo?: boolean }) {
+    const { skip, take, tipo, search, ativo } = params;
     const where: Prisma.ApoiadorWhereInput = {};
+
+    // Por padrão lista apenas ativos; passa ativo=false para listar inativos
+    if (ativo !== undefined) {
+      where.ativo = ativo;
+    } else {
+      where.ativo = true; // comportamento padrão
+    }
 
     if (tipo) {
       where.tipo = tipo;
@@ -84,18 +99,60 @@ export class ApoiadoresService {
   }
 
   // ---- Histórico de Ações (Tracking Relacional) ----
-  
-  async addAcao(apoiadorId: string, dataEvento: Date, descricaoAcao: string) {
+  async addAcao(apoiadorId: string, dto: CreateAcaoApoiadorDto) {
     await this.findOne(apoiadorId); // garante existencia
-    return this.prisma.acaoApoiador.create({
+    const acao = await this.prisma.acaoApoiador.create({
       data: {
-        dataEvento: new Date(dataEvento), // Força a deserialização da string vinda do POST
-        descricaoAcao,
+        dataEvento: new Date(dto.dataEvento), // Força a deserialização da string vinda do POST
+        descricaoAcao: dto.descricaoAcao,
         apoiadorId,
       },
     });
+
+    if (dto.modeloCertificadoId) {
+      await this.emitirCertificado(apoiadorId, {
+        modeloId: dto.modeloCertificadoId,
+        acaoId: acao.id,
+        motivoPersonalizado: dto.motivoPersonalizado || dto.descricaoAcao,
+        dataEmissao: dto.dataEvento,
+      });
+    }
+
+    return acao;
   }
   
+  async updateAcao(apoiadorId: string, acaoId: string, dto: UpdateAcaoApoiadorDto) {
+    await this.findOne(apoiadorId);
+    const acao = await this.prisma.acaoApoiador.findFirst({
+      where: { id: acaoId, apoiadorId },
+    });
+    if (!acao) throw new NotFoundException('Ação não encontrada nesse perfil.');
+
+    const acaoAtualizada = await this.prisma.acaoApoiador.update({
+      where: { id: acaoId },
+      data: {
+        dataEvento: new Date(dto.dataEvento),
+        descricaoAcao: dto.descricaoAcao,
+      },
+    });
+
+    // Se forneceu um modeloId, então recarrega (deleta qualquer antigo, recria)
+    if (dto.modeloCertificadoId) {
+       await this.prisma.certificadoEmitido.deleteMany({
+         where: { acaoId: acaoId }
+       });
+       
+       await this.emitirCertificado(apoiadorId, {
+         modeloId: dto.modeloCertificadoId,
+         acaoId: acaoId,
+         motivoPersonalizado: dto.motivoPersonalizado || dto.descricaoAcao,
+         dataEmissao: dto.dataEvento,
+       });
+    }
+
+    return acaoAtualizada;
+  }
+
   async getAcoes(apoiadorId: string) {
     await this.findOne(apoiadorId);
     return this.prisma.acaoApoiador.findMany({
@@ -109,18 +166,174 @@ export class ApoiadoresService {
       where: { id: acaoId, apoiadorId },
     });
     if (!acao) throw new NotFoundException('Ação não encontrada nesse perfil.');
+
+    // Exclui certificados vinculados a esta ação primeiro (cascade logic)
+    await this.prisma.certificadoEmitido.deleteMany({
+      where: { acaoId: acaoId }
+    });
+
     return this.prisma.acaoApoiador.delete({
       where: { id: acaoId },
     });
   }
 
-  async remove(id: string) {
+  async inativar(id: string) {
     await this.findOne(id);
-    // Em CRM, costuma ser recomendado apenas o soft-delete. 
-    // Como a instrução não obrigou exclusão real profunda:
     return this.prisma.apoiador.update({
       where: { id },
-      data: { ativo: false },
+      data: { ativo: false, exibirNoSite: false },
     });
+  }
+
+  async reativar(id: string) {
+    const apoiador = await this.prisma.apoiador.findUnique({ where: { id } });
+    if (!apoiador) throw new NotFoundException(`Apoiador com ID ${id} não encontrado`);
+    return this.prisma.apoiador.update({
+      where: { id },
+      data: { ativo: true, exibirNoSite: true },
+    });
+  }
+
+  // ---- Certificados (Honrarias) ----
+
+  async emitirCertificado(apoiadorId: string, dto: EmitirCertificadoApoiadorDto) {
+    const apoiador = await this.findOne(apoiadorId);
+    
+    const modelo = await this.prisma.modeloCertificado.findUnique({
+      where: { id: dto.modeloId },
+    });
+
+    if (!modelo) {
+      throw new NotFoundException('Modelo de certificado não encontrado.');
+    }
+
+    const codigoValidacao = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const dataEmissaoStr = dto.dataEmissao || new Date().toISOString();
+
+    const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
+
+    // Formata a data sem erro de timezone: "2026-03-27" → "27/03/2026"
+    const formatarDataSemTimezone = (isoStr: string): string => {
+      const partes = isoStr.split('T')[0].split('-');
+      if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
+      return new Date(isoStr).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    };
+
+    const dataEmissaoFormatada = formatarDataSemTimezone(dataEmissaoStr);
+
+    // Substituição das tags no template do modelo
+    // Suporta múltiplas variações de nome e data para compatibilidade com templates
+    const textoFormatado = (modelo.textoTemplate || '')
+      .replaceAll('{{ALUNO}}', nomeDestinatario)
+      .replaceAll('{{NOME}}', nomeDestinatario)
+      .replaceAll('{{APOIADOR}}', nomeDestinatario)
+      .replaceAll('{{PARCEIRO}}', nomeDestinatario)
+      .replaceAll('{{NOME_APOIADOR}}', nomeDestinatario)
+      .replaceAll('{{MOTIVO}}', dto.motivoPersonalizado || '')
+      .replaceAll('{{DATA_EMISSAO}}', dataEmissaoFormatada)
+      .replaceAll('{{DATA_EVENTO}}', dataEmissaoFormatada)
+      .replaceAll('{{DATA}}', dataEmissaoFormatada);
+
+    // O 4º parâmetro é o "nomeAluno" que é desenhado usando fonte cursiva (se configurado no modelo)
+    const pdfBuffer = await this.pdfService.construirPdfBase(
+      modelo,
+      textoFormatado,
+      codigoValidacao,
+      nomeDestinatario
+    );
+
+    // Faz upload do PDF para o Cloudinary e persiste a URL
+    let pdfUrl: string | null = null;
+    try {
+      const fileName = `certificado-${codigoValidacao}.pdf`;
+      const uploaded = await this.uploadService.uploadPdfBuffer(pdfBuffer, fileName);
+      pdfUrl = uploaded.url;
+    } catch (uploadErr) {
+      console.error('[CertificadoEmitido] Falha no upload para o Cloudinary, pdfUrl não salvo:', uploadErr);
+    }
+
+    const pdfBase64 = pdfBuffer.toString('base64');
+
+    const certificado = await this.prisma.certificadoEmitido.create({
+      data: {
+        codigoValidacao,
+        modeloId: modelo.id,
+        apoiadorId: apoiador.id,
+        acaoId: dto.acaoId || null,
+        motivoPersonalizado: dto.motivoPersonalizado || null,
+        dataEmissao: new Date(dataEmissaoStr),
+        pdfUrl,
+      },
+    });
+
+    return {
+      certificado,
+      pdfBase64,
+    };
+  }
+
+  async getCertificados(apoiadorId: string) {
+    await this.findOne(apoiadorId);
+    return this.prisma.certificadoEmitido.findMany({
+      where: { apoiadorId },
+      include: {
+        modelo: { select: { nome: true } },
+        acao: { select: { descricaoAcao: true, dataEvento: true } },
+      },
+      orderBy: { dataEmissao: 'desc' },
+    });
+  }
+
+  async gerarPdfCertificado(apoiadorId: string, certId: string): Promise<Buffer> {
+    const apoiador = await this.findOne(apoiadorId);
+
+    const cert = await this.prisma.certificadoEmitido.findFirst({
+      where: { id: certId, apoiadorId },
+      include: {
+        modelo: true,
+        acao: true,
+      },
+    });
+
+    if (!cert) throw new NotFoundException('Certificado não encontrado.');
+
+    // Se já tiver URL salva no Cloudinary, re-gera localmente de qualquer forma
+    // mas avisa que o ideal é retornar redirect. O controller vai redirect.
+    if (!cert.modelo) {
+      // Modelo excluído mas há URL salva
+      if (cert.pdfUrl) {
+        // Retorna um buffer vazio - o controller vai usar a pdfUrl diretamente
+        throw new NotFoundException('__USE_PDF_URL__:' + cert.pdfUrl);
+      }
+      throw new NotFoundException('Modelo do certificado foi excluído e não há PDF salvo.');
+    }
+
+    const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
+    const motivo = cert.motivoPersonalizado || cert.acao?.descricaoAcao || '';
+    const dataEmissaoStr = cert.dataEmissao?.toISOString() || new Date().toISOString();
+
+    // Formata sem offset de timezone
+    const partes = dataEmissaoStr.split('T')[0].split('-');
+    const dataFormatada = partes.length === 3
+      ? `${partes[2]}/${partes[1]}/${partes[0]}`
+      : new Date(dataEmissaoStr).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+    const textoFormatado = (cert.modelo.textoTemplate || '')
+      .replaceAll('{{ALUNO}}', nomeDestinatario)
+      .replaceAll('{{NOME}}', nomeDestinatario)
+      .replaceAll('{{APOIADOR}}', nomeDestinatario)
+      .replaceAll('{{PARCEIRO}}', nomeDestinatario)
+      .replaceAll('{{NOME_APOIADOR}}', nomeDestinatario)
+      .replaceAll('{{MOTIVO}}', motivo)
+      .replaceAll('{{DATA_EMISSAO}}', dataFormatada)
+      .replaceAll('{{DATA_EVENTO}}', dataFormatada)
+      .replaceAll('{{DATA}}', dataFormatada);
+
+    return this.pdfService.construirPdfBase(
+      cert.modelo,
+      textoFormatado,
+      cert.codigoValidacao,
+      nomeDestinatario,
+    );
   }
 }
