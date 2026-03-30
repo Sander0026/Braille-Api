@@ -1,5 +1,4 @@
-import { Injectable, ConflictException, NotFoundException, Inject } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
+import { Injectable, ConflictException, NotFoundException, Logger } from '@nestjs/common';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -8,17 +7,26 @@ import { gerarMatriculaAluno } from '../common/helpers/matricula.helper';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAcao } from '@prisma/client';
 import { UploadService } from '../upload/upload.service';
+import * as ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
+
+export interface AuditUserParams {
+  autorId?: string;
+  autorNome?: string;
+  autorRole?: string;
+}
 
 @Injectable()
 export class BeneficiariesService {
+  private readonly logger = new Logger(BeneficiariesService.name);
+
   constructor(
-    private prisma: PrismaService,
-    private auditService: AuditLogService,
-    private uploadService: UploadService,
-    @Inject(REQUEST) private request: any
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditLogService,
+    private readonly uploadService: UploadService,
   ) { }
 
-  async create(createBeneficiaryDto: CreateBeneficiaryDto) {
+  async create(createBeneficiaryDto: CreateBeneficiaryDto, auditUser?: AuditUserParams) {
     const orCondition: any[] = [];
     if (createBeneficiaryDto.cpf) orCondition.push({ cpf: createBeneficiaryDto.cpf });
     if (createBeneficiaryDto.rg) orCondition.push({ rg: createBeneficiaryDto.rg });
@@ -56,6 +64,7 @@ export class BeneficiariesService {
     const alunoNovo = await this.prisma.aluno.create({ data: dadosParaSalvar });
 
     this.auditService.registrar({
+      ...auditUser,
       entidade: 'Aluno',
       registroId: alunoNovo.id,
       acao: AuditAcao.CRIAR,
@@ -65,7 +74,7 @@ export class BeneficiariesService {
     return alunoNovo;
   }
 
-  async reactivate(id: string) {
+  async reactivate(id: string, auditUser?: AuditUserParams) {
     const aluno = await this.prisma.aluno.findUnique({ where: { id } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
 
@@ -84,6 +93,7 @@ export class BeneficiariesService {
     });
 
     this.auditService.registrar({
+      ...auditUser,
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.RESTAURAR,
@@ -260,8 +270,7 @@ export class BeneficiariesService {
       },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const ExcelJS = require('exceljs');
+    // Utilizamos o ExcelJS via import no topo
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Instituto Louis Braille';
     workbook.created = new Date();
@@ -364,7 +373,7 @@ export class BeneficiariesService {
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
 
     const buffer = await workbook.xlsx.writeBuffer();
-    return buffer as Buffer;
+    return Buffer.from(buffer);
   }
 
   async findOne(id: string) {
@@ -376,16 +385,16 @@ export class BeneficiariesService {
     return beneficiario;
   }
 
-  async update(id: string, updateBeneficiaryDto: UpdateBeneficiaryDto) {
+  async update(id: string, updateBeneficiaryDto: UpdateBeneficiaryDto, auditUser?: AuditUserParams) {
     const beneficiarioAntigo = await this.findOne(id);
-    (this.request as any).auditOldValue = beneficiarioAntigo;
 
     // Se a foto de perfil for atualizada, deleta o arquivo antigo do Cloudinary
     if (updateBeneficiaryDto.fotoPerfil !== undefined && beneficiarioAntigo.fotoPerfil && updateBeneficiaryDto.fotoPerfil !== beneficiarioAntigo.fotoPerfil) {
       try {
         await this.uploadService.deleteFile(beneficiarioAntigo.fotoPerfil);
-      } catch (e: any) {
-        console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
+      } catch (e: unknown) {
+        const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+        this.logger.warn(`Foto de perfil antiga não removida do Cloudinary: ${erroMsg}`);
       }
     }
 
@@ -393,18 +402,21 @@ export class BeneficiariesService {
     if (updateBeneficiaryDto.termoLgpdUrl && beneficiarioAntigo.termoLgpdUrl && updateBeneficiaryDto.termoLgpdUrl !== beneficiarioAntigo.termoLgpdUrl) {
       try {
         await this.uploadService.deleteFile(beneficiarioAntigo.termoLgpdUrl);
-      } catch (e: any) {
-        console.warn('Documento LGPD antigo não removido do Cloudinary:', e.message);
+      } catch (e: unknown) {
+        const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+        this.logger.warn(`Documento LGPD antigo não removido do Cloudinary: ${erroMsg}`);
       }
     }
 
-    let dadosParaAtualizar: any = { ...updateBeneficiaryDto };
-    if (updateBeneficiaryDto.dataNascimento) {
-      dadosParaAtualizar.dataNascimento = new Date(updateBeneficiaryDto.dataNascimento);
+    const { dataNascimento, ...resto } = updateBeneficiaryDto;
+    const dadosParaAtualizar: any = { ...resto };
+    if (dataNascimento) {
+      dadosParaAtualizar.dataNascimento = new Date(dataNascimento);
     }
     const alunoAtualizado = await this.prisma.aluno.update({ where: { id }, data: dadosParaAtualizar });
 
     this.auditService.registrar({
+      ...auditUser,
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.ATUALIZAR,
@@ -415,12 +427,12 @@ export class BeneficiariesService {
     return alunoAtualizado;
   }
 
-  async remove(id: string) {
+  async remove(id: string, auditUser?: AuditUserParams) {
     const beneficiarioAntigo = await this.findOne(id);
-    (this.request as any).auditOldValue = beneficiarioAntigo;
 
     const result = await this.prisma.aluno.update({ where: { id }, data: { statusAtivo: false } });
     this.auditService.registrar({
+      ...auditUser,
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.EXCLUIR,
@@ -430,12 +442,12 @@ export class BeneficiariesService {
     return result;
   }
 
-  async restore(id: string) {
+  async restore(id: string, auditUser?: AuditUserParams) {
     const beneficiarioAntigo = await this.findOne(id);
-    (this.request as any).auditOldValue = beneficiarioAntigo;
 
     const result = await this.prisma.aluno.update({ where: { id }, data: { statusAtivo: true } });
     this.auditService.registrar({
+      ...auditUser,
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.RESTAURAR,
@@ -445,12 +457,12 @@ export class BeneficiariesService {
     return result;
   }
 
-  async removeHard(id: string) {
+  async removeHard(id: string, auditUser?: AuditUserParams) {
     const beneficiarioAntigo = await this.findOne(id);
-    (this.request as any).auditOldValue = beneficiarioAntigo;
 
     const result = await this.prisma.aluno.update({ where: { id }, data: { excluido: true } });
     this.auditService.registrar({
+      ...auditUser,
       entidade: 'Aluno',
       registroId: id,
       acao: AuditAcao.ARQUIVAR,
@@ -514,13 +526,11 @@ export class BeneficiariesService {
   }
 
 
-  async importFromSheet(buffer: Buffer): Promise<{
+  async importFromSheet(buffer: Buffer, auditUser?: AuditUserParams): Promise<{
     importados: number;
     ignorados: number;
     erros: { linha: number; documento: string; motivo: string }[];
   }> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const XLSX = require('xlsx');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
 
@@ -713,8 +723,9 @@ export class BeneficiariesService {
           data: paraInserir,
           skipDuplicates: false,
         });
-      } catch (err: any) {
-        console.error('ERRO NO IMPORT createMany:', err?.code, err?.message?.substring(0, 300));
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        this.logger.error(`ERRO NO IMPORT createMany: ${errorMsg}`);
         throw err;
       }
 
@@ -722,6 +733,7 @@ export class BeneficiariesService {
       Promise.resolve().then(async () => {
         for (const aluno of paraInserir) {
           await this.auditService.registrar({
+            ...auditUser,
             entidade: 'Aluno',
             registroId: aluno.matricula ?? 'sem-matricula',
             acao: AuditAcao.CRIAR,
