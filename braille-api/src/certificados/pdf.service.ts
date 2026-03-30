@@ -278,8 +278,11 @@ export class PdfService {
       const qrX    = (qrXPct / 100) * width;
       const qrY    = topPctToY(qrYPct, height, qrW);
 
-      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
-      const linkValidacao = `${baseUrl}/validar-certificado?codigo=${codigoValidacao}`;
+      const baseUrl = process.env.FRONTEND_URL;
+      if (!baseUrl) {
+        console.warn('[PdfService] ⚠️  FRONTEND_URL não definida no .env — QR Code usará http://localhost:4200 como fallback. Configure a variável em produção!');
+      }
+      const linkValidacao = `${baseUrl || 'http://localhost:4200'}/validar-certificado?codigo=${codigoValidacao}`;
       const qrCodeDataUrl = await QRCode.toDataURL(linkValidacao, {
         margin: 1, width: 150, color: { dark: '#000', light: '#FFF' },
       });
