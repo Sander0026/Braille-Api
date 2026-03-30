@@ -1,5 +1,0 @@
-feat(ajuda): fase 1 - config do utilitario ERD Prisma no backend
-
-- Instalada biblioteca prisma-erd-generator.
-- Injetado config generator na schema.prisma para producao de mapa relacional do banco.
-- Gerado primeiro snapshot em v1-erd.svg para ser anexado na documentacao final do projeto.
