@@ -278,11 +278,24 @@ export class PdfService {
       const qrX    = (qrXPct / 100) * width;
       const qrY    = topPctToY(qrYPct, height, qrW);
 
-      const baseUrl = process.env.FRONTEND_URL;
+      let baseUrl = process.env.FRONTEND_URL;
       if (!baseUrl) {
-        console.warn('[PdfService] ⚠️  FRONTEND_URL não definida no .env — QR Code usará http://localhost:4200 como fallback. Configure a variável em produção!');
+        // Tenta carregar manualmente
+        require('dotenv').config();
+        baseUrl = process.env.FRONTEND_URL;
       }
-      const linkValidacao = `${baseUrl || 'http://localhost:4200'}/validar-certificado?codigo=${codigoValidacao}`;
+      
+      // O usuário solicitou que apontasse para a rota correta.
+      // Substituindo o fallback temporário de localhost pela URL de produção.
+      const fallbackUrl = 'https://instituto-luizbraille.vercel.app';
+      if (!baseUrl) {
+        console.warn(`[PdfService] ⚠️  FRONTEND_URL não encontrada. Usando fallback de produção: ${fallbackUrl}`);
+        baseUrl = fallbackUrl;
+      }
+      
+      const linkValidacao = `${baseUrl}/validar-certificado?codigo=${codigoValidacao}`;
+      console.log(`[PdfService] Gerando QR Code apontando para: ${linkValidacao}`);
+      
       const qrCodeDataUrl = await QRCode.toDataURL(linkValidacao, {
         margin: 1, width: 150, color: { dark: '#000', light: '#FFF' },
       });
