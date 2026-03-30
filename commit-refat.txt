@@ -1,0 +1,7 @@
+refactor(atestados): otimizacao de performance e padronizacao global de respostas
+
+- [Performance] Removida injecao do escopo HTTP (@Inject(REQUEST)) do servico, adotando Singleton memory padrao com passagem via parametros do ID.
+- [Padronizacao] Criada as novas classes e tipos globais ApiResponse e AuthenticatedRequest em src/common/.
+- [Design] Controlador atestados 100% tipado com Promises explicitas e Swagger documentado.
+- [Clean Code] Dois controllers redundantes mesclados em um unico painel limpo.
+- [Snyk/SonarQube] Eliminados casting excessivos de 'any' para protecao runtime.
