@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UseInterceptors } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { TurmasService } from './turmas.service';
 import { CreateTurmaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
@@ -30,12 +31,16 @@ export class TurmasController {
   }
 
   @Get()
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Listar turmas. Use statusAtivo=false para arquivadas.' })
   findAll(@Query() query: QueryTurmaDto) {
     return this.turmasService.findAll(query);
   }
 
   @Get('professores-ativos')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Listar apenas professores vinculados a pelo menos uma turma ativa.' })
   findProfessoresAtivos() {
     return this.turmasService.findProfessoresAtivos();
@@ -48,6 +53,8 @@ export class TurmasController {
   }
 
   @Get(':id')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Buscar uma turma específica e ver seus alunos' })
   findOne(@Param('id') id: string) {
     return this.turmasService.findOne(id);

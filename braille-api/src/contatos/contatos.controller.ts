@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UseInterceptors } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { ContatosService } from './contatos.service';
 import { CreateContatoDto } from './dto/create-contato.dto';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -23,6 +24,8 @@ export class ContatosController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard, RolesGuard)
   @Get()
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @ApiOperation({ summary: 'Listar mensagens com paginação e filtro por lida/não lida' })
   findAll(@Query() query: QueryContatoDto) {
@@ -32,6 +35,8 @@ export class ContatosController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard, RolesGuard)
   @Get(':id')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @ApiOperation({ summary: 'Ver mensagem específica' })
   findOne(@Param('id') id: string) {
