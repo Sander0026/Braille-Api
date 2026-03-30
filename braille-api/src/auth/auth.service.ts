@@ -1,16 +1,20 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'node:crypto';
 import { LoginDto } from './dto/login.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
-    private jwtService: JwtService,
-    private prisma: PrismaService,
-    private uploadService: UploadService,
+    private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly uploadService: UploadService,
   ) { }
 
   async login(loginDto: LoginDto) {
@@ -42,7 +46,7 @@ export class AuthService {
     const access_token = await this.jwtService.signAsync(payload);
 
     // 4. Gera o "Visto Longo" Randomizado de (Refresh Token)
-    const randomRefreshString = require('crypto').randomBytes(40).toString('hex');
+    const randomRefreshString = crypto.randomBytes(40).toString('hex');
     const hashedRefreshToken = await bcrypt.hash(randomRefreshString, 10);
 
     // 5. Salva o Hash na Ficha do Servidor no Banco
@@ -91,7 +95,7 @@ export class AuthService {
     return { access_token };
   }
 
-  async trocarSenha(userId: string, trocarSenhaDto: any) {
+  async trocarSenha(userId: string, trocarSenhaDto: any): Promise<ApiResponse<any>> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) {
@@ -116,10 +120,10 @@ export class AuthService {
       },
     });
 
-    return { message: 'Sua senha foi alterada com sucesso!' };
+    return new ApiResponse(true, null, 'Sua senha foi alterada com sucesso!');
   }
 
-  async getMe(userId: string) {
+  async getMe(userId: string): Promise<ApiResponse<any>> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -135,18 +139,19 @@ export class AuthService {
     });
 
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return user;
+    return new ApiResponse(true, user, 'Perfil carregado com sucesso.');
   }
 
-  async atualizarFotoPerfil(userId: string, fotoPerfil: string | null) {
+  async atualizarFotoPerfil(userId: string, fotoPerfil: string | null): Promise<ApiResponse<any>> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     if (fotoPerfil !== undefined && user.fotoPerfil && fotoPerfil !== user.fotoPerfil) {
       try {
         await this.uploadService.deleteFile(user.fotoPerfil);
-      } catch (e: any) {
-        console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
+      } catch (e: unknown) {
+        const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+        this.logger.warn(`Foto de perfil antiga não removida do Cloudinary: ${erroMsg}`);
       }
     }
 
@@ -155,17 +160,17 @@ export class AuthService {
       data: { fotoPerfil },
     });
 
-    return { message: 'Foto de perfil atualizada com sucesso!', fotoPerfil };
+    return new ApiResponse(true, { fotoPerfil }, 'Foto de perfil atualizada com sucesso!');
   }
 
-  async atualizarPerfil(userId: string, dto: { nome?: string; email?: string }) {
+  async atualizarPerfil(userId: string, dto: { nome?: string; email?: string }): Promise<ApiResponse<any>> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     // Verifica se o e-mail já está em uso por outro usuário
     if (dto.email && dto.email !== user.email) {
       const emailEmUso = await this.prisma.user.findUnique({ where: { email: dto.email } });
-      if (emailEmUso) throw new Error('Este e-mail já está em uso por outro usuário.');
+      if (emailEmUso) throw new BadRequestException('Este e-mail já está em uso por outro usuário.');
     }
 
     const atualizado = await this.prisma.user.update({
@@ -181,6 +186,6 @@ export class AuthService {
       },
     });
 
-    return atualizado;
+    return new ApiResponse(true, atualizado, 'Perfil atualizado com sucesso.');
   }
 }
