@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UsePipes, UseInterceptors } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { ComunicadosService } from './comunicados.service';
 import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
@@ -24,6 +25,8 @@ export class ComunicadosController {
 
   // 👇 ROTA PÚBLICA (Qualquer um pode ver)
   @Get()
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
   findAll(@Query() query: QueryComunicadoDto) {
     return this.comunicadosService.findAll(query);
@@ -31,6 +34,8 @@ export class ComunicadosController {
 
   // 👇 ROTA PÚBLICA (Buscar comunicado específico por ID)
   @Get(':id')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Obter um comunicado específico pelo ID (Rota Pública)' })
   findOne(@Param('id') id: string) {
     return this.comunicadosService.findOne(id);
