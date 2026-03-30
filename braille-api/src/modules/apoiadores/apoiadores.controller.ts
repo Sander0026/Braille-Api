@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseInterceptors, UploadedFile, BadRequestException, UseGuards, Res, NotFoundException } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import type { Response } from 'express';
 import { ApoiadoresService } from './apoiadores.service';
 import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
@@ -25,6 +26,8 @@ export class ApoiadoresController {
   }
 
   @Get()
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   findAll(
@@ -44,6 +47,8 @@ export class ApoiadoresController {
   }
 
   @Get('publicos')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   findPublic() {
     return this.apoiadoresService.findPublic();
   }
@@ -118,6 +123,8 @@ export class ApoiadoresController {
   }
 
   @Get(':id/acoes')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   getAcoes(@Param('id') id: string) {
@@ -144,6 +151,8 @@ export class ApoiadoresController {
   }
 
   @Get(':id/certificados')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   getCertificados(@Param('id') id: string) {

@@ -2,6 +2,7 @@ import {
   Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query,
   UseInterceptors, UploadedFile, BadRequestException, Res
 } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { BeneficiariesService } from './beneficiaries.service';
@@ -55,6 +56,8 @@ export class BeneficiariesController {
   }
 
   @Get()
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Listar todos os alunos (Com paginação e filtros)' })
   findAll(@Query() query: QueryBeneficiaryDto) {
     return this.beneficiariesService.findAll(query);
@@ -85,6 +88,8 @@ export class BeneficiariesController {
   }
 
   @Get(':id')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Buscar aluno por ID' })
   findOne(@Param('id') id: string) {
     return this.beneficiariesService.findOne(id);
