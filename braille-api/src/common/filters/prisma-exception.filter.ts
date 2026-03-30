@@ -1,4 +1,4 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpStatus } from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost, HttpStatus, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Response } from 'express';
 
@@ -7,12 +7,14 @@ import { Response } from 'express';
  */
 @Catch(Prisma.PrismaClientKnownRequestError)
 export class PrismaExceptionFilter implements ExceptionFilter {
+    private readonly logger = new Logger(PrismaExceptionFilter.name);
+
     catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse<Response>();
 
         let status = HttpStatus.INTERNAL_SERVER_ERROR;
-        let message = 'Ocorreu um erro interno no banco de dados. Contate o suporte.';
+        let message: string;
 
         switch (exception.code) {
             case 'P2002': { // Unique constraint failed
@@ -32,7 +34,7 @@ export class PrismaExceptionFilter implements ExceptionFilter {
                 break;
             }
             default: {
-                console.error('🔥 Erro Crítico Prisma HTTP 500:', exception.code, exception.message, exception.meta);
+                this.logger.error(`🔥 Erro Crítico Prisma HTTP 500: ${exception.code} | ${exception.message}`, exception.stack);
                 message = `Erro interno no banco de dados [${exception.code}]: ${exception.message}`;
                 break;
             }
@@ -52,12 +54,14 @@ export class PrismaExceptionFilter implements ExceptionFilter {
  */
 @Catch(Prisma.PrismaClientValidationError)
 export class PrismaValidationFilter implements ExceptionFilter {
+    private readonly logger = new Logger(PrismaValidationFilter.name);
+
     catch(exception: Prisma.PrismaClientValidationError, host: ArgumentsHost) {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse<Response>();
 
         // Loga o erro completo para diagnóstico
-        console.error('🔥 Prisma Validation Error:', exception.message);
+        this.logger.error(`🔥 Prisma Validation Error: ${exception.message}`, exception.stack);
 
         response.status(HttpStatus.BAD_REQUEST).json({
             statusCode: HttpStatus.BAD_REQUEST,

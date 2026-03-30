@@ -9,7 +9,7 @@ import { tap } from 'rxjs/operators';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAcao } from '@prisma/client';
 import type { Request } from 'express';
-
+import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
 
 /**
  * Mapeamento de método HTTP + rota → AuditAcao.
@@ -92,8 +92,10 @@ export class AuditInterceptor implements NestInterceptor {
         const registroId = this.extrairRegistroId(segments);
 
         // Extrai dados do usuário autenticado (populado pelo AuthGuard)
-        const user = (req as any).user;
+        const reqAuth = req as AuthenticatedRequest;
+        const user = reqAuth.user;
         const autorId = user?.sub ?? undefined;
+        // @ts-ignore - 'nome' e 'email' podem estar contidos no Payload JWT mas escapam da tipagem restrita padrão
         const autorNome = user?.nome ?? user?.email ?? undefined;
         const autorRole = user?.role ?? undefined;
 
