@@ -13,9 +13,7 @@ Para importar alunos após reset, defina SEED_ALUNOS_CSV:
 
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 const prisma = new PrismaClient();
 
@@ -120,17 +118,35 @@ const cachePossuiDuplicata = (cpf: string | null, rg: string | null, cpfs: Set<s
   return false;
 };
 
-async function importarAlunos(csvPath: string) {
-  if (!fs.existsSync(csvPath)) {
-    console.warn(`⚠️  Arquivo de alunos não encontrado: ${csvPath}`);
+async function importarAlunos(filePath: string) {
+  if (!require('node:fs').existsSync(filePath)) {
+    console.warn(`⚠️  Arquivo de alunos não encontrado: ${filePath}`);
     return;
   }
-  const buffer = fs.readFileSync(csvPath);
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames[0];
+  
+  const workbook = new ExcelJS.Workbook();
+  if (filePath.endsWith('.csv')) {
+     await workbook.csv.readFile(filePath);
+  } else {
+     await workbook.xlsx.readFile(filePath);
+  }
+  
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet || worksheet.rowCount < 3) {
+    console.warn('⚠️  Planilha de alunos vazia ou sem linhas de dados.');
+    return;
+  }
 
-  const rawRows: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-    header: 1, defval: '',
+  const rawRows: any[][] = [];
+  worksheet.eachRow((row) => {
+    const rowValues = row.values as any[];
+    const cleanedRow = rowValues.slice(1).map(val => {
+       if (val && typeof val === 'object' && !(val instanceof Date)) {
+          return val.text ?? val.result ?? String(val);
+       }
+       return val ?? '';
+    });
+    rawRows.push(cleanedRow);
   });
 
   if (rawRows.length < 3) {
@@ -248,9 +264,9 @@ async function main() {
   // 3. Importação opcional de alunos via CSV/XLSX
   const csvEnv = process.env.SEED_ALUNOS_CSV;
   if (csvEnv) {
-    const csvPath = path.isAbsolute(csvEnv)
+    const csvPath = require('node:path').isAbsolute(csvEnv)
       ? csvEnv
-      : path.resolve(__dirname, '..', csvEnv);
+      : require('node:path').resolve(__dirname, '..', csvEnv);
     console.log(`\n📂 Importando alunos de: ${csvPath}`);
     await importarAlunos(csvPath);
   } else {
