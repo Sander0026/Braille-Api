@@ -1,8 +1,8 @@
 {
   "name": "braille-api",
-  "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "version": "1.0.0",
+  "description": "API REST Enterprise para o Sistema Braillix (PI-5) - Controle de Apoiadores e Certificados.",
+  "author": "PI-5 Braillix",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
