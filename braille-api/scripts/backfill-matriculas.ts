@@ -24,11 +24,11 @@ async function backfillAlunosMatriculas() {
     });
 
     let sequencial = 1;
-    if (ultimoRegistro && ultimoRegistro.matricula) {
+    if (ultimoRegistro?.matricula) {
         // Separa o prefixo (ex: '2026') do sequencial ('00014')
         const nroStr = ultimoRegistro.matricula.replace(prefix, '');
-        const maxNro = parseInt(nroStr, 10);
-        if (!isNaN(maxNro)) {
+        const maxNro = Number.parseInt(nroStr, 10);
+        if (!Number.isNaN(maxNro)) {
             sequencial = maxNro + 1;
         }
     }
@@ -71,10 +71,10 @@ async function backfillStaffMatriculas() {
     });
 
     let sequencial = 1;
-    if (ultimoRegistro && ultimoRegistro.matricula) {
+    if (ultimoRegistro?.matricula) {
         const nroStr = ultimoRegistro.matricula.replace(prefix, '');
-        const maxNro = parseInt(nroStr, 10);
-        if (!isNaN(maxNro)) {
+        const maxNro = Number.parseInt(nroStr, 10);
+        if (!Number.isNaN(maxNro)) {
             sequencial = maxNro + 1;
         }
     }
