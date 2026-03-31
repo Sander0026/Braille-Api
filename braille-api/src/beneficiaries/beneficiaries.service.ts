@@ -8,7 +8,6 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAcao } from '@prisma/client';
 import { UploadService } from '../upload/upload.service';
 import * as ExcelJS from 'exceljs';
-import * as XLSX from 'xlsx';
 
 export interface AuditUserParams {
   autorId?: string;
@@ -531,14 +530,25 @@ export class BeneficiariesService {
     ignorados: number;
     erros: { linha: number; documento: string; motivo: string }[];
   }> {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    const worksheet = workbook.worksheets[0];
 
-    // Sem cellDates — evita bug de timezone com seriais do Excel
-    const rawRows: any[][] = XLSX.utils.sheet_to_json(
-      workbook.Sheets[sheetName],
-      { header: 1, defval: '' },
-    );
+    if (!worksheet || worksheet.rowCount < 3) {
+      return { importados: 0, ignorados: 0, erros: [{ linha: 0, documento: '—', motivo: 'Planilha vazia ou sem dados.' }] };
+    }
+
+    const rawRows: any[][] = [];
+    worksheet.eachRow((row) => {
+      const rowValues = row.values as any[];
+      const cleanedRow = rowValues.slice(1).map(val => {
+         if (val && typeof val === 'object' && !(val instanceof Date)) {
+            return val.text ?? val.result ?? String(val);
+         }
+         return val ?? '';
+      });
+      rawRows.push(cleanedRow);
+    });
 
     if (rawRows.length < 3) {
       return { importados: 0, ignorados: 0, erros: [{ linha: 0, documento: '—', motivo: 'Planilha vazia ou sem dados.' }] };
