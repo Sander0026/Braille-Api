@@ -438,7 +438,7 @@ export class ApoiadoresService {
     });
   }
 
-  async gerarPdfCertificado(apoiadorId: string, certId: string): Promise<Buffer> {
+  async gerarPdfCertificado(apoiadorId: string, certId: string): Promise<{ type: 'buffer'; buffer: Buffer } | { type: 'redirect'; url: string }> {
     const apoiador = await this.findOne(apoiadorId);
 
     const cert = await this.prisma.certificadoEmitido.findFirst({
@@ -456,8 +456,7 @@ export class ApoiadoresService {
     if (!cert.modelo) {
       // Modelo excluído mas há URL salva
       if (cert.pdfUrl) {
-        // Retorna um buffer vazio - o controller vai usar a pdfUrl diretamente
-        throw new NotFoundException('__USE_PDF_URL__:' + cert.pdfUrl);
+        return { type: 'redirect', url: cert.pdfUrl };
       }
       throw new NotFoundException('Modelo do certificado foi excluído e não há PDF salvo.');
     }
@@ -483,11 +482,12 @@ export class ApoiadoresService {
       .replaceAll('{{DATA_EVENTO}}', dataFormatada)
       .replaceAll('{{DATA}}', dataFormatada);
 
-    return this.pdfService.construirPdfBase(
+    const buffer = await this.pdfService.construirPdfBase(
       cert.modelo,
       textoFormatado,
       cert.codigoValidacao,
       nomeDestinatario,
     );
+    return { type: 'buffer', buffer };
   }
 }

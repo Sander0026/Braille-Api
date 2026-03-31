@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseInterceptors, UploadedFile, BadRequestException, UseGuards, Res, NotFoundException, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseInterceptors, UploadedFile, BadRequestException, UseGuards, Res, Req } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import type { Response } from 'express';
 import { ApoiadoresService } from './apoiadores.service';
@@ -190,23 +190,19 @@ export class ApoiadoresController {
     @Param('certId') certId: string,
     @Res() res: Response,
   ) {
-    try {
-      const pdfBuffer = await this.apoiadoresService.gerarPdfCertificado(id, certId);
-      res.set({
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="certificado-${certId}.pdf"`,
-        'Content-Length': pdfBuffer.length,
-      });
-      res.end(pdfBuffer);
-    } catch (err: any) {
-      // Sinal especial: modelo excluído mas PDF persistido no Cloudinary
-      if (err instanceof NotFoundException && err.message?.startsWith('__USE_PDF_URL__:')) {
-        const pdfUrl = err.message.replace('__USE_PDF_URL__:', '');
-        res.redirect(301, pdfUrl);
-        return;
-      }
-      throw err;
+    const result = await this.apoiadoresService.gerarPdfCertificado(id, certId);
+    
+    if (result.type === 'redirect') {
+      res.redirect(301, result.url);
+      return;
     }
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="certificado-${certId}.pdf"`,
+      'Content-Length': result.buffer.length,
+    });
+    res.end(result.buffer);
   }
 }
 
