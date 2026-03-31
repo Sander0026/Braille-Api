@@ -1,8 +1,10 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 
 @Injectable()
 export class AppService {
+  private readonly logger = new Logger(AppService.name);
+
   constructor(private readonly prisma: PrismaService) { }
 
   getHello(): string {
@@ -18,7 +20,8 @@ export class AppService {
         database: 'connected',
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error(`O banco NeonDB falhou a tentar responder ao Ping.`, error.stack);
       throw new HttpException({
         status: 'error',
         database: 'disconnected',
