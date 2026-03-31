@@ -13,8 +13,8 @@ Para importar alunos após reset, defina SEED_ALUNOS_CSV:
 
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as XLSX from 'xlsx';
 
 const prisma = new PrismaClient();
@@ -61,7 +61,7 @@ function parseExcelDate(raw: any): Date | null {
         d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
       }
     }
-    if (isNaN(d.getTime())) return null;
+    if (Number.isNaN(d.getTime())) return null;
     const ano = d.getUTCFullYear();
     if (ano < 1900 || ano > new Date().getFullYear()) return null;
     return d;
@@ -99,6 +99,26 @@ function montarPayloadAluno(row: Record<string, any>, matricula: string, dataNas
     prefAcessibilidade: normEnum(String(row['PrefAcessibilidade'] ?? ''), PREF_ACESS_MAP, ['BRAILLE', 'FONTE_AMPLIADA', 'ARQUIVO_DIGITAL', 'AUDIO']) as any,
   };
 }
+
+const extrairMapLinha = (dataRow: any[], headers: string[]) => {
+  return headers.reduce((acc, k, idx) => {
+    acc[k] = dataRow[idx] ?? '';
+    return acc;
+  }, {} as Record<string, any>);
+};
+
+const linhaInvalidaStr = (nome: string, cpf: string | null, rg: string | null, dta: any) => {
+  if (!nome && !cpf && !rg) return 'VAZIO';
+  if (!nome || (!cpf && !rg) || !dta) return 'CRITICO';
+  return 'OK';
+};
+
+const cachePossuiDuplicata = (cpf: string | null, rg: string | null, cpfs: Set<string>, rgs: Set<string>): boolean => {
+  if ((cpf && cpfs.has(cpf)) || (rg && rgs.has(rg))) return true;
+  if (cpf) cpfs.add(cpf);
+  if (rg) rgs.add(rg);
+  return false;
+};
 
 async function importarAlunos(csvPath: string) {
   if (!fs.existsSync(csvPath)) {
@@ -138,8 +158,8 @@ async function importarAlunos(csvPath: string) {
     select: { cpf: true, rg: true },
   });
 
-  const cpfsRegistrados = new Set(existingAlunos.filter(a => a.cpf).map(a => a.cpf));
-  const rgsRegistrados = new Set(existingAlunos.filter(a => a.rg).map(a => a.rg));
+  const cpfsRegistrados = new Set<string>(existingAlunos.filter(a => a.cpf).map(a => a.cpf as string));
+  const rgsRegistrados = new Set<string>(existingAlunos.filter(a => a.rg).map(a => a.rg as string));
 
   let importados = 0, ignorados = 0, erros = 0;
   const ano = new Date().getFullYear();
@@ -148,36 +168,31 @@ async function importarAlunos(csvPath: string) {
   const alunosParaInserir: any[] = [];
 
   for (let i = 0; i < dataRows.length; i++) {
-    const row: Record<string, any> = {};
-    headers.forEach((k, idx) => { row[k] = dataRows[i][idx] ?? ''; });
+    const row = extrairMapLinha(dataRows[i], headers);
 
     const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
     const cpf = String(row['CPF'] ?? row['CPF_RG'] ?? '').trim() || null;
     const rg = String(row['RG'] ?? '').trim() || null;
     const dataNasc = parseExcelDate(row['DataNascimento']);
 
-    if (!nomeCompleto && !cpf && !rg) continue;
-
-    if (!nomeCompleto || (!cpf && !rg) || !dataNasc) {
+    const validade = linhaInvalidaStr(nomeCompleto, cpf, rg, dataNasc);
+    if (validade === 'VAZIO') continue;
+    if (validade === 'CRITICO') {
       erros++;
-      console.warn(`  ⚠️  Linha ${i + 3} ignorada: dados obrigatórios ausentes (Nome="${nomeCompleto}", DataNascimento="${row['DataNascimento']}")`);
+      console.warn(`  ⚠️  Linha ${i + 3} ignorada: dados obrigatórios ausentes`);
       continue;
     }
 
     // Validação O(1) contra Dicionário de RAM
-    if ((cpf && cpfsRegistrados.has(cpf)) || (rg && rgsRegistrados.has(rg))) { 
+    if (cachePossuiDuplicata(cpf, rg, cpfsRegistrados, rgsRegistrados)) { 
       ignorados++; 
       continue; 
     }
 
-    // Vacina contra duplicatas de CPFs repetidos na MESMA planilha falhas de operador 
-    if (cpf) cpfsRegistrados.add(cpf);
-    if (rg) rgsRegistrados.add(rg);
-
     const matricula = `${ano}${String(++baseCount).padStart(5, '0')}`;
     
     try {
-      alunosParaInserir.push(montarPayloadAluno(row, matricula, dataNasc));
+      alunosParaInserir.push(montarPayloadAluno(row, matricula, dataNasc as Date));
     } catch (e: any) {
       erros++;
       console.error(`  ❌ Linha ${i + 3} Falha de extração (${nomeCompleto}): ${e.message?.substring(0, 120)}`);
