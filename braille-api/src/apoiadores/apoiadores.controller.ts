@@ -62,7 +62,7 @@ export class ApoiadoresController {
       take: take ? Number(take) : undefined,
       tipo,
       search,
-      ativo: ativo !== undefined ? ativo !== 'false' : undefined,
+      ativo: ativo === undefined ? undefined : ativo !== 'false',
     });
   }
 
@@ -100,7 +100,7 @@ export class ApoiadoresController {
     await this.apoiadoresService.findOne(id);
     
     // Upload via UploadService existente no projeto
-    const uploaded = await this.uploadService.uploadImage(file);
+    const uploaded = await this.uploadService.uploadImage(file, getAuditUser(req));
     
     return this.apoiadoresService.updateLogo(id, uploaded.url, getAuditUser(req));
   }

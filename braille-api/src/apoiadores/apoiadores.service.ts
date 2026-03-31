@@ -29,12 +29,28 @@ export class ApoiadoresService {
 
   async create(createApoiadorDto: CreateApoiadorDto, auditUser?: AuditUserParams) {
     const { acoes, ...rest } = createApoiadorDto;
-    return this.prisma.apoiador.create({
+    const result = await this.prisma.apoiador.create({
       data: {
         ...rest,
         acoes: acoes && acoes.length > 0 ? { create: acoes } : undefined,
       },
     });
+
+    if (auditUser) {
+      this.auditService.registrar({
+        entidade: 'Apoiador',
+        registroId: result.id,
+        acao: AuditAcao.CRIAR,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role as any,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        newValue: result,
+      }).catch(e => this.logger.warn(`Auditoria falhou em create Apoiador: ${e.message}`));
+    }
+    
+    return result;
   }
 
   async findAll(params: { skip?: number; take?: number; tipo?: TipoApoiador; search?: string; ativo?: boolean }) {
@@ -42,10 +58,10 @@ export class ApoiadoresService {
     const where: Prisma.ApoiadorWhereInput = {};
 
     // Por padrão lista apenas ativos; passa ativo=false para listar inativos
-    if (ativo !== undefined) {
-      where.ativo = ativo;
-    } else {
+    if (ativo === undefined) {
       where.ativo = true; // comportamento padrão
+    } else {
+      where.ativo = ativo;
     }
 
     if (tipo) {
@@ -95,19 +111,53 @@ export class ApoiadoresService {
 
   async update(id: string, updateApoiadorDto: UpdateApoiadorDto, auditUser?: AuditUserParams) {
     const { acoes, ...rest } = updateApoiadorDto;
-    await this.findOne(id);
-    return this.prisma.apoiador.update({
+    const oldApoiador = await this.findOne(id);
+    const result = await this.prisma.apoiador.update({
       where: { id },
       data: rest,
     });
+
+    if (auditUser) {
+      this.auditService.registrar({
+        entidade: 'Apoiador',
+        registroId: id,
+        acao: AuditAcao.ATUALIZAR,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role as any,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        oldValue: oldApoiador,
+        newValue: result,
+      }).catch(e => this.logger.warn(`Auditoria falhou em update Apoiador: ${e.message}`));
+    }
+
+    return result;
   }
 
   async updateLogo(id: string, logoUrl: string, auditUser?: AuditUserParams) {
-    await this.findOne(id);
-    return this.prisma.apoiador.update({
+    const oldApoiador = await this.findOne(id);
+    const result = await this.prisma.apoiador.update({
       where: { id },
       data: { logoUrl },
     });
+
+    if (auditUser) {
+      this.auditService.registrar({
+        entidade: 'Apoiador',
+        registroId: id,
+        acao: AuditAcao.ATUALIZAR,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role as any,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        oldValue: { logoUrl: oldApoiador.logoUrl },
+        newValue: { logoUrl: result.logoUrl },
+      }).catch(e => this.logger.warn(`Auditoria falhou em updateLogo Apoiador: ${e.message}`));
+    }
+
+    return result;
   }
 
   // ---- Histórico de Ações (Tracking Relacional) ----
@@ -175,6 +225,21 @@ export class ApoiadoresService {
          dataEmissao: dto.dataEvento,
        }, auditUser);
     }
+    
+    if (auditUser) {
+      this.auditService.registrar({
+        entidade: 'AcaoApoiador',
+        registroId: acao.id,
+        acao: AuditAcao.ATUALIZAR,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role as any,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        oldValue: acao,
+        newValue: acaoAtualizada,
+      }).catch(e => this.logger.warn(`Auditoria falhou em updateAcao: ${e.message}`));
+    }
 
     return acaoAtualizada;
   }
@@ -220,19 +285,53 @@ export class ApoiadoresService {
 
   async inativar(id: string, auditUser?: AuditUserParams) {
     await this.findOne(id);
-    return this.prisma.apoiador.update({
+    const result = await this.prisma.apoiador.update({
       where: { id },
       data: { ativo: false, exibirNoSite: false },
     });
+    
+    if (auditUser) {
+      this.auditService.registrar({
+        entidade: 'Apoiador',
+        registroId: id,
+        acao: AuditAcao.MUDAR_STATUS,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role as any,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        oldValue: { ativo: true, exibirNoSite: true },
+        newValue: { ativo: false, exibirNoSite: false },
+      }).catch(e => this.logger.warn(`Auditoria falhou em inativar Apoiador: ${e.message}`));
+    }
+
+    return result;
   }
 
   async reativar(id: string, auditUser?: AuditUserParams) {
     const apoiador = await this.prisma.apoiador.findUnique({ where: { id } });
     if (!apoiador) throw new NotFoundException(`Apoiador com ID ${id} não encontrado`);
-    return this.prisma.apoiador.update({
+    const result = await this.prisma.apoiador.update({
       where: { id },
       data: { ativo: true, exibirNoSite: true },
     });
+
+    if (auditUser) {
+      this.auditService.registrar({
+        entidade: 'Apoiador',
+        registroId: id,
+        acao: AuditAcao.RESTAURAR,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role as any,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        oldValue: { ativo: apoiador.ativo, exibirNoSite: apoiador.exibirNoSite },
+        newValue: { ativo: true, exibirNoSite: true },
+      }).catch(e => this.logger.warn(`Auditoria falhou em reativar Apoiador: ${e.message}`));
+    }
+    
+    return result;
   }
 
   // ---- Certificados (Honrarias) ----
@@ -306,6 +405,20 @@ export class ApoiadoresService {
         pdfUrl,
       },
     });
+
+    if (auditUser) {
+      this.auditService.registrar({
+        entidade: 'CertificadoEmitido',
+        registroId: certificado.id,
+        acao: AuditAcao.CRIAR,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role as any,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        newValue: certificado,
+      }).catch(e => this.logger.warn(`Auditoria falhou em emitirCertificado de Apoiador: ${e.message}`));
+    }
 
     return {
       certificado,
