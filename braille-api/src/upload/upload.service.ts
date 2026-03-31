@@ -1,11 +1,19 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 import * as streamifier from 'streamifier';
 import { ConfigService } from '@nestjs/config';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditUserParams } from './upload.controller';
+import { AuditAcao, Role } from '@prisma/client';
 
 @Injectable()
 export class UploadService {
-  constructor(private configService: ConfigService) {
+  private readonly logger = new Logger(UploadService.name);
+
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly auditLogService: AuditLogService,
+  ) {
     // 👇 A configuração do Cloudinary
     cloudinary.config({
       cloud_name: this.configService.get('CLOUDINARY_CLOUD_NAME'),
@@ -14,7 +22,7 @@ export class UploadService {
     });
   }
 
-  uploadImage(file: Express.Multer.File): Promise<{ url: string }> {
+  uploadImage(file: Express.Multer.File, auditUser?: AuditUserParams): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
       // Validação extra de segurança: aceitar imagens e PDFs (Laudos)
       const allowedMimes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'application/pdf'];
@@ -30,9 +38,23 @@ export class UploadService {
           ]
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
 
           if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar imagem.'));
+
+          if (auditUser) {
+            this.auditLogService.registrar({
+              entidade: 'Cloudinary_System',
+              registroId: result.public_id,
+              acao: AuditAcao.CRIAR,
+              autorId: auditUser.sub,
+              autorNome: auditUser.nome,
+              autorRole: auditUser.role as Role,
+              ip: auditUser.ip,
+              userAgent: auditUser.userAgent,
+              newValue: { url: result.secure_url, folder: 'braille_instituicao' },
+            });
+          }
 
           resolve({ url: result.secure_url }); // Agora o TS sabe que o result existe 100%!
         },
@@ -46,6 +68,7 @@ export class UploadService {
   uploadPdf(
     file: Express.Multer.File,
     folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos',
+    auditUser?: AuditUserParams,
   ): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
       if (file.mimetype !== 'application/pdf') {
@@ -60,8 +83,23 @@ export class UploadService {
           unique_filename: true,
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
           if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar PDF.'));
+
+          if (auditUser) {
+            this.auditLogService.registrar({
+              entidade: 'Cloudinary_System',
+              registroId: result.public_id,
+              acao: AuditAcao.CRIAR,
+              autorId: auditUser.sub,
+              autorNome: auditUser.nome,
+              autorRole: auditUser.role as Role,
+              ip: auditUser.ip,
+              userAgent: auditUser.userAgent,
+              newValue: { url: result.secure_url, folder },
+            });
+          }
+
           resolve({ url: result.secure_url });
         },
       );
@@ -90,7 +128,7 @@ export class UploadService {
           overwrite: true,
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
           if (!result) return reject(new BadRequestException('Erro ao enviar PDF para o Cloudinary.'));
           resolve({ url: result.secure_url });
         },
@@ -100,7 +138,7 @@ export class UploadService {
     });
   }
 
-  async deleteFile(fileUrl: string): Promise<{ success: boolean; message: string }> {
+  async deleteFile(fileUrl: string, auditUser?: AuditUserParams): Promise<{ success: boolean; message: string }> {
     if (!fileUrl) {
       throw new BadRequestException('A URL do arquivo é obrigatória.');
     }
@@ -109,8 +147,8 @@ export class UploadService {
       // Exemplo de URL: https://res.cloudinary.com/cloud_name/image/upload/v123456789/braille_instituicao/nome_do_arquivo.jpg
       // Precisamos extrair 'braille_instituicao/nome_do_arquivo'
       const urlParts = fileUrl.split('/');
-      const filenameWithExtension = urlParts[urlParts.length - 1]; // nome_do_arquivo.jpg
-      const folder = urlParts[urlParts.length - 2];                // braille_instituicao
+      const filenameWithExtension = urlParts.at(-1); // nome_do_arquivo.jpg
+      const folder = urlParts.at(-2);                // braille_instituicao
 
       if (!filenameWithExtension || !folder) {
         throw new BadRequestException('URL do Cloudinary inválida.');
@@ -129,9 +167,23 @@ export class UploadService {
         throw new Error(`Falha ao excluir no Cloudinary: ${result.result}`);
       }
 
+      if (auditUser) {
+        this.auditLogService.registrar({
+          entidade: 'Cloudinary_System',
+          registroId: publicId,
+          acao: AuditAcao.EXCLUIR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role as Role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: { url: fileUrl },
+        });
+      }
+
       return { success: true, message: 'Arquivo excluído com sucesso.' };
     } catch (error) {
-      console.error('Erro UploadService.deleteFile:', error);
+      this.logger.error(`Tentativa falha de exclusão na nuvem (Url: ${fileUrl}):`, error);
       throw new BadRequestException('Não foi possível excluir o arquivo na nuvem.');
     }
   }
