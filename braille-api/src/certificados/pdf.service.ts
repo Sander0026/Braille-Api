@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFPage, PDFFont, rgb, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import * as QRCode from 'qrcode';
 
@@ -24,20 +24,14 @@ function topPctToY(topPct: number, pageHeight: number, elementHeight = 0): numbe
   return pageHeight - (topPct / 100) * pageHeight - elementHeight;
 }
 
-/**
- * Largura de referência do canvas de preview no frontend (px).
- * Usada para converter fontSize (em px relativos ao canvas)
- * para pontos tipográficos reais proporcional à imagem do PDF.
- */
 const CANVAS_REF_W = 1122;
-/** Altura de referência do canvas de preview (px) — igual ao CANVAS_H do frontend */
 const CANVAS_REF_H = 794;
 
 @Injectable()
 export class PdfService {
   private readonly fontCache = new Map<string, ArrayBuffer>();
 
-  private async carregarFonte(pdfDoc: PDFDocument, fontName?: string) {
+  private async carregarFonte(pdfDoc: PDFDocument, fontName?: string): Promise<PDFFont> {
     if (!fontName || fontName === 'Helvetica') return pdfDoc.embedFont(StandardFonts.Helvetica);
     if (fontName === 'TimesRoman') return pdfDoc.embedFont(StandardFonts.TimesRoman);
     if (fontName === 'Courier') return pdfDoc.embedFont(StandardFonts.Courier);
@@ -53,7 +47,6 @@ export class PdfService {
 
       let fontBytes = this.fontCache.get(fontName);
       if (!fontBytes) {
-        // Strict URL Validation (Previne SSRF)
         const parsedUrl = new URL(fontUrl);
         if (parsedUrl.protocol !== 'https:') throw new Error('Apenas fontes em HTTPS são permitidas.');
         
@@ -76,6 +69,162 @@ export class PdfService {
     }
   }
 
+  private sanitizeSafeUrl(rawUrl: string): string {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('Protocolo inseguro! Evitado ataque SSRF.');
+    }
+    return parsed.toString();
+  }
+
+  private extrairRgb(hexColor?: string): [number, number, number] {
+    if (!hexColor) return [0, 0, 0];
+    const hex = hexColor.replace('#', '');
+    const r = Number.parseInt(hex.substring(0, 2), 16) / 255;
+    const g = Number.parseInt(hex.substring(2, 4), 16) / 255;
+    const b = Number.parseInt(hex.substring(4, 6), 16) / 255;
+    return [r, g, b];
+  }
+
+  private async adicionarArteBase(pdfDoc: PDFDocument, arteBaseUrl: string): Promise<{ page: PDFPage; width: number; height: number }> {
+    const safeArteUrl = this.sanitizeSafeUrl(arteBaseUrl);
+    const arteRes = await fetch(safeArteUrl);
+    const arteBytes = await arteRes.arrayBuffer();
+    const isPng = arteBaseUrl.toLowerCase().includes('.png');
+    const background = isPng ? await pdfDoc.embedPng(arteBytes) : await pdfDoc.embedJpg(arteBytes);
+    
+    const { width, height } = background.scale(1);
+    const page = pdfDoc.addPage([width, height]);
+    page.drawImage(background, { x: 0, y: 0, width, height });
+    
+    return { page, width, height };
+  }
+
+  private async desenharCorpoTexto(pdfDoc: PDFDocument, page: PDFPage, width: number, height: number, config: any, textoFormatado: string) {
+    const textConf = config.textoPronto || {};
+    const tXPct = textConf.x ?? 10;
+    const tYPct = textConf.y ?? 20;
+    const tX = (tXPct / 100) * width;
+    const tMaxW = textConf.maxWidth ? (textConf.maxWidth / 100) * width : width - tX - 50;
+    
+    const tSize = ((textConf.fontSize || 32) / CANVAS_REF_W) * width;
+    const tY = topPctToY(tYPct, height, tSize);
+    
+    const fontCorpo = await this.carregarFonte(pdfDoc, textConf.fontFamily);
+    const [r, g, b] = this.extrairRgb(textConf.color);
+
+    page.drawText(textoFormatado, {
+      x: tX, y: tY,
+      size: tSize,
+      font: fontCorpo,
+      color: rgb(r, g, b),
+      maxWidth: tMaxW,
+      lineHeight: tSize * 1.4,
+    });
+  }
+
+  private async desenharNomeAluno(pdfDoc: PDFDocument, page: PDFPage, width: number, height: number, config: any, nomeAluno: string) {
+    const naConf = config.nomeAluno;
+    if (!naConf) return;
+
+    const naX = (naConf.x / 100) * width;
+    const naSize = ((naConf.fontSize || 56) / CANVAS_REF_W) * width;
+    const naY = topPctToY(naConf.y, height, naSize);
+    
+    const fontNome = await this.carregarFonte(pdfDoc, naConf.fontFamily);
+    const [naR, naG, naB] = this.extrairRgb(naConf.color);
+
+    page.drawText(nomeAluno, {
+      x: naX, y: naY,
+      size: naSize,
+      font: fontNome,
+      color: rgb(naR, naG, naB),
+      maxWidth: ((naConf.maxWidth || 80) / 100) * width,
+    });
+  }
+
+  private async injetarAssinaturaUrl(
+    pdfDoc: PDFDocument, page: PDFPage, font: PDFFont, fontBold: PDFFont,
+    width: number, height: number, signatureUrl: string, overrides: any, isSecondary: boolean
+  ) {
+    const safeUrl = this.sanitizeSafeUrl(signatureUrl);
+    const res = await fetch(safeUrl);
+    if (!res.ok) return;
+
+    const imgBytes = await res.arrayBuffer();
+    const isPng = safeUrl.toLowerCase().includes('.png');
+    const image = isPng ? await pdfDoc.embedPng(imgBytes) : await pdfDoc.embedJpg(imgBytes);
+
+    const conf = overrides.config || {};
+    const defaultX = isSecondary ? 60 : (overrides.assinaturaUrl2 ? 20 : 40);
+    const wpct = conf.width || (isSecondary ? (overrides.assinatura1?.width || 20) : 20);
+    const drawW = (wpct / 100) * width;
+    const xpct = conf.x ?? defaultX;
+    const yTopPct = conf.y ?? 70;
+
+    const maxSigH = (80 / CANVAS_REF_H) * height;
+    const sigGap = (4 / CANVAS_REF_H) * height;
+    const sigNmSz = (11 / CANVAS_REF_W) * width;
+    const sigCgSz = (9 / CANVAS_REF_W) * width;
+
+    const rawAssH = image.height * (drawW / image.width);
+    const finalH = Math.min(rawAssH, maxSigH);
+    const finalW = finalH * (image.width / image.height);
+    
+    const posX = (xpct / 100) * width;
+    const imgX = posX + (drawW - finalW) / 2;
+    const posY = topPctToY(yTopPct, height, maxSigH);
+
+    page.drawImage(image, { x: imgX, y: posY + (maxSigH - finalH), width: finalW, height: finalH });
+
+    const lineY = posY - sigGap;
+    page.drawLine({
+      start: { x: posX, y: lineY },
+      end: { x: posX + drawW, y: lineY },
+      thickness: Math.max(0.5, width * 0.0003),
+      color: rgb(0.35, 0.29, 0),
+    });
+
+    if (overrides.nome) {
+      const nW = fontBold.widthOfTextAtSize(overrides.nome, sigNmSz);
+      page.drawText(overrides.nome, {
+        x: posX + (drawW - nW) / 2,
+        y: lineY - sigNmSz * 1.3,
+        size: sigNmSz, font: fontBold, color: rgb(0, 0, 0),
+      });
+    }
+    
+    if (overrides.cargo) {
+      const cW = font.widthOfTextAtSize(overrides.cargo, sigCgSz);
+      page.drawText(overrides.cargo, {
+        x: posX + (drawW - cW) / 2,
+        y: lineY - sigNmSz * 1.3 - sigCgSz * 1.5,
+        size: sigCgSz, font, color: rgb(0.3, 0.3, 0.3),
+      });
+    }
+  }
+
+  private async desenharQrCode(pdfDoc: PDFDocument, page: PDFPage, width: number, height: number, qrConf: any, codigoValidacao: string) {
+    const qrXPct = qrConf?.x ?? 85;
+    const qrYPct = qrConf?.y ?? 85;
+    const qrW = ((qrConf?.size || 10) / 100) * width;
+    const qrX = (qrXPct / 100) * width;
+    const qrY = topPctToY(qrYPct, height, qrW);
+
+    let baseUrl = process.env.FRONTEND_URL;
+    if (!baseUrl) {
+      require('dotenv').config();
+      baseUrl = process.env.FRONTEND_URL || 'https://instituto-luizbraille.vercel.app';
+    }
+
+    const linkValidacao = `${baseUrl}/validar-certificado?codigo=${codigoValidacao}`;
+    const qrCodeDataUrl = await QRCode.toDataURL(linkValidacao, { margin: 1, width: 150, color: { dark: '#000', light: '#FFF' } });
+    
+    const qrBytes = Buffer.from(qrCodeDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
+    const qrImage = await pdfDoc.embedPng(qrBytes);
+    page.drawImage(qrImage, { x: qrX, y: qrY, width: qrW, height: qrW });
+  }
+
   async construirPdfBase(
     modelo: any,
     textoFormatado: string,
@@ -89,236 +238,28 @@ export class PdfService {
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-      // Função strict-sanitize de URL para barrar ataques de Request Forgery (SSRF Tracker do Snyk)
-      const sanitizeSafeUrl = (rawUrl: string): string => {
-        const parsed = new URL(rawUrl);
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-          throw new Error('Protócolo inseguro! Evitado ataque SSRF.');
-        }
-        return parsed.toString();
-      };
+      const { page, width, height } = await this.adicionarArteBase(pdfDoc, arteBaseUrl);
 
-      // (Lógica da Arte Base e Adição da Página mantém-se igual...)
-      const safeArteUrl = sanitizeSafeUrl(arteBaseUrl);
-      const arteRes = await fetch(safeArteUrl);
-      const arteBytes = await arteRes.arrayBuffer();
-      const background = arteBaseUrl.toLowerCase().includes('.png') ? await pdfDoc.embedPng(arteBytes) : await pdfDoc.embedJpg(arteBytes);
-      const { width, height } = background.scale(1);
-      const page = pdfDoc.addPage([width, height]);
-      page.drawImage(background, { x: 0, y: 0, width, height });
+      await this.desenharCorpoTexto(pdfDoc, page, width, height, config, textoFormatado);
 
-      // ── 2. Texto do Certificado (CORRIGIDO TAMANHO E FONTE) ──
-      const textConf = config.textoPronto || {};
-      const tXPct   = textConf.x !== undefined ? textConf.x : 10;
-      const tYPct   = textConf.y !== undefined ? textConf.y : 20;
-      const tX      = (tXPct / 100) * width;
-      const tMaxW   = textConf.maxWidth ? (textConf.maxWidth / 100) * width : width - tX - 50;
-      // tSize calculado antes de tY para poder usar como offset do baseline
-      const tSize   = ((textConf.fontSize || 32) / CANVAS_REF_W) * width;
-      // tSize como elementHeight alinha o TOPO do texto com top:Y% do HTML (baseline está abaixo do topo)
-      const tY      = topPctToY(tYPct, height, tSize);
-      
-      
-      // Carrega a fonte escolhida pelo usuário
-      const fontCorpo = await this.carregarFonte(pdfDoc, textConf.fontFamily);
-
-      // (Lógica de RGB mantém-se igual...)
-      let r = 0, g = 0, b = 0;
-      if (textConf.color) {
-        const hex = textConf.color.replace('#', '');
-        r = Number.parseInt(hex.substring(0, 2), 16) / 255;
-        g = Number.parseInt(hex.substring(2, 4), 16) / 255;
-        b = Number.parseInt(hex.substring(4, 6), 16) / 255;
+      if (nomeAluno) {
+        await this.desenharNomeAluno(pdfDoc, page, width, height, config, nomeAluno);
       }
-      page.drawText(textoFormatado, {
-        x: tX, y: tY,
-        size: tSize, // Aplica direto aqui
-        font: fontCorpo,
-        color: rgb(r, g, b),
-        maxWidth: tMaxW,
-        lineHeight: tSize * 1.4,
-      });
-
-      // ── 3. Tag {{NOME_ALUNO}} posicionável (CORRIGIDO TAMANHO E FONTE) ──
-      if (nomeAluno && config.nomeAluno) {
-        const naConf  = config.nomeAluno;
-        const naX     = (naConf.x / 100) * width;
-        // naSize calculado antes de naY para o offset de baseline
-        const naSize  = ((naConf.fontSize || 56) / CANVAS_REF_W) * width;
-        // Mesmo ajuste de baseline para nome do aluno (linha única)
-        const naY     = topPctToY(naConf.y, height, naSize);
-        
-       const fontNome = await this.carregarFonte(pdfDoc, naConf.fontFamily);
-
-        let naR = 0, naG = 0, naB = 0;
-        if (naConf.color) {
-          const hex = naConf.color.replace('#', '');
-          naR = Number.parseInt(hex.substring(0, 2), 16) / 255;
-          naG = Number.parseInt(hex.substring(2, 4), 16) / 255;
-          naB = Number.parseInt(hex.substring(4, 6), 16) / 255;
-        }
-
-        page.drawText(nomeAluno, {
-          x: naX, y: naY,
-          size: naSize, // Aplica direto aqui
-          font: fontNome,
-          color: rgb(naR, naG, naB),
-          maxWidth: ((naConf.maxWidth || 80) / 100) * width,
-        });
-      }
-
-      // ── 4. Assinaturas ─────────────────────────────────────────────────
-      const ass1Conf = config.assinatura1 || {};
-      const ass1WPct = ass1Conf.width || 20;
-      const ass1W    = (ass1WPct / 100) * width;
-      const ass1XPct = ass1Conf.x !== undefined ? ass1Conf.x : (assinaturaUrl2 ? 20 : 40);
-      const ass1YTopPct = ass1Conf.y !== undefined ? ass1Conf.y : 70;
-
-      const ass2Conf = config.assinatura2 || {};
-      const ass2WPct = ass2Conf.width || ass1WPct;
-      const ass2W    = (ass2WPct / 100) * width;
-      const ass2XPct = ass2Conf.x !== undefined ? ass2Conf.x : 60;
-      const ass2YTopPct = ass2Conf.y !== undefined ? ass2Conf.y : 70;
 
       if (assinaturaUrl) {
-        const safeAssinaturaUrl = sanitizeSafeUrl(assinaturaUrl);
-        const assRes = await fetch(safeAssinaturaUrl);
-        if (assRes.ok) {
-          const assBytes = await assRes.arrayBuffer();
-          const assinatura = await pdfDoc.embedPng(assBytes);
-
-          // Métricas proporcionais ao canvas de referência — espelham o HTML do preview
-          // max-height: 80px no canvas de 794px equiv. a 10.08% da altura da página
-          const maxSigH1 = (80  / CANVAS_REF_H) * height;
-          const sigGap1  = (4   / CANVAS_REF_H) * height;  // margin-top: 4px do div
-          const sigNmSz1 = (11  / CANVAS_REF_W) * width;   // font-size: 11px do <strong>
-          const sigCgSz1 = (9   / CANVAS_REF_W) * width;   // font-size: 9px  do <span>
-
-          // Altura real da imagem respeitando a proporção e o teto máximo
-          const rawAssH1 = assinatura.height * (ass1W / assinatura.width);
-          const assH1    = Math.min(rawAssH1, maxSigH1);
-          // Largura ajustada se a altura foi limitada (mantém aspect-ratio)
-          const assW1    = assH1 * (assinatura.width / assinatura.height);
-          // Centraliza a imagem dentro do container de largura ass1W
-          const ass1X   = (ass1XPct / 100) * width;
-          const imgX1   = ass1X + (ass1W - assW1) / 2;
-
-          const ass1Y = topPctToY(ass1YTopPct, height, maxSigH1); // reserva a altura máxima
-          page.drawImage(assinatura, { x: imgX1, y: ass1Y + (maxSigH1 - assH1), width: assW1, height: assH1 });
-
-          // Linha separadora (border-top equivalente)
-          const lineY1 = ass1Y - sigGap1;
-          page.drawLine({
-            start: { x: ass1X,         y: lineY1 },
-            end:   { x: ass1X + ass1W, y: lineY1 },
-            thickness: Math.max(0.5, width * 0.0003),
-            color: rgb(0.35, 0.29, 0.0),
-          });
-
-          // Nome do assinante (centralizado)
-          if (nomeAssinante) {
-            const nW = fontBold.widthOfTextAtSize(nomeAssinante, sigNmSz1);
-            page.drawText(nomeAssinante, {
-              x: ass1X + (ass1W - nW) / 2,
-              y: lineY1 - sigNmSz1 * 1.3,
-              size: sigNmSz1, font: fontBold, color: rgb(0, 0, 0),
-            });
-          }
-          // Cargo (centralizado, menor e mais claro)
-          if (cargoAssinante) {
-            const cW = font.widthOfTextAtSize(cargoAssinante, sigCgSz1);
-            page.drawText(cargoAssinante, {
-              x: ass1X + (ass1W - cW) / 2,
-              y: lineY1 - sigNmSz1 * 1.3 - sigCgSz1 * 1.5,
-              size: sigCgSz1, font, color: rgb(0.3, 0.3, 0.3),
-            });
-          }
-        }
+        await this.injetarAssinaturaUrl(pdfDoc, page, font, fontBold, width, height, assinaturaUrl, {
+          config: config.assinatura1, nome: nomeAssinante, cargo: cargoAssinante, assinaturaUrl2, assinatura1: config.assinatura1
+        }, false);
       }
 
       if (assinaturaUrl2) {
-        const safeAssinaturaUrl2 = sanitizeSafeUrl(assinaturaUrl2);
-        const assRes2 = await fetch(safeAssinaturaUrl2);
-        if (assRes2.ok) {
-          const assBytes2 = await assRes2.arrayBuffer();
-          const assinatura2 = await pdfDoc.embedPng(assBytes2);
-
-          const maxSigH2 = (80  / CANVAS_REF_H) * height;
-          const sigGap2   = (4  / CANVAS_REF_H) * height;
-          const sigNmSz2  = (11 / CANVAS_REF_W) * width;
-          const sigCgSz2  = (9  / CANVAS_REF_W) * width;
-
-          const rawAssH2 = assinatura2.height * (ass2W / assinatura2.width);
-          const assH2    = Math.min(rawAssH2, maxSigH2);
-          const assW2    = assH2 * (assinatura2.width / assinatura2.height);
-          const ass2X   = (ass2XPct / 100) * width;
-          const imgX2   = ass2X + (ass2W - assW2) / 2;
-
-          const ass2Y = topPctToY(ass2YTopPct, height, maxSigH2);
-          page.drawImage(assinatura2, { x: imgX2, y: ass2Y + (maxSigH2 - assH2), width: assW2, height: assH2 });
-
-          const lineY2 = ass2Y - sigGap2;
-          page.drawLine({
-            start: { x: ass2X,         y: lineY2 },
-            end:   { x: ass2X + ass2W, y: lineY2 },
-            thickness: Math.max(0.5, width * 0.0003),
-            color: rgb(0.35, 0.29, 0.0),
-          });
-
-          if (nomeAssinante2) {
-            const nW2 = fontBold.widthOfTextAtSize(nomeAssinante2, sigNmSz2);
-            page.drawText(nomeAssinante2, {
-              x: ass2X + (ass2W - nW2) / 2,
-              y: lineY2 - sigNmSz2 * 1.3,
-              size: sigNmSz2, font: fontBold, color: rgb(0, 0, 0),
-            });
-          }
-          if (cargoAssinante2) {
-            const cW2 = font.widthOfTextAtSize(cargoAssinante2, sigCgSz2);
-            page.drawText(cargoAssinante2, {
-              x: ass2X + (ass2W - cW2) / 2,
-              y: lineY2 - sigNmSz2 * 1.3 - sigCgSz2 * 1.5,
-              size: sigCgSz2, font, color: rgb(0.3, 0.3, 0.3),
-            });
-          }
-        }
+        await this.injetarAssinaturaUrl(pdfDoc, page, font, fontBold, width, height, assinaturaUrl2, {
+          config: config.assinatura2, nome: nomeAssinante2, cargo: cargoAssinante2, assinaturaUrl2, assinatura1: config.assinatura1
+        }, true);
       }
 
-      // ── 5. QR Code ─────────────────────────────────────────────────────
-      const qrConf = config.qrCode || {};
-      const qrXPct = qrConf.x !== undefined ? qrConf.x : 85;
-      const qrYPct = qrConf.y !== undefined ? qrConf.y : 85;
-      const qrW    = ((qrConf.size || 10) / 100) * width;
-      const qrX    = (qrXPct / 100) * width;
-      const qrY    = topPctToY(qrYPct, height, qrW);
+      await this.desenharQrCode(pdfDoc, page, width, height, config.qrCode, codigoValidacao);
 
-      let baseUrl = process.env.FRONTEND_URL;
-      if (!baseUrl) {
-        // Tenta carregar manualmente
-        require('dotenv').config();
-        baseUrl = process.env.FRONTEND_URL;
-      }
-      
-      // O usuário solicitou que apontasse para a rota correta.
-      // Substituindo o fallback temporário de localhost pela URL de produção.
-      const fallbackUrl = 'https://instituto-luizbraille.vercel.app';
-      if (!baseUrl) {
-        console.warn(`[PdfService] ⚠️  FRONTEND_URL não encontrada. Usando fallback de produção: ${fallbackUrl}`);
-        baseUrl = fallbackUrl;
-      }
-      
-      const linkValidacao = `${baseUrl}/validar-certificado?codigo=${codigoValidacao}`;
-      console.log(`[PdfService] Gerando QR Code apontando para: ${linkValidacao}`);
-      
-      const qrCodeDataUrl = await QRCode.toDataURL(linkValidacao, {
-        margin: 1, width: 150, color: { dark: '#000', light: '#FFF' },
-      });
-      const base64Data = qrCodeDataUrl.replace(/^data:image\/png;base64,/, '');
-      const qrBytes    = Buffer.from(base64Data, 'base64');
-      const qrImage    = await pdfDoc.embedPng(qrBytes);
-      page.drawImage(qrImage, { x: qrX, y: qrY, width: qrW, height: qrW });
-
-      // ── Exportar ────────────────────────────────────────────────────────
       const pdfBytes = await pdfDoc.save();
       return Buffer.from(pdfBytes);
 
