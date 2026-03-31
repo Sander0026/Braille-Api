@@ -53,9 +53,13 @@ export class PdfService {
 
       let fontBytes = this.fontCache.get(fontName);
       if (!fontBytes) {
-        const res = await fetch(fontUrl);
+        // Strict URL Validation (Previne SSRF)
+        const parsedUrl = new URL(fontUrl);
+        if (parsedUrl.protocol !== 'https:') throw new Error('Apenas fontes em HTTPS são permitidas.');
+        
+        const res = await fetch(parsedUrl.toString());
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status} ao baixar fonte "${fontName}" de ${fontUrl}`);
+          throw new Error(`HTTP ${res.status} ao baixar fonte "${fontName}"`);
         }
         const contentType = res.headers.get('content-type') ?? '';
         if (contentType.includes('text/html')) {
@@ -72,8 +76,6 @@ export class PdfService {
     }
   }
 
-  // ... (o resto da função construirPdfBase continua igual até a parte dos textos)
-
   async construirPdfBase(
     modelo: any,
     textoFormatado: string,
@@ -87,8 +89,18 @@ export class PdfService {
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
+      // Função strict-sanitize de URL para barrar ataques de Request Forgery (SSRF Tracker do Snyk)
+      const sanitizeSafeUrl = (rawUrl: string): string => {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+          throw new Error('Protócolo inseguro! Evitado ataque SSRF.');
+        }
+        return parsed.toString();
+      };
+
       // (Lógica da Arte Base e Adição da Página mantém-se igual...)
-      const arteRes = await fetch(arteBaseUrl);
+      const safeArteUrl = sanitizeSafeUrl(arteBaseUrl);
+      const arteRes = await fetch(safeArteUrl);
       const arteBytes = await arteRes.arrayBuffer();
       const background = arteBaseUrl.toLowerCase().includes('.png') ? await pdfDoc.embedPng(arteBytes) : await pdfDoc.embedJpg(arteBytes);
       const { width, height } = background.scale(1);
@@ -169,7 +181,8 @@ export class PdfService {
       const ass2YTopPct = ass2Conf.y !== undefined ? ass2Conf.y : 70;
 
       if (assinaturaUrl) {
-        const assRes = await fetch(assinaturaUrl);
+        const safeAssinaturaUrl = sanitizeSafeUrl(assinaturaUrl);
+        const assRes = await fetch(safeAssinaturaUrl);
         if (assRes.ok) {
           const assBytes = await assRes.arrayBuffer();
           const assinatura = await pdfDoc.embedPng(assBytes);
@@ -224,7 +237,8 @@ export class PdfService {
       }
 
       if (assinaturaUrl2) {
-        const assRes2 = await fetch(assinaturaUrl2);
+        const safeAssinaturaUrl2 = sanitizeSafeUrl(assinaturaUrl2);
+        const assRes2 = await fetch(safeAssinaturaUrl2);
         if (assRes2.ok) {
           const assBytes2 = await assRes2.arrayBuffer();
           const assinatura2 = await pdfDoc.embedPng(assBytes2);
