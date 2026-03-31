@@ -21,7 +21,7 @@ import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { AtestadosModule } from './atestados/atestados.module';
 import { LaudosModule } from './laudos/laudos.module';
-import { ApoiadoresModule } from './modules/apoiadores/apoiadores.module';
+import { ApoiadoresModule } from './apoiadores/apoiadores.module';
 import { CertificadosModule } from './certificados/certificados.module';
 
 @Module({
