@@ -70,6 +70,36 @@ function parseExcelDate(raw: any): Date | null {
   }
 }
 
+function montarPayloadAluno(row: Record<string, any>, matricula: string, dataNasc: Date): any {
+  return {
+    nomeCompleto: String(row['NomeCompleto'] ?? '').trim(),
+    cpf: String(row['CPF'] ?? row['CPF_RG'] ?? '').trim() || null,
+    rg: String(row['RG'] ?? '').trim() || null,
+    dataNascimento: dataNasc,
+    matricula,
+    genero:            String(row['Genero'] ?? '').trim() || null,
+    estadoCivil:       String(row['EstadoCivil'] ?? '').trim() || null,
+    telefoneContato:   String(row['Telefone'] ?? '').trim() || null,
+    email:             String(row['Email'] ?? '').trim() || null,
+    cep:               String(row['CEP'] ?? '').trim() || null,
+    rua:               String(row['Rua'] ?? '').trim() || null,
+    numero:            String(row['Numero'] ?? '').trim() || null,
+    bairro:            String(row['Bairro'] ?? '').trim() || null,
+    cidade:            String(row['Cidade'] ?? '').trim() || null,
+    uf:                String(row['UF'] ?? '').trim() || null,
+    contatoEmergencia: String(row['ContatoEmergencia'] ?? '').trim() || null,
+    escolaridade:      String(row['Escolaridade'] ?? '').trim() || null,
+    profissao:         String(row['Profissao'] ?? '').trim() || null,
+    rendaFamiliar:     String(row['RendaFamiliar'] ?? '').trim() || null,
+    beneficiosGov:     String(row['BeneficiosGov'] ?? '').trim() || null,
+    tecAssistivas:     String(row['TecAssistivas'] ?? '').trim() || null,
+    precisaAcompanhante: String(row['PrecisaAcompanhante'] ?? '').toUpperCase() === 'SIM',
+    tipoDeficiencia: normEnum(String(row['TipoDeficiencia'] ?? ''), TIPO_DEF_MAP, ['CEGUEIRA_TOTAL', 'BAIXA_VISAO', 'VISAO_MONOCULAR']) as any,
+    causaDeficiencia: normEnum(String(row['CausaDeficiencia'] ?? ''), CAUSA_DEF_MAP, ['CONGENITA', 'ADQUIRIDA']) as any,
+    prefAcessibilidade: normEnum(String(row['PrefAcessibilidade'] ?? ''), PREF_ACESS_MAP, ['BRAILLE', 'FONTE_AMPLIADA', 'ARQUIVO_DIGITAL', 'AUDIO']) as any,
+  };
+}
+
 async function importarAlunos(csvPath: string) {
   if (!fs.existsSync(csvPath)) {
     console.warn(`⚠️  Arquivo de alunos não encontrado: ${csvPath}`);
@@ -92,9 +122,30 @@ async function importarAlunos(csvPath: string) {
   const headers: string[] = rawRows[1].map((h: any) => String(h ?? '').trim());
   const dataRows = rawRows.slice(2);
 
+  // ── PREVENÇÃO DE N+1 (Lote In-Memory) ──
+  // Varredura O(1): Coletar todas as chaves primárias do Excel
+  const allCpfs = dataRows.map((r: any) => String(r['CPF'] ?? r['CPF_RG'] ?? '').trim()).filter(Boolean);
+  const allRgs  = dataRows.map((r: any) => String(r['RG']  ?? '').trim()).filter(Boolean);
+
+  // Consulta O(1): Obter os existentes em matriz única
+  const existingAlunos = await prisma.aluno.findMany({
+    where: {
+      OR: [
+        { cpf: { in: allCpfs } },
+        { rg:  { in: allRgs } },
+      ],
+    },
+    select: { cpf: true, rg: true },
+  });
+
+  const cpfsRegistrados = new Set(existingAlunos.filter(a => a.cpf).map(a => a.cpf));
+  const rgsRegistrados = new Set(existingAlunos.filter(a => a.rg).map(a => a.rg));
+
   let importados = 0, ignorados = 0, erros = 0;
   const ano = new Date().getFullYear();
   let baseCount = await prisma.aluno.count({ where: { matricula: { startsWith: `${ano}` } } });
+
+  const alunosParaInserir: any[] = [];
 
   for (let i = 0; i < dataRows.length; i++) {
     const row: Record<string, any> = {};
@@ -105,7 +156,6 @@ async function importarAlunos(csvPath: string) {
     const rg = String(row['RG'] ?? '').trim() || null;
     const dataNasc = parseExcelDate(row['DataNascimento']);
 
-    // Pular linhas vazias
     if (!nomeCompleto && !cpf && !rg) continue;
 
     if (!nomeCompleto || (!cpf && !rg) || !dataNasc) {
@@ -114,63 +164,37 @@ async function importarAlunos(csvPath: string) {
       continue;
     }
 
-    // Verificar duplicata
-    const orParam: any[] = [];
-    if (cpf) orParam.push({ cpf });
-    if (rg) orParam.push({ rg });
-    const existe = orParam.length
-      ? await prisma.aluno.findFirst({ where: { OR: orParam }, select: { id: true } })
-      : null;
+    // Validação O(1) contra Dicionário de RAM
+    if ((cpf && cpfsRegistrados.has(cpf)) || (rg && rgsRegistrados.has(rg))) { 
+      ignorados++; 
+      continue; 
+    }
 
-    if (existe) { ignorados++; continue; }
+    // Vacina contra duplicatas de CPFs repetidos na MESMA planilha falhas de operador 
+    if (cpf) cpfsRegistrados.add(cpf);
+    if (rg) rgsRegistrados.add(rg);
 
     const matricula = `${ano}${String(++baseCount).padStart(5, '0')}`;
+    
     try {
-      await prisma.aluno.create({
-        data: {
-          nomeCompleto,
-          cpf,
-          rg,
-          dataNascimento: dataNasc,
-          matricula,
-          genero:            String(row['Genero'] ?? '').trim() || null,
-          estadoCivil:       String(row['EstadoCivil'] ?? '').trim() || null,
-          telefoneContato:   String(row['Telefone'] ?? '').trim() || null,
-          email:             String(row['Email'] ?? '').trim() || null,
-          cep:               String(row['CEP'] ?? '').trim() || null,
-          rua:               String(row['Rua'] ?? '').trim() || null,
-          numero:            String(row['Numero'] ?? '').trim() || null,
-          bairro:            String(row['Bairro'] ?? '').trim() || null,
-          cidade:            String(row['Cidade'] ?? '').trim() || null,
-          uf:                String(row['UF'] ?? '').trim() || null,
-          contatoEmergencia: String(row['ContatoEmergencia'] ?? '').trim() || null,
-          escolaridade:      String(row['Escolaridade'] ?? '').trim() || null,
-          profissao:         String(row['Profissao'] ?? '').trim() || null,
-          rendaFamiliar:     String(row['RendaFamiliar'] ?? '').trim() || null,
-          beneficiosGov:     String(row['BeneficiosGov'] ?? '').trim() || null,
-          tecAssistivas:     String(row['TecAssistivas'] ?? '').trim() || null,
-          precisaAcompanhante: String(row['PrecisaAcompanhante'] ?? '').toUpperCase() === 'SIM',
-          tipoDeficiencia: normEnum(
-            String(row['TipoDeficiencia'] ?? ''), TIPO_DEF_MAP,
-            ['CEGUEIRA_TOTAL', 'BAIXA_VISAO', 'VISAO_MONOCULAR'],
-          ) as any,
-          causaDeficiencia: normEnum(
-            String(row['CausaDeficiencia'] ?? ''), CAUSA_DEF_MAP,
-            ['CONGENITA', 'ADQUIRIDA'],
-          ) as any,
-          prefAcessibilidade: normEnum(
-            String(row['PrefAcessibilidade'] ?? ''), PREF_ACESS_MAP,
-            ['BRAILLE', 'FONTE_AMPLIADA', 'ARQUIVO_DIGITAL', 'AUDIO'],
-          ) as any,
-        },
-      });
-      importados++;
+      alunosParaInserir.push(montarPayloadAluno(row, matricula, dataNasc));
     } catch (e: any) {
       erros++;
-      console.error(`  ❌ Linha ${i + 3} (${nomeCompleto}): ${e.message?.substring(0, 120)}`);
+      console.error(`  ❌ Linha ${i + 3} Falha de extração (${nomeCompleto}): ${e.message?.substring(0, 120)}`);
     }
   }
-  console.log(`📋 Alunos: ${importados} importados | ${ignorados} ignorados (já existiam) | ${erros} com erro`);
+
+  // ── INJEÇÃO LOTE ATÔMICO O(1) ──
+  if (alunosParaInserir.length > 0) {
+    console.log(`🚀 Despachando inserção transacional para lote de ${alunosParaInserir.length} alunos...`);
+    const results = await prisma.aluno.createMany({
+      data: alunosParaInserir,
+      skipDuplicates: true // Camada Extra de Defesa Pró-Ativa do Banco
+    });
+    importados = results.count;
+  }
+
+  console.log(`📋 Planilha (Total Resumo): ${importados} inseridos | ${ignorados} pulados (preexistiam) | ${erros} com erro`);
 }
 
 async function main() {
@@ -198,9 +222,10 @@ async function main() {
     { chave: 'contatoEmail', valor: 'contato@braille.org', tipo: 'texto', descricao: 'E-mail para mensagens/formulário' },
     { chave: 'contatoTelefone', valor: '(27) 3000-0000', tipo: 'texto', descricao: 'Telefone para exibição no rodapé' },
   ];
-  for (const conf of configsPadrao) {
-    await prisma.siteConfig.upsert({ where: { chave: conf.chave }, update: {}, create: conf });
-  }
+  const upserts = configsPadrao.map(conf => 
+    prisma.siteConfig.upsert({ where: { chave: conf.chave }, update: {}, create: conf })
+  );
+  await prisma.$transaction(upserts);
 
   console.log('🌱 Seed executado com sucesso! Usuário:', admin.username);
   console.log('🎨 Configurações de layout carregadas ({ keys: ' + configsPadrao.length + ' })');
