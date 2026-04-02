@@ -191,8 +191,28 @@ export class ApoiadoresController {
     @Res() res: Response,
   ) {
     const result = await this.apoiadoresService.gerarPdfCertificado(id, certId);
-    
+
     if (result.type === 'redirect') {
+      // ── SSRF Prevention (OWASP A10 / CWE-918) ─────────────────────────────
+      // A URL vem do banco de dados — nunca confiar sem validar o host.
+      // Apenas redirecionamos para hosts da allowlist conhecida (Cloudinary).
+      const REDIRECT_ALLOWLIST = new Set([
+        'res.cloudinary.com',
+        'api.cloudinary.com',
+      ]);
+
+      let redirectHost: string;
+      try {
+        redirectHost = new URL(result.url).hostname;
+      } catch {
+        throw new BadRequestException('URL do certificado inválida.');
+      }
+
+      if (!REDIRECT_ALLOWLIST.has(redirectHost)) {
+        throw new BadRequestException('Destino de redirect não autorizado.');
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
       res.redirect(301, result.url);
       return;
     }
