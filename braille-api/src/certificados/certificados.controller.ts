@@ -12,12 +12,13 @@ import {
   BadRequestException,
   StreamableFile,
   Res,
+  Req,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { CertificadosService } from './certificados.service';
+import { CertificadosService, AuditUserParams } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
 import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
@@ -26,6 +27,17 @@ import { PdfService } from './pdf.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+
+function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
+  const u = req.user as any;
+  if (!u) return {};
+  return {
+    autorId: u?.sub as string,
+    autorNome: (u?.nome || u?.email) as string,
+    autorRole: u?.role as string,
+  };
+}
 
 @ApiTags('Modelos de Certificados')
 @ApiBearerAuth()
@@ -67,8 +79,8 @@ export class CertificadosController {
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
   @ApiOperation({ summary: 'Emite o PDF de diploma para um Aluno Matriculado numa Turma Concluída.' })
-  async gerarAcademico(@Body() dto: EmitirAcademicoDto, @Res({ passthrough: true }) res: Response) {
-    const buffer = await this.certificadosService.emitirAcademico(dto);
+  async gerarAcademico(@Req() req: AuthenticatedRequest, @Body() dto: EmitirAcademicoDto, @Res({ passthrough: true }) res: Response) {
+    const buffer = await this.certificadosService.emitirAcademico(dto, getAuditUser(req));
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline; filename="certificado_academico.pdf"',
@@ -79,8 +91,8 @@ export class CertificadosController {
   @Post('emitir-honraria')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Emite o PDF de Amigo do Braille dinamicamente para terceiros.' })
-  async gerarHonraria(@Body() dto: EmitirHonrariaDto, @Res({ passthrough: true }) res: Response) {
-    const buffer = await this.certificadosService.emitirHonraria(dto);
+  async gerarHonraria(@Req() req: AuthenticatedRequest, @Body() dto: EmitirHonrariaDto, @Res({ passthrough: true }) res: Response) {
+    const buffer = await this.certificadosService.emitirHonraria(dto, getAuditUser(req));
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline; filename="honorific_braille.pdf"',
@@ -100,6 +112,7 @@ export class CertificadosController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Cria um novo modelo de certificado' })
   create(
+    @Req() req: AuthenticatedRequest,
     @Body() createDto: CreateCertificadoDto,
     @UploadedFiles()
     files: {
@@ -116,7 +129,7 @@ export class CertificadosController {
       throw new BadRequestException('As imagens da arteBase e da assinatura principal são obrigatórias na criação.');
     }
 
-    return this.certificadosService.create(createDto, arteBaseFile, assinaturaFile, assinatura2File);
+    return this.certificadosService.create(createDto, arteBaseFile, assinaturaFile, assinatura2File, getAuditUser(req));
   }
 
   @Get()
@@ -149,6 +162,7 @@ export class CertificadosController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Atualiza um modelo de certificado (texto e/ou imagens)' })
   update(
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() updateDto: UpdateCertificadoDto,
     @UploadedFiles()
@@ -162,13 +176,13 @@ export class CertificadosController {
     const assinaturaFile = files?.assinatura?.[0];
     const assinatura2File = files?.assinatura2?.[0];
 
-    return this.certificadosService.update(id, updateDto, arteBaseFile, assinaturaFile, assinatura2File);
+    return this.certificadosService.update(id, updateDto, arteBaseFile, assinaturaFile, assinatura2File, getAuditUser(req));
   }
 
   @Delete(':id')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Deleta um modelo e remove os arquivos do nuvem' })
-  remove(@Param('id') id: string) {
-    return this.certificadosService.remove(id);
+  remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.certificadosService.remove(id, getAuditUser(req));
   }
 }

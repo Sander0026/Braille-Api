@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
+import compression from 'compression';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,6 +16,9 @@ async function bootstrap() {
 
   // 0.1 Segurança de Headers HTTP (Esconde as marcas do Express/NestJS contra hackers)
   app.use(helmet());
+
+  // 0.2 Otimização em Compressão de GZIP
+  app.use(compression());
 
   // 1. Prefixo global — todas as rotas ficam em /api/*
   app.setGlobalPrefix('api');

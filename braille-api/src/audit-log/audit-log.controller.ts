@@ -1,7 +1,8 @@
 import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
-import type { QueryAuditDto } from './audit-log.service';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { QueryAuditDto } from './dto/query-audit.dto';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse as SwaggerResponse } from '@nestjs/swagger';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -16,30 +17,27 @@ export class AuditLogController {
     constructor(private readonly auditLogService: AuditLogService) { }
 
     @Get()
-    @ApiOperation({ summary: 'Listar logs de auditoria com filtros (somente ADMIN)' })
-    @ApiQuery({ name: 'page', required: false })
-    @ApiQuery({ name: 'limit', required: false })
-    @ApiQuery({ name: 'entidade', required: false, description: 'Ex: Aluno | User | Turma | Frequencia' })
-    @ApiQuery({ name: 'acao', required: false })
-    @ApiQuery({ name: 'autorId', required: false })
-    @ApiQuery({ name: 'de', required: false, description: 'Data início ISO' })
-    @ApiQuery({ name: 'ate', required: false, description: 'Data fim ISO' })
-    findAll(@Query() query: QueryAuditDto) {
+    @ApiOperation({ summary: 'Listar logs de auditoria com paginação e filtros (somente ADMIN)' })
+    @SwaggerResponse({ status: 200, description: 'Lista de logs retornada com sucesso' })
+    async findAll(@Query() query: QueryAuditDto): Promise<ApiResponse<any>> {
         return this.auditLogService.findAll(query);
     }
 
     @Get('stats')
     @ApiOperation({ summary: 'Estatísticas rápidas do log (total, hoje, top ações)' })
-    stats() {
+    @SwaggerResponse({ status: 200, description: 'Estatísticas de auditoria' })
+    async stats(): Promise<ApiResponse<any>> {
         return this.auditLogService.stats();
     }
 
     @Get(':entidade/:registroId')
-    @ApiOperation({ summary: 'Ver todo o histórico de auditoria de um registro específico' })
-    findByRegistro(
+    @ApiOperation({ summary: 'Ver o histórico de auditoria de um registro específico' })
+    @SwaggerResponse({ status: 200, description: 'Histórico localizado' })
+    async findByRegistro(
         @Param('entidade') entidade: string,
         @Param('registroId') registroId: string,
-    ) {
+    ): Promise<ApiResponse<any>> {
         return this.auditLogService.findByRegistro(entidade, registroId);
     }
 }
+

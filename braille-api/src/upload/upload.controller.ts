@@ -1,9 +1,29 @@
-import { Controller, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Query, BadRequestException, Req } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadService } from './upload.service';
 import { ApiTags, ApiBearerAuth, ApiConsumes, ApiBody, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+
+export interface AuditUserParams {
+  sub: string;
+  nome: string;
+  role: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+export function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
+  return {
+    sub: req.user?.sub ?? '',
+    // @ts-ignore
+    nome: req.user?.nome || req.user?.email || 'Desconhecido',
+    role: req.user?.role ?? 'USER',
+    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
+    userAgent: req.headers['user-agent'],
+  };
+}
 
 @ApiTags('Uploads de Arquivos')
 @ApiBearerAuth()
@@ -38,16 +58,16 @@ export class UploadController {
       },
     },
   })
-  async uploadFile(@UploadedFile() file: Express.Multer.File) {
+  async uploadFile(@UploadedFile() file: Express.Multer.File, @Req() req: AuthenticatedRequest) {
     if (!file) {
       throw new BadRequestException('Nenhum arquivo foi enviado. Selecione um arquivo e tente novamente.');
     }
-    return this.uploadService.uploadImage(file);
+    return this.uploadService.uploadImage(file, getAuditUser(req));
   }
 
   @Delete()
-  async deleteFile(@Query('url') url: string) {
-    return this.uploadService.deleteFile(url);
+  async deleteFile(@Query('url') url: string, @Req() req: AuthenticatedRequest) {
+    return this.uploadService.deleteFile(url, getAuditUser(req));
   }
 
   // ─── Upload de PDF (Termo LGPD / Atestado Médico) ──────────────────────────
@@ -77,12 +97,22 @@ export class UploadController {
   async uploadPdf(
     @UploadedFile() file: Express.Multer.File,
     @Query('tipo') tipo: 'lgpd' | 'atestado' | 'laudo',
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo PDF foi enviado.');
     if (tipo !== 'lgpd' && tipo !== 'atestado' && tipo !== 'laudo') {
       throw new BadRequestException('O parâmetro "tipo" deve ser "lgpd", "atestado" ou "laudo".');
     }
-    const folder = tipo === 'lgpd' ? 'braille_lgpd' : (tipo === 'laudo' ? 'braille_laudos' : 'braille_atestados');
-    return this.uploadService.uploadPdf(file, folder);
+    
+    let folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos';
+    if (tipo === 'lgpd') {
+      folder = 'braille_lgpd';
+    } else if (tipo === 'laudo') {
+      folder = 'braille_laudos';
+    } else {
+      folder = 'braille_atestados';
+    }
+    
+    return this.uploadService.uploadPdf(file, folder, getAuditUser(req));
   }
 }

@@ -1,12 +1,23 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req } from '@nestjs/common';
-import { FrequenciasService } from './frequencias.service';
+import { FrequenciasService, AuditUserParams } from './frequencias.service';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
 import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
-import { Role } from '@prisma/client';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+
+function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
+  return {
+    sub: req.user?.sub ?? '',
+    // @ts-ignore
+    nome: req.user?.nome || req.user?.email || 'Desconhecido',
+    role: req.user?.role ?? 'USER',
+    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
+    userAgent: req.headers['user-agent'],
+  };
+}
 
 @ApiTags('Frequências (Chamadas)')
 @ApiBearerAuth()
@@ -17,14 +28,14 @@ export class FrequenciasController {
 
   @Post()
   @ApiOperation({ summary: 'Registrar chamada de um aluno em uma turma' })
-  create(@Body() dto: CreateFrequenciaDto, @Req() req: any) {
-    return this.frequenciasService.create(dto, req.user?.role as Role);
+  create(@Body() dto: CreateFrequenciaDto, @Req() req: AuthenticatedRequest) {
+    return this.frequenciasService.create(dto, getAuditUser(req));
   }
 
   @Post('lote')
   @ApiOperation({ summary: 'Registrar ou atualizar chamada em lote (múltiplos alunos da mesma turma e data, via transação isolada)' })
-  salvarLote(@Body() dto: CreateFrequenciaLoteDto, @Req() req: any) {
-    return this.frequenciasService.salvarLote(dto, req.user?.sub, req.user?.nome, req.user?.role as Role);
+  salvarLote(@Body() dto: CreateFrequenciaLoteDto, @Req() req: AuthenticatedRequest) {
+    return this.frequenciasService.salvarLote(dto, getAuditUser(req));
   }
 
   @Get()
@@ -53,14 +64,14 @@ export class FrequenciasController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Editar chamada (professor: só no dia; admin: qualquer data; trava se diário fechado)' })
-  update(@Param('id') id: string, @Body() dto: UpdateFrequenciaDto, @Req() req: any) {
-    return this.frequenciasService.update(id, dto, req.user?.role as Role);
+  update(@Param('id') id: string, @Body() dto: UpdateFrequenciaDto, @Req() req: AuthenticatedRequest) {
+    return this.frequenciasService.update(id, dto, getAuditUser(req));
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Remover chamada' })
-  remove(@Param('id') id: string, @Req() req: any) {
-    return this.frequenciasService.remove(id, req.user?.role as Role);
+  remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.frequenciasService.remove(id, getAuditUser(req));
   }
 
   // ── Diário ─────────────────────────────────────────────────────────────────
@@ -72,9 +83,9 @@ export class FrequenciasController {
   fecharDiario(
     @Param('turmaId') turmaId: string,
     @Param('dataAula') dataAula: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.frequenciasService.fecharDiario(turmaId, dataAula, req.user?.sub, req.user?.role as Role);
+    return this.frequenciasService.fecharDiario(turmaId, dataAula, getAuditUser(req));
   }
 
   @Post('diario/reabrir/:turmaId/:dataAula')
@@ -82,8 +93,8 @@ export class FrequenciasController {
   reabrirDiario(
     @Param('turmaId') turmaId: string,
     @Param('dataAula') dataAula: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.frequenciasService.reabrirDiario(turmaId, dataAula, req.user?.role as Role);
+    return this.frequenciasService.reabrirDiario(turmaId, dataAula, getAuditUser(req));
   }
 }

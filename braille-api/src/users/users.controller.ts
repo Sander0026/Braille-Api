@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, BadRequestException, Req } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -7,6 +7,8 @@ import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { QueryUserDto } from './dto/query-user.dto';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+import { getAuditUser } from '../upload/upload.controller';
 
 @ApiTags('Usuários do Sistema (Staff)')
 @ApiBearerAuth()
@@ -18,8 +20,8 @@ export class UsersController {
   @Post()
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Cadastrar novo funcionário. Username, senha padrão e matrícula são gerados automaticamente.' })
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+  create(@Body() createUserDto: CreateUserDto, @Req() req: AuthenticatedRequest) {
+    return this.usersService.create(createUserDto, getAuditUser(req));
   }
 
   @Get()
@@ -40,42 +42,42 @@ export class UsersController {
   @Patch(':id')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Atualizar dados de um usuário' })
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(id, updateUserDto);
+  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto, @Req() req: AuthenticatedRequest) {
+    return this.usersService.update(id, updateUserDto, getAuditUser(req));
   }
 
   @Post(':id/reativar')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Reativar um funcionário inativo. Gera nova senha padrão e restaura o acesso.' })
-  reativar(@Param('id') id: string) {
-    return this.usersService.reativar(id);
+  reativar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.usersService.reativar(id, getAuditUser(req));
   }
 
   @Delete(':id')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Inativar um usuário do sistema' })
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(id);
+  remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.usersService.remove(id, getAuditUser(req));
   }
 
   @Patch(':id/reset-password')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Resetar a senha de um usuário (Admin)' })
-  resetPassword(@Param('id') id: string) {
-    return this.usersService.resetPassword(id);
+  resetPassword(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.usersService.resetPassword(id, getAuditUser(req));
   }
 
   @Patch(':id/restore')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Restaurar um usuário inativo' })
-  restore(@Param('id') id: string) {
-    return this.usersService.restore(id);
+  restore(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.usersService.restore(id, getAuditUser(req));
   }
 
   @Delete(':id/hard')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Excluir definitivamente um usuário (Soft Delete profundo)' })
-  removeHard(@Param('id') id: string) {
-    return this.usersService.removeHard(id);
+  removeHard(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.usersService.removeHard(id, getAuditUser(req));
   }
 }

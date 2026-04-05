@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
@@ -8,14 +8,25 @@ import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
 import { PdfService } from './pdf.service';
 import { ImageProcessingService } from './image-processing.service';
 import { randomBytes } from 'node:crypto';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAcao } from '@prisma/client';
+
+export interface AuditUserParams {
+  autorId?: string;
+  autorNome?: string;
+  autorRole?: string;
+}
 
 @Injectable()
 export class CertificadosService {
+  private readonly logger = new Logger(CertificadosService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly uploadService: UploadService,
     private readonly pdfService: PdfService,
     private readonly imageProcessing: ImageProcessingService,
+    private readonly auditService: AuditLogService,
   ) {}
 
   /** Processa assinatura (remove fundo branco) e faz upload como PNG transparente */
@@ -30,7 +41,7 @@ export class CertificadosService {
     return this.uploadService.uploadImage(pngFile);
   }
 
-  async create(createDto: CreateCertificadoDto, arteBaseFile?: Express.Multer.File, assinaturaFile?: Express.Multer.File, assinatura2File?: Express.Multer.File) {
+  async create(createDto: CreateCertificadoDto, arteBaseFile?: Express.Multer.File, assinaturaFile?: Express.Multer.File, assinatura2File?: Express.Multer.File, auditUser?: AuditUserParams) {
     let arteBaseUrl = '';
     let assinaturaUrl = '';
     let assinaturaUrl2: string | null = null;
@@ -52,10 +63,15 @@ export class CertificadosService {
 
     let parsedLayout: any = undefined;
     if (createDto.layoutConfig) {
-      try { parsedLayout = JSON.parse(createDto.layoutConfig); } catch (e) {}
+      try { 
+        parsedLayout = JSON.parse(createDto.layoutConfig); 
+      } catch (e: unknown) {
+        const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+        this.logger.warn(`Erro no parsing silencioso do layoutConfig (Create): ${erroMsg}`);
+      }
     }
 
-    return this.prisma.modeloCertificado.create({
+    const novoModelo = await this.prisma.modeloCertificado.create({
       data: {
         ...createDto,
         layoutConfig: parsedLayout,
@@ -64,6 +80,16 @@ export class CertificadosService {
         assinaturaUrl2,
       },
     });
+
+    this.auditService.registrar({
+      ...auditUser,
+      entidade: 'ModeloCertificado',
+      registroId: novoModelo.id,
+      acao: AuditAcao.CRIAR,
+      newValue: novoModelo,
+    });
+
+    return novoModelo;
   }
 
   async findAll() {
@@ -86,6 +112,7 @@ export class CertificadosService {
     arteBaseFile?: Express.Multer.File,
     assinaturaFile?: Express.Multer.File,
     assinatura2File?: Express.Multer.File,
+    auditUser?: AuditUserParams
   ) {
     const modelo = await this.findOne(id);
 
@@ -94,31 +121,57 @@ export class CertificadosService {
     let assinaturaUrl2 = modelo.assinaturaUrl2;
 
     if (arteBaseFile) {
-      if (modelo.arteBaseUrl) await this.uploadService.deleteFile(modelo.arteBaseUrl);
+      if (modelo.arteBaseUrl) {
+        try {
+          await this.uploadService.deleteFile(modelo.arteBaseUrl);
+        } catch (e: unknown) {
+          const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+          this.logger.warn(`Falha soft ao excluir arteBaseUrl antiga no Cloudinary: ${erroMsg}`);
+        }
+      }
       const uploadBase = await this.uploadService.uploadImage(arteBaseFile);
       arteBaseUrl = uploadBase.url;
     }
 
     if (assinaturaFile) {
-      if (modelo.assinaturaUrl) await this.uploadService.deleteFile(modelo.assinaturaUrl);
+      if (modelo.assinaturaUrl) {
+        try {
+          await this.uploadService.deleteFile(modelo.assinaturaUrl);
+        } catch (e: unknown) {
+          const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+          this.logger.warn(`Falha soft ao excluir assinaturaUrl antiga no Cloudinary: ${erroMsg}`);
+        }
+      }
       const uploadAssinatura = await this.uploadAssinatura(assinaturaFile);
       assinaturaUrl = uploadAssinatura.url;
     }
 
     if (assinatura2File) {
-      if (modelo.assinaturaUrl2) await this.uploadService.deleteFile(modelo.assinaturaUrl2);
+      if (modelo.assinaturaUrl2) {
+        try {
+          await this.uploadService.deleteFile(modelo.assinaturaUrl2);
+        } catch (e: unknown) {
+          const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+          this.logger.warn(`Falha soft ao excluir assinaturaUrl2 antiga no Cloudinary: ${erroMsg}`);
+        }
+      }
       const uploadAssinatura2 = await this.uploadAssinatura(assinatura2File);
       assinaturaUrl2 = uploadAssinatura2.url;
     }
 
     let parsedLayout: any = undefined;
     if (updateDto.layoutConfig) {
-      try { parsedLayout = JSON.parse(updateDto.layoutConfig); } catch (e) {}
+      try { 
+        parsedLayout = JSON.parse(updateDto.layoutConfig); 
+      } catch (e: unknown) {
+        const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+        this.logger.warn(`Erro no parsing silencioso do layoutConfig (Update): ${erroMsg}`);
+      }
     } else if (updateDto.layoutConfig === '') {
       parsedLayout = null; // caso apague
     }
 
-    return this.prisma.modeloCertificado.update({
+    const modeloAtualizado = await this.prisma.modeloCertificado.update({
       where: { id },
       data: {
         ...updateDto,
@@ -128,31 +181,65 @@ export class CertificadosService {
         assinaturaUrl2,
       },
     });
+
+    this.auditService.registrar({
+      ...auditUser,
+      entidade: 'ModeloCertificado',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      oldValue: modelo,
+      newValue: modeloAtualizado,
+    });
+
+    return modeloAtualizado;
   }
 
-  async remove(id: string) {
+  async remove(id: string, auditUser?: AuditUserParams) {
     const modelo = await this.findOne(id);
     
     if (modelo.arteBaseUrl) {
-      await this.uploadService.deleteFile(modelo.arteBaseUrl);
+      try {
+        await this.uploadService.deleteFile(modelo.arteBaseUrl);
+      } catch (e: unknown) {
+        this.logger.warn('Soft fail no delete arteBaseUrl: arquivo não afetou a exclusão.');
+      }
     }
     
     if (modelo.assinaturaUrl) {
-      await this.uploadService.deleteFile(modelo.assinaturaUrl);
+      try {
+        await this.uploadService.deleteFile(modelo.assinaturaUrl);
+      } catch (e: unknown) {
+        this.logger.warn('Soft fail no delete assinaturaUrl: arquivo não afetou a exclusão.');
+      }
     }
 
     if (modelo.assinaturaUrl2) {
-      await this.uploadService.deleteFile(modelo.assinaturaUrl2);
+      try {
+        await this.uploadService.deleteFile(modelo.assinaturaUrl2);
+      } catch (e: unknown) {
+        this.logger.warn('Soft fail no delete assinaturaUrl2: arquivo não afetou a exclusão.');
+      }
     }
 
-    return this.prisma.modeloCertificado.delete({
+    const excluido = await this.prisma.modeloCertificado.delete({
       where: { id },
     });
+
+    this.auditService.registrar({
+      ...auditUser,
+      entidade: 'ModeloCertificado',
+      registroId: id,
+      acao: AuditAcao.EXCLUIR,
+      oldValue: modelo,
+      newValue: null as any,
+    });
+
+    return excluido;
   }
 
   // ============== LÓGICAS DE EMISSÃO ==============
 
-  async emitirAcademico(dto: EmitirAcademicoDto) {
+  async emitirAcademico(dto: EmitirAcademicoDto, auditUser?: AuditUserParams) {
     const turma = await this.prisma.turma.findUnique({
       where: { id: dto.turmaId },
       include: { modeloCertificado: true, matriculasOficina: { where: { alunoId: dto.alunoId } } },
@@ -167,9 +254,6 @@ export class CertificadosService {
     }
 
     // ── Verificação de Frequência Mínima (≥ 75%) ──────────────────────────
-    // Compatibilidade: registros antigos usam `presente: true` (campo legado);
-    // registros novos usam `status: PRESENTE | FALTA_JUSTIFICADA`.
-    // O OR garante que ambos os formatos sejam reconhecidos como presença.
     const totalAulas = await this.prisma.frequencia.count({
       where: { turmaId: dto.turmaId, alunoId: dto.alunoId },
     });
@@ -211,13 +295,21 @@ export class CertificadosService {
     const hashUnique = randomBytes(4).toString('hex').toUpperCase();
 
     // Registra emissão no Banco para a verificação pública ter prova
-    await this.prisma.certificadoEmitido.create({
+    const certificadoEmitido = await this.prisma.certificadoEmitido.create({
       data: {
         codigoValidacao: hashUnique,
         alunoId: aluno.id,
         turmaId: turma.id,
         modeloId: turma.modeloCertificado.id,
       }
+    });
+
+    this.auditService.registrar({
+      ...auditUser,
+      entidade: 'CertificadoEmitido',
+      registroId: certificadoEmitido.id,
+      acao: AuditAcao.CRIAR,
+      newValue: certificadoEmitido,
     });
 
     // Pinta o PDF — passa nomeAluno para renderizar a tag posicionável {{NOME_ALUNO}}
@@ -230,7 +322,7 @@ export class CertificadosService {
     return buffer;
   }
 
-  async emitirHonraria(dto: EmitirHonrariaDto) {
+  async emitirHonraria(dto: EmitirHonrariaDto, auditUser?: AuditUserParams) {
     const modelo = await this.prisma.modeloCertificado.findUnique({
       where: { id: dto.modeloId }
     });
@@ -245,11 +337,19 @@ export class CertificadosService {
 
     const hashUnique = randomBytes(4).toString('hex').toUpperCase();
 
-    await this.prisma.certificadoEmitido.create({
+    const emissao = await this.prisma.certificadoEmitido.create({
       data: {
         codigoValidacao: hashUnique,
         modeloId: modelo.id,
       }
+    });
+
+    this.auditService.registrar({
+      ...auditUser,
+      entidade: 'CertificadoEmitido',
+      registroId: emissao.id,
+      acao: AuditAcao.CRIAR,
+      newValue: emissao,
     });
 
     const buffer = await this.pdfService.construirPdfBase(

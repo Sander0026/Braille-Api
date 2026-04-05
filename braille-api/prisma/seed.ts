@@ -13,9 +13,7 @@ Para importar alunos após reset, defina SEED_ALUNOS_CSV:
 
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 const prisma = new PrismaClient();
 
@@ -61,7 +59,7 @@ function parseExcelDate(raw: any): Date | null {
         d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
       }
     }
-    if (isNaN(d.getTime())) return null;
+    if (Number.isNaN(d.getTime())) return null;
     const ano = d.getUTCFullYear();
     if (ano < 1900 || ano > new Date().getFullYear()) return null;
     return d;
@@ -70,17 +68,85 @@ function parseExcelDate(raw: any): Date | null {
   }
 }
 
-async function importarAlunos(csvPath: string) {
-  if (!fs.existsSync(csvPath)) {
-    console.warn(`⚠️  Arquivo de alunos não encontrado: ${csvPath}`);
+function montarPayloadAluno(row: Record<string, any>, matricula: string, dataNasc: Date): any {
+  return {
+    nomeCompleto: String(row['NomeCompleto'] ?? '').trim(),
+    cpf: String(row['CPF'] ?? row['CPF_RG'] ?? '').trim() || null,
+    rg: String(row['RG'] ?? '').trim() || null,
+    dataNascimento: dataNasc,
+    matricula,
+    genero:            String(row['Genero'] ?? '').trim() || null,
+    estadoCivil:       String(row['EstadoCivil'] ?? '').trim() || null,
+    telefoneContato:   String(row['Telefone'] ?? '').trim() || null,
+    email:             String(row['Email'] ?? '').trim() || null,
+    cep:               String(row['CEP'] ?? '').trim() || null,
+    rua:               String(row['Rua'] ?? '').trim() || null,
+    numero:            String(row['Numero'] ?? '').trim() || null,
+    bairro:            String(row['Bairro'] ?? '').trim() || null,
+    cidade:            String(row['Cidade'] ?? '').trim() || null,
+    uf:                String(row['UF'] ?? '').trim() || null,
+    contatoEmergencia: String(row['ContatoEmergencia'] ?? '').trim() || null,
+    escolaridade:      String(row['Escolaridade'] ?? '').trim() || null,
+    profissao:         String(row['Profissao'] ?? '').trim() || null,
+    rendaFamiliar:     String(row['RendaFamiliar'] ?? '').trim() || null,
+    beneficiosGov:     String(row['BeneficiosGov'] ?? '').trim() || null,
+    tecAssistivas:     String(row['TecAssistivas'] ?? '').trim() || null,
+    precisaAcompanhante: String(row['PrecisaAcompanhante'] ?? '').toUpperCase() === 'SIM',
+    tipoDeficiencia: normEnum(String(row['TipoDeficiencia'] ?? ''), TIPO_DEF_MAP, ['CEGUEIRA_TOTAL', 'BAIXA_VISAO', 'VISAO_MONOCULAR']) as any,
+    causaDeficiencia: normEnum(String(row['CausaDeficiencia'] ?? ''), CAUSA_DEF_MAP, ['CONGENITA', 'ADQUIRIDA']) as any,
+    prefAcessibilidade: normEnum(String(row['PrefAcessibilidade'] ?? ''), PREF_ACESS_MAP, ['BRAILLE', 'FONTE_AMPLIADA', 'ARQUIVO_DIGITAL', 'AUDIO']) as any,
+  };
+}
+
+const extrairMapLinha = (dataRow: any[], headers: string[]) => {
+  return headers.reduce((acc, k, idx) => {
+    acc[k] = dataRow[idx] ?? '';
+    return acc;
+  }, {} as Record<string, any>);
+};
+
+const linhaInvalidaStr = (nome: string, cpf: string | null, rg: string | null, dta: any) => {
+  if (!nome && !cpf && !rg) return 'VAZIO';
+  if (!nome || (!cpf && !rg) || !dta) return 'CRITICO';
+  return 'OK';
+};
+
+const cachePossuiDuplicata = (cpf: string | null, rg: string | null, cpfs: Set<string>, rgs: Set<string>): boolean => {
+  if ((cpf && cpfs.has(cpf)) || (rg && rgs.has(rg))) return true;
+  if (cpf) cpfs.add(cpf);
+  if (rg) rgs.add(rg);
+  return false;
+};
+
+async function importarAlunos(filePath: string) {
+  if (!require('node:fs').existsSync(filePath)) {
+    console.warn(`⚠️  Arquivo de alunos não encontrado: ${filePath}`);
     return;
   }
-  const buffer = fs.readFileSync(csvPath);
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames[0];
+  
+  const workbook = new ExcelJS.Workbook();
+  if (filePath.endsWith('.csv')) {
+     await workbook.csv.readFile(filePath);
+  } else {
+     await workbook.xlsx.readFile(filePath);
+  }
+  
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet || worksheet.rowCount < 3) {
+    console.warn('⚠️  Planilha de alunos vazia ou sem linhas de dados.');
+    return;
+  }
 
-  const rawRows: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-    header: 1, defval: '',
+  const rawRows: any[][] = [];
+  worksheet.eachRow((row) => {
+    const rowValues = row.values as any[];
+    const cleanedRow = rowValues.slice(1).map(val => {
+       if (val && typeof val === 'object' && !(val instanceof Date)) {
+          return val.text ?? val.result ?? String(val);
+       }
+       return val ?? '';
+    });
+    rawRows.push(cleanedRow);
   });
 
   if (rawRows.length < 3) {
@@ -92,85 +158,74 @@ async function importarAlunos(csvPath: string) {
   const headers: string[] = rawRows[1].map((h: any) => String(h ?? '').trim());
   const dataRows = rawRows.slice(2);
 
+  // ── PREVENÇÃO DE N+1 (Lote In-Memory) ──
+  // Varredura O(1): Coletar todas as chaves primárias do Excel
+  const allCpfs = dataRows.map((r: any) => String(r['CPF'] ?? r['CPF_RG'] ?? '').trim()).filter(Boolean);
+  const allRgs  = dataRows.map((r: any) => String(r['RG']  ?? '').trim()).filter(Boolean);
+
+  // Consulta O(1): Obter os existentes em matriz única
+  const existingAlunos = await prisma.aluno.findMany({
+    where: {
+      OR: [
+        { cpf: { in: allCpfs } },
+        { rg:  { in: allRgs } },
+      ],
+    },
+    select: { cpf: true, rg: true },
+  });
+
+  const cpfsRegistrados = new Set<string>(existingAlunos.filter(a => a.cpf).map(a => a.cpf as string));
+  const rgsRegistrados = new Set<string>(existingAlunos.filter(a => a.rg).map(a => a.rg as string));
+
   let importados = 0, ignorados = 0, erros = 0;
   const ano = new Date().getFullYear();
   let baseCount = await prisma.aluno.count({ where: { matricula: { startsWith: `${ano}` } } });
 
+  const alunosParaInserir: any[] = [];
+
   for (let i = 0; i < dataRows.length; i++) {
-    const row: Record<string, any> = {};
-    headers.forEach((k, idx) => { row[k] = dataRows[i][idx] ?? ''; });
+    const row = extrairMapLinha(dataRows[i], headers);
 
     const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
     const cpf = String(row['CPF'] ?? row['CPF_RG'] ?? '').trim() || null;
     const rg = String(row['RG'] ?? '').trim() || null;
     const dataNasc = parseExcelDate(row['DataNascimento']);
 
-    // Pular linhas vazias
-    if (!nomeCompleto && !cpf && !rg) continue;
-
-    if (!nomeCompleto || (!cpf && !rg) || !dataNasc) {
+    const validade = linhaInvalidaStr(nomeCompleto, cpf, rg, dataNasc);
+    if (validade === 'VAZIO') continue;
+    if (validade === 'CRITICO') {
       erros++;
-      console.warn(`  ⚠️  Linha ${i + 3} ignorada: dados obrigatórios ausentes (Nome="${nomeCompleto}", DataNascimento="${row['DataNascimento']}")`);
+      console.warn(`  ⚠️  Linha ${i + 3} ignorada: dados obrigatórios ausentes`);
       continue;
     }
 
-    // Verificar duplicata
-    const orParam: any[] = [];
-    if (cpf) orParam.push({ cpf });
-    if (rg) orParam.push({ rg });
-    const existe = orParam.length
-      ? await prisma.aluno.findFirst({ where: { OR: orParam }, select: { id: true } })
-      : null;
-
-    if (existe) { ignorados++; continue; }
+    // Validação O(1) contra Dicionário de RAM
+    if (cachePossuiDuplicata(cpf, rg, cpfsRegistrados, rgsRegistrados)) { 
+      ignorados++; 
+      continue; 
+    }
 
     const matricula = `${ano}${String(++baseCount).padStart(5, '0')}`;
+    
     try {
-      await prisma.aluno.create({
-        data: {
-          nomeCompleto,
-          cpf,
-          rg,
-          dataNascimento: dataNasc,
-          matricula,
-          genero:            String(row['Genero'] ?? '').trim() || null,
-          estadoCivil:       String(row['EstadoCivil'] ?? '').trim() || null,
-          telefoneContato:   String(row['Telefone'] ?? '').trim() || null,
-          email:             String(row['Email'] ?? '').trim() || null,
-          cep:               String(row['CEP'] ?? '').trim() || null,
-          rua:               String(row['Rua'] ?? '').trim() || null,
-          numero:            String(row['Numero'] ?? '').trim() || null,
-          bairro:            String(row['Bairro'] ?? '').trim() || null,
-          cidade:            String(row['Cidade'] ?? '').trim() || null,
-          uf:                String(row['UF'] ?? '').trim() || null,
-          contatoEmergencia: String(row['ContatoEmergencia'] ?? '').trim() || null,
-          escolaridade:      String(row['Escolaridade'] ?? '').trim() || null,
-          profissao:         String(row['Profissao'] ?? '').trim() || null,
-          rendaFamiliar:     String(row['RendaFamiliar'] ?? '').trim() || null,
-          beneficiosGov:     String(row['BeneficiosGov'] ?? '').trim() || null,
-          tecAssistivas:     String(row['TecAssistivas'] ?? '').trim() || null,
-          precisaAcompanhante: String(row['PrecisaAcompanhante'] ?? '').toUpperCase() === 'SIM',
-          tipoDeficiencia: normEnum(
-            String(row['TipoDeficiencia'] ?? ''), TIPO_DEF_MAP,
-            ['CEGUEIRA_TOTAL', 'BAIXA_VISAO', 'VISAO_MONOCULAR'],
-          ) as any,
-          causaDeficiencia: normEnum(
-            String(row['CausaDeficiencia'] ?? ''), CAUSA_DEF_MAP,
-            ['CONGENITA', 'ADQUIRIDA'],
-          ) as any,
-          prefAcessibilidade: normEnum(
-            String(row['PrefAcessibilidade'] ?? ''), PREF_ACESS_MAP,
-            ['BRAILLE', 'FONTE_AMPLIADA', 'ARQUIVO_DIGITAL', 'AUDIO'],
-          ) as any,
-        },
-      });
-      importados++;
+      alunosParaInserir.push(montarPayloadAluno(row, matricula, dataNasc as Date));
     } catch (e: any) {
       erros++;
-      console.error(`  ❌ Linha ${i + 3} (${nomeCompleto}): ${e.message?.substring(0, 120)}`);
+      console.error(`  ❌ Linha ${i + 3} Falha de extração (${nomeCompleto}): ${e.message?.substring(0, 120)}`);
     }
   }
-  console.log(`📋 Alunos: ${importados} importados | ${ignorados} ignorados (já existiam) | ${erros} com erro`);
+
+  // ── INJEÇÃO LOTE ATÔMICO O(1) ──
+  if (alunosParaInserir.length > 0) {
+    console.log(`🚀 Despachando inserção transacional para lote de ${alunosParaInserir.length} alunos...`);
+    const results = await prisma.aluno.createMany({
+      data: alunosParaInserir,
+      skipDuplicates: true // Camada Extra de Defesa Pró-Ativa do Banco
+    });
+    importados = results.count;
+  }
+
+  console.log(`📋 Planilha (Total Resumo): ${importados} inseridos | ${ignorados} pulados (preexistiam) | ${erros} com erro`);
 }
 
 async function main() {
@@ -198,9 +253,10 @@ async function main() {
     { chave: 'contatoEmail', valor: 'contato@braille.org', tipo: 'texto', descricao: 'E-mail para mensagens/formulário' },
     { chave: 'contatoTelefone', valor: '(27) 3000-0000', tipo: 'texto', descricao: 'Telefone para exibição no rodapé' },
   ];
-  for (const conf of configsPadrao) {
-    await prisma.siteConfig.upsert({ where: { chave: conf.chave }, update: {}, create: conf });
-  }
+  const upserts = configsPadrao.map(conf => 
+    prisma.siteConfig.upsert({ where: { chave: conf.chave }, update: {}, create: conf })
+  );
+  await prisma.$transaction(upserts);
 
   console.log('🌱 Seed executado com sucesso! Usuário:', admin.username);
   console.log('🎨 Configurações de layout carregadas ({ keys: ' + configsPadrao.length + ' })');
@@ -208,9 +264,9 @@ async function main() {
   // 3. Importação opcional de alunos via CSV/XLSX
   const csvEnv = process.env.SEED_ALUNOS_CSV;
   if (csvEnv) {
-    const csvPath = path.isAbsolute(csvEnv)
+    const csvPath = require('node:path').isAbsolute(csvEnv)
       ? csvEnv
-      : path.resolve(__dirname, '..', csvEnv);
+      : require('node:path').resolve(__dirname, '..', csvEnv);
     console.log(`\n📂 Importando alunos de: ${csvPath}`);
     await importarAlunos(csvPath);
   } else {
