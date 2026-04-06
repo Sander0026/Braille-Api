@@ -315,8 +315,12 @@ model Frequencia {
   // @@unique funcione como "1 chamada por aluno por turma por dia",
   // sem falsos negativos por milissegundos diferentes.
   dataAula   DateTime         @db.Date
-  presente   Boolean          @default(false)       // mantido por compatibilidade
-  status     StatusFrequencia @default(FALTA)       // novo campo — substitui presente no longo prazo
+  // TODO(2026-04): `presente` é um campo LEGACY mantido apenas para compatibilidade com
+  // relatórios antigos. O campo `status` (enum StatusFrequencia) é o substituto definitivo.
+  // Remover em conjunto com a migração da Fase 6 (relatórios refatorados).
+  // NUNCA atualizar `presente` sem sincronizar `status` — risco de divergência silenciosa.
+  presente   Boolean          @default(false)
+  status     StatusFrequencia @default(FALTA)       // substituto definitivo de `presente`
   observacao String?
   fechado    Boolean          @default(false)       // true = diário encerrado, só ADMIN pode reabrir
   fechadoEm  DateTime?                             // quando foi encerrado
@@ -429,6 +433,9 @@ model ConteudoSecao {
 /// Registro imutável de toda ação crítica no sistema.
 /// Nunca deve ser alterado ou deletado — apenas inserido.
 model AuditLog {
+  // NOTA: cuid() mantido intencionalmente (diferente dos demais modelos que usam uuid()).
+  // A mudança para uuid() causaria drift de schema e reset destrutivo do banco.
+  // Padronização futura deve ser feita via migração de dados com script de conversão dedicado.
   id         String    @id @default(cuid())
   entidade   String // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" …
   registroId String? // ID do registro afetado (null para LOGIN/LOGOUT)
@@ -519,6 +526,8 @@ model ModeloCertificado {
   // Logs
   criadoEm        DateTime        @default(now())
   atualizadoEm    DateTime        @updatedAt
+
+  @@index([tipo]) // filtro frequente: ACADEMICO vs HONRARIA
 }
 
 model CertificadoEmitido {
@@ -544,9 +553,13 @@ model CertificadoEmitido {
   modeloId        String
   modelo          ModeloCertificado @relation(fields: [modeloId], references: [id])
 
+  // Índices individuais para buscas isoladas
   @@index([alunoId])
   @@index([apoiadorId])
   @@index([acaoId])
   @@index([codigoValidacao])
   @@index([modeloId])
+  // Índice composto para a query mais frequente: certificados de um aluno em uma turma.
+  // PostgreSQL usa este índice para WHERE alunoId = X AND turmaId = Y de forma eficiente.
+  @@index([alunoId, turmaId])
 }

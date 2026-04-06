@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Turma" ADD COLUMN     "dataFim" TIMESTAMP(3),
+ADD COLUMN     "dataInicio" TIMESTAMP(3),
+ALTER COLUMN "status" SET DEFAULT 'PREVISTA';

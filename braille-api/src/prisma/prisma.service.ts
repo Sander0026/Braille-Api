@@ -1,44 +1,72 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
 
+/**
+ * PrismaService — Singleton gerenciado pelo NestJS.
+ *
+ * Responsabilidades (SRP):
+ *  - Gerenciar o ciclo de vida da conexão com o banco de dados.
+ *  - Rotear logs do Prisma Query Engine para o Logger padronizado do NestJS.
+ *
+ * Regras de segurança:
+ *  - Logs de `query` (com parâmetros sensíveis) são ativados APENAS fora de produção.
+ *  - Listeners de evento são registrados no constructor (antes do $connect)
+ *    para capturar erros que possam ocorrer durante a própria conexão.
+ */
 @Injectable()
-export class PrismaService extends PrismaClient<Prisma.PrismaClientOptions, 'query' | 'info' | 'warn' | 'error'> implements OnModuleInit, OnModuleDestroy {
-    private readonly logger = new Logger(PrismaService.name);
+export class PrismaService
+  extends PrismaClient<Prisma.PrismaClientOptions, 'query' | 'info' | 'warn' | 'error'>
+  implements OnModuleInit, OnModuleDestroy
+{
+  private readonly logger = new Logger(PrismaService.name);
 
-    constructor() {
-        super({
-            log: [
-                { emit: 'event', level: 'query' },
-                { emit: 'event', level: 'error' },
-                { emit: 'event', level: 'info' },
-                { emit: 'event', level: 'warn' },
-            ],
-        });
+  constructor() {
+    const isProd = process.env['NODE_ENV'] === 'production';
+
+    // Logs de `query` carregam parâmetros potencialmente sensíveis (CPF, hashes de senha).
+    // Ativados apenas em desenvolvimento para análise de performance e debug.
+    const logConfig: Prisma.LogDefinition[] = [
+      { emit: 'event', level: 'error' },
+      { emit: 'event', level: 'warn'  },
+      { emit: 'event', level: 'info'  },
+      ...(isProd ? [] : [{ emit: 'event', level: 'query' } as Prisma.LogDefinition]),
+    ];
+
+    super({ log: logConfig });
+
+    // ── Listeners registrados no constructor (antes do $connect) ──────────
+    // Garante que erros emitidos DURANTE a conexão também sejam capturados.
+
+    this.$on('error', (event) => {
+      // Não expõe `event.target` para o cliente — apenas ao log interno.
+      this.logger.error(`[Prisma Engine] ${event.message}`);
+    });
+
+    this.$on('warn', (event) => {
+      this.logger.warn(`[Prisma Engine] ${event.message}`);
+    });
+
+    this.$on('info', (event) => {
+      this.logger.log(`[Prisma Engine] ${event.message}`);
+    });
+
+    // Ativado apenas em dev — queries contêm parâmetros em texto plano.
+    if (!isProd) {
+      this.$on('query', (event) => {
+        this.logger.debug(
+          `[Prisma Query] ${event.query} | Params: ${event.params} | ${event.duration}ms`,
+        );
+      });
     }
+  }
 
-    async onModuleInit() {
-        await this.$connect();
+  async onModuleInit(): Promise<void> {
+    await this.$connect();
+    this.logger.log('Conexão com o banco de dados estabelecida.');
+  }
 
-        this.$on('error', (event) => {
-            this.logger.error(`[Prisma Query Engine ERROR] ${event.message}`, event.target);
-        });
-
-        this.$on('warn', (event) => {
-            this.logger.warn(`[Prisma Query Engine WARN] ${event.message}`, event.target);
-        });
-
-        // Opcional para eventos de conexao
-        this.$on('info', (event) => {
-            this.logger.log(`[Prisma Engine] ${event.message}`);
-        });
-
-        // Descomente abaixo se precisar debugar Performance/Slow Queries
-        // this.$on('query', (event) => {
-        //     this.logger.debug(`[Prisma Query] ${event.query} | Params: ${event.params} | Duration: ${event.duration}ms`);
-        // });
-    }
-
-    async onModuleDestroy() {
-        await this.$disconnect();
-    }
+  async onModuleDestroy(): Promise<void> {
+    await this.$disconnect();
+    this.logger.log('Conexão com o banco de dados encerrada.');
+  }
 }
