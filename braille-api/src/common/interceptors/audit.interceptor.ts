@@ -31,28 +31,41 @@ const ACAO_MAP: Record<string, (path: string) => AuditAcao | null> = {
     if (path.includes('/status'))    return AuditAcao.MUDAR_STATUS;
     return AuditAcao.ATUALIZAR;
   },
-  PUT:    ()     => AuditAcao.ATUALIZAR,
+  PUT:    () => AuditAcao.ATUALIZAR,
   DELETE: (path) => {
     if (path.includes('/alunos/')) return AuditAcao.DESMATRICULAR;
     return AuditAcao.EXCLUIR;
   },
 };
 
-/** Mapeamento de segmento de rota → nome canónico da entidade auditada. */
+/**
+ * Mapeamento de segmento de rota → nome canónico da entidade auditada.
+ * Centraliza o vocabulário de entidades — adicionar novos módulos aqui.
+ */
 const ENTIDADE_MAP: Record<string, string> = {
-  turmas:        'Turma',
-  frequencias:   'Frequencia',
-  beneficiaries: 'Aluno',
-  usuarios:      'User',
-  auth:          'Auth',
-  'audit-log':   'AuditLog',
-  comunicados:   'Comunicado',
+  turmas:                'Turma',
+  frequencias:           'Frequencia',
+  beneficiaries:         'Aluno',
+  usuarios:              'User',
+  auth:                  'Auth',
+  'audit-log':           'AuditLog',
+  comunicados:           'Comunicado',
+  // Módulos adicionados na refatoração de 2026-04
+  'modelos-certificados': 'ModeloCertificado',
+  certificados:           'CertificadoEmitido',
+  apoiadores:             'Apoiador',
+  'site-config':          'SiteConfig',
 };
 
 /**
- * Paths excluídos da auditoria automática:
- * - Infra (docs, health)
- * - Módulos já instrumentados manualmente no Service (evita log duplicado)
+ * Paths excluídos da auditoria automática.
+ *
+ * Dois motivos para exclusão:
+ *  A) Infraestrutura técnica sem relevância de negócio (docs, health).
+ *  B) Módulos já instrumentados manualmente no Service (evita log duplicado).
+ *
+ * REGRA: se o Service chama `this.auditService.registrar()` diretamente,
+ * o path DEVE estar nesta lista.
  */
 const PATHS_EXCLUIDOS = [
   '/api-docs',
@@ -64,12 +77,15 @@ const PATHS_EXCLUIDOS = [
   '/users',
   '/comunicados',
   '/site-config',
+  '/apoiadores',             // instrumentado manualmente no ApoiadoresService
+  '/modelos-certificados',   // instrumentado manualmente no CertificadosService
+  '/certificados',           // instrumentado manualmente no CertificadosService
 ] as const;
 
 // ── Campos sensíveis a remover do payload antes de persistir ──────────────────
 const CAMPOS_SENSIVEIS = new Set([
-  'senha', 'password', 'hash', 'passwordHash',
-  'senhaHash', 'token', 'refreshToken', 'secret',
+  'senha', 'password', 'hash', 'passwordhash',
+  'senhahash', 'token', 'refreshtoken', 'secret',
 ]);
 
 // ── Interceptor ───────────────────────────────────────────────────────────────
@@ -80,12 +96,11 @@ const CAMPOS_SENSIVEIS = new Set([
  *
  * Estratégia: fire-and-forget via tap(). Erros de auditoria nunca bloqueiam a resposta.
  *
- * Melhorias em relação à versão anterior:
- * - @ts-ignore removido (nome? / email? já existem em AuthenticatedUser)
- * - IP resolution centralizado em resolverIp() de common/helpers/audit.helper.ts
- * - (req as any).auditOldValue → req.auditOldValue (tipado na interface)
- * - sanitizePayload() recursivo (depth=2) — remove campos sensíveis em níveis aninhados
- * - Strings > 500 chars truncadas — evita blobs de base64 nos logs
+ * Garantias de segurança:
+ * - Campos sensíveis (senha, token, hash) removidos antes de persistir.
+ * - Strings > 500 chars truncadas (evita blobs base64 nos logs).
+ * - Arrays > 20 itens truncados com mensagem descritiva.
+ * - Profundidade máxima de sanitização: 2 níveis.
  */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -110,14 +125,14 @@ export class AuditInterceptor implements NestInterceptor {
     if (!acao) return next.handle();
 
     // Extrai entidade a partir do path (ex: /api/turmas/... → "Turma")
-    const segments  = path.replace('/api/', '').split('/');
-    const entidade  = ENTIDADE_MAP[segments[0]] ?? segments[0];
+    const segments   = path.replace('/api/', '').split('/');
+    const entidade   = ENTIDADE_MAP[segments[0]] ?? segments[0];
     const registroId = this.extrairRegistroId(segments);
 
     // Dados do utilizador — tipados, sem @ts-ignore
-    const reqAuth  = req as AuthenticatedRequest;
-    const user     = reqAuth.user;
-    const autorId  = user?.sub;
+    const reqAuth   = req as AuthenticatedRequest;
+    const user      = reqAuth.user;
+    const autorId   = user?.sub;
     const autorNome = user?.nome ?? user?.email;
     const autorRole = user?.role;
 
@@ -153,7 +168,7 @@ export class AuditInterceptor implements NestInterceptor {
             newValue,
           });
         },
-        // Erros (4xx/5xx) não são auditados — a ação não foi concluída
+        // Erros (4xx/5xx) não são auditados — a ação não foi concluída com sucesso
       }),
     );
   }
@@ -167,6 +182,8 @@ export class AuditInterceptor implements NestInterceptor {
   }
 }
 
+// ── Sanitização de Payload ────────────────────────────────────────────────────
+
 /**
  * Sanitiza um payload antes de persistir no log de auditoria.
  * Remove campos sensíveis, trunca strings longas e arrays grandes (depth máx 2).
@@ -178,6 +195,7 @@ function sanitizePayload(obj: unknown, depth = 0): Record<string, unknown> {
   const clone: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    // Normaliza para lowercase para cobrir camelCase e snake_case (ex: passwordHash, password_hash)
     if (CAMPOS_SENSIVEIS.has(key.toLowerCase())) continue;
     clone[key] = sanitizeValue(value, depth);
   }
@@ -187,9 +205,9 @@ function sanitizePayload(obj: unknown, depth = 0): Record<string, unknown> {
 
 /** Sanitiza um valor individual (delega a helpers por tipo). */
 function sanitizeValue(value: unknown, depth: number): unknown {
-  if (typeof value === 'string')       return sanitizeString(value);
-  if (Array.isArray(value))            return sanitizeArray(value, depth);
-  if (typeof value === 'object' && value !== null) return sanitizePayload(value, depth + 1);
+  if (typeof value === 'string')                          return sanitizeString(value);
+  if (Array.isArray(value))                              return sanitizeArray(value, depth);
+  if (typeof value === 'object' && value !== null)       return sanitizePayload(value, depth + 1);
   return value;
 }
 
