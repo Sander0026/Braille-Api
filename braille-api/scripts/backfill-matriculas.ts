@@ -1,117 +1,62 @@
 /**
  * Script de Backfill de Matrículas
  *
- * Roda UMA ÚNICA VEZ para gerar matrículas para alunos e staff
- * que já existem no banco de dados. Após rodar, pode ser deletado.
+ * Roda UMA ÚNICA VEZ para gerar matrículas para Alunos e Staff
+ * que já existem no banco sem matrícula atribuída.
  *
- * Uso: npx ts-node -e "require('./scripts/backfill-matriculas')"
- *      OU: npx ts-node scripts/backfill-matriculas.ts
+ * Uso:
+ *   npx ts-node scripts/backfill-matriculas.ts
+ *
+ * Resultado esperado:
+ *   Alunos → formato YYYYNNNNN  (ex: 202600001)
+ *   Staff  → formato PYYYYNNNNN (ex: P202600001)
  */
 
 import { PrismaClient } from '@prisma/client';
+import { generateMatriculas } from './lib/matricula-generator.js';
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 const prisma = new PrismaClient();
 
-async function backfillAlunosMatriculas() {
-    const ano = new Date().getFullYear();
-    const prefix = `${ano}`;
+async function main(): Promise<void> {
+  const ano = new Date().getFullYear();
 
-    console.log(`🔍 Localizando teto numérico (matrícula mais alta) para o prefixo ${prefix}...`);
-    const ultimoRegistro = await prisma.aluno.findFirst({
-        where: { matricula: { startsWith: prefix } },
-        orderBy: { matricula: 'desc' },
-        select: { matricula: true }
-    });
+  console.log('🚀 Iniciando backfill de matrículas...\n');
 
-    let sequencial = 1;
-    if (ultimoRegistro?.matricula) {
-        // Separa o prefixo (ex: '2026') do sequencial ('00014')
-        const nroStr = ultimoRegistro.matricula.replace(prefix, '');
-        const maxNro = Number.parseInt(nroStr, 10);
-        if (!Number.isNaN(maxNro)) {
-            sequencial = maxNro + 1;
-        }
-    }
+  // Alunos e Staff processados sequencialmente para evitar sobrecarga no banco.
+  // Se o banco tiver alta capacidade, podem ser paralelizados com Promise.all.
 
-    const alunosSemMatricula = await prisma.aluno.findMany({
-        where: { matricula: null },
-        orderBy: { criadoEm: 'asc' },
-        select: { id: true, nomeCompleto: true },
-    });
+  const resultadoAlunos = await generateMatriculas(prisma, {
+    model: 'aluno',
+    prefix: `${ano}`,
+    padLength: 5,
+  });
 
-    if (alunosSemMatricula.length === 0) {
-        console.log(`🎓 Alertas de vazio: Nenhuma matrícula nova pendente para Alunos.`);
-        return;
-    }
+  console.log('');
 
-    console.log(`🎓 Gerando ${alunosSemMatricula.length} matrículas in-memory...`);
-    
-    // Geração na RAM (O(N)) - Desativa Code Smell de N+1 Loops
-    const updates = alunosSemMatricula.map((aluno) => {
-        const matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        sequencial++;
-        return prisma.aluno.update({ where: { id: aluno.id }, data: { matricula } });
-    });
+  const resultadoStaff = await generateMatriculas(prisma, {
+    model: 'user',
+    prefix: `P${ano}`,
+    padLength: 5,
+  });
 
-    console.log(`🚀 Comitando Lote Transacional (Prisma.$transaction)...`);
-    await prisma.$transaction(updates);
-    
-    console.log(`  ✅ OK! Ex de matrícula gerada: ${prefix}${String(sequencial - updates.length).padStart(5, '0')} a ${prefix}${String(sequencial - 1).padStart(5, '0')}.`);
+  // ── Relatório final ────────────────────────────────────────────────────────
+  console.log('\n══════════════════════════════════════════');
+  console.log('📊 RELATÓRIO FINAL — Backfill de Matrículas');
+  console.log('══════════════════════════════════════════');
+  console.log(`🎓 Alunos : ${resultadoAlunos.geradas} matriculado(s).`);
+  console.log(`👤 Staff  : ${resultadoStaff.geradas} matriculado(s).`);
+  console.log('══════════════════════════════════════════\n');
 }
 
-async function backfillStaffMatriculas() {
-    const ano = new Date().getFullYear();
-    const prefix = `P${ano}`;
-
-    console.log(`🔍 Localizando teto numérico (matrícula mais alta) para o prefixo da Staff ${prefix}...`);
-    const ultimoRegistro = await prisma.user.findFirst({
-        where: { matricula: { startsWith: prefix } },
-        orderBy: { matricula: 'desc' },
-        select: { matricula: true }
-    });
-
-    let sequencial = 1;
-    if (ultimoRegistro?.matricula) {
-        const nroStr = ultimoRegistro.matricula.replace(prefix, '');
-        const maxNro = Number.parseInt(nroStr, 10);
-        if (!Number.isNaN(maxNro)) {
-            sequencial = maxNro + 1;
-        }
-    }
-
-    const staffSemMatricula = await prisma.user.findMany({
-        where: { matricula: null },
-        orderBy: { criadoEm: 'asc' },
-        select: { id: true, nome: true },
-    });
-
-    if (staffSemMatricula.length === 0) {
-        console.log(`👤 Alertas de vazio: Nenhum funcionário pendente de matrícula.`);
-        return;
-    }
-
-    console.log(`👤 Gerando ${staffSemMatricula.length} matrículas para staff (Custo-Zero de Banco)...`);
-
-    const updates = staffSemMatricula.map((user) => {
-        const matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        sequencial++;
-        return prisma.user.update({ where: { id: user.id }, data: { matricula } });
-    });
-
-    console.log(`🚀 Comitando Lote Funcional via Transactions...`);
-    await prisma.$transaction(updates);
-
-    console.log(`  ✅ Concluído (Sequencial parou em: ${prefix}${String(sequencial - 1).padStart(5, '0')}).`);
-}
-
-async function main() {
-    console.log('🚀 Iniciando backfill de matrículas...\n');
-    await backfillAlunosMatriculas();
-    console.log('');
-    await backfillStaffMatriculas();
-    console.log('\n✅ Backfill concluído!');
-}
+// ── Execução com tratamento de erros estruturado ──────────────────────────────
 
 main()
-    .catch(console.error)
-    .finally(() => prisma.$disconnect());
+  .catch((err: unknown) => {
+    // Não expõe stack trace sensível — registra a mensagem de erro e encerra com código de falha.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`\n❌ Backfill falhou: ${message}`);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
