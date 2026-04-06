@@ -2,6 +2,18 @@ import { ExceptionFilter, Catch, ArgumentsHost, HttpStatus, Logger } from '@nest
 import { Prisma } from '@prisma/client';
 import { Response } from 'express';
 
+// ── Mapeamento de HTTP Status por código Prisma ────────────────────────────
+
+const HTTP_STATUS_BY_CODE: Record<string, number> = {
+  P2002: HttpStatus.CONFLICT,
+  P2003: HttpStatus.BAD_REQUEST,
+  P2025: HttpStatus.NOT_FOUND,
+};
+
+function resolveHttpStatus(code: string): number {
+  return HTTP_STATUS_BY_CODE[code] ?? HttpStatus.INTERNAL_SERVER_ERROR;
+}
+
 // ── Mensagens públicas — nunca expõem detalhes internos do banco ────────────
 
 const MSG_PUBLICAS: Record<string, string> = {
@@ -35,11 +47,7 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       this.logger.warn(
         `Prisma ${exception.code} | target: ${JSON.stringify(exception.meta?.target)} | ${exception.message}`,
       );
-      const status = exception.code === 'P2002'
-        ? HttpStatus.CONFLICT
-        : exception.code === 'P2003'
-          ? HttpStatus.BAD_REQUEST
-          : HttpStatus.NOT_FOUND;
+      const status = resolveHttpStatus(exception.code);
 
       return response.status(status).json({
         statusCode: status,
