@@ -1,12 +1,24 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UsePipes, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UsePipes, UseInterceptors, Req } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { ComunicadosService } from './comunicados.service';
+import { ComunicadosService, AuditUserParams } from './comunicados.service';
 import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
 import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { QueryComunicadoDto } from './dto/query-comunicado.dto';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+
+function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
+  return {
+    sub: req.user?.sub ?? '',
+    // @ts-ignore - 'nome' e 'email' existem no payload JWT customizado mas faltam na tipagem base
+    nome: req.user?.nome || req.user?.email || 'Desconhecido',
+    role: req.user?.role ?? 'USER',
+    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
+    userAgent: req.headers['user-agent'],
+  };
+}
 
 @ApiTags('Comunicados (Mural)')
 @Controller('comunicados')
@@ -19,8 +31,8 @@ export class ComunicadosController {
   @UseGuards(AuthGuard)
   @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Criar um novo comunicado' })
-  create(@Body() createComunicadoDto: CreateComunicadoDto) {
-    return this.comunicadosService.create(createComunicadoDto);
+  create(@Body() createComunicadoDto: CreateComunicadoDto, @Req() req: AuthenticatedRequest) {
+    return this.comunicadosService.create(createComunicadoDto, getAuditUser(req));
   }
 
   // 👇 ROTA PÚBLICA (Qualquer um pode ver)
@@ -47,8 +59,8 @@ export class ComunicadosController {
   @UseGuards(AuthGuard)
   @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Editar um comunicado' })
-  update(@Param('id') id: string, @Body() updateComunicadoDto: UpdateComunicadoDto) {
-    return this.comunicadosService.update(id, updateComunicadoDto);
+  update(@Param('id') id: string, @Body() updateComunicadoDto: UpdateComunicadoDto, @Req() req: AuthenticatedRequest) {
+    return this.comunicadosService.update(id, updateComunicadoDto, getAuditUser(req));
   }
 
   // 👇 ROTA PROTEGIDA (Precisa de login)
@@ -56,7 +68,7 @@ export class ComunicadosController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Excluir um comunicado' })
-  remove(@Param('id') id: string) {
-    return this.comunicadosService.remove(id);
+  remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.comunicadosService.remove(id, getAuditUser(req));
   }
 }

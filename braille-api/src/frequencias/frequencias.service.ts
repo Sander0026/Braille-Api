@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Inject } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
@@ -6,23 +6,32 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
 import { Role, AuditAcao } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { REQUEST } from '@nestjs/core';
+
+export interface AuditUserParams {
+  sub: string;
+  nome: string;
+  role: string;
+  ip?: string;
+  userAgent?: string;
+}
 
 @Injectable()
 export class FrequenciasService {
+  private readonly logger = new Logger(FrequenciasService.name);
+
   constructor(
-    private prisma: PrismaService,
-    private auditService: AuditLogService,
-    @Inject(REQUEST) private request: any,
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditLogService,
   ) { }
 
-  private getAutor() {
+  private getAutorPadrao(auditUser?: AuditUserParams) {
+    if (!auditUser) return {};
     return {
-      autorId: this.request.user?.sub,
-      autorNome: this.request.user?.nome,
-      autorRole: this.request.user?.role as Role,
-      ip: (this.request.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request.socket?.remoteAddress,
-      userAgent: this.request.headers?.['user-agent'],
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
     };
   }
 
@@ -43,14 +52,7 @@ export class FrequenciasService {
    * ADMIN pode ignorar a trava (bypass = true).
    */
   private validarDataHoje(dataAula: Date, bypass = false): void {
-    // if (bypass) return;
-    // if (!this.ehHoje(dataAula)) {
-    //   throw new ForbiddenException(
-    //     'Chamadas de datas anteriores não podem ser criadas ou alteradas. ' +
-    //     'A chamada só pode ser editada no próprio dia da aula. ' +
-    //     'Apenas administradores podem retificar chamadas antigas.'
-    //   );
-    // }
+    // Validação de retroatividade temporariamente relaxada conforme regra de negócio
   }
 
   /**
@@ -77,8 +79,9 @@ export class FrequenciasService {
 
   // ─── CRUD Principal ────────────────────────────────────────────────────────
 
-  async create(dto: CreateFrequenciaDto, requesterRole: Role = Role.PROFESSOR) {
+  async create(dto: CreateFrequenciaDto, auditUser?: AuditUserParams) {
     const dataConvertida = new Date(dto.dataAula);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
 
     // ADMIN pode lançar chamada retroativa; professor só no dia
     this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
@@ -102,18 +105,16 @@ export class FrequenciasService {
   // ─── Lote Absoluto (Fase 23) ──────────────────────────────────────────────────
   async salvarLote(
     dto: CreateFrequenciaLoteDto,
-    userId: string,
-    userNome: string,
-    requesterRole: Role,
+    auditUser?: AuditUserParams,
   ) {
     const dataConvertida = new Date(dto.dataAula);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
 
     // Validações básicas (Bypass só pro Admin)
     this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
     await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
 
-    // Identifica o IP para o Log Manual (migrado pro getAutor centralizado)
-    const autorContext = this.getAutor();
+    const autorContext = this.getAutorPadrao(auditUser);
 
     // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
     try {
@@ -208,7 +209,9 @@ export class FrequenciasService {
       // Dispara a auditoria de forma sequencial, no background, para não exaurir o Pool de Conexões do Prisma nem a transação.
       Promise.resolve().then(async () => {
         for (const payload of auditPayloads) {
-          await this.auditService.registrar(payload).catch(() => { });
+          await this.auditService.registrar(payload).catch((e: unknown) => {
+            this.logger.warn(`Falha não bloqueante ao registrar log de lote de Frequencia. Aluno ID: ${payload.registroId}. Erro: ${(e as Error).message}`);
+          });
         }
       });
 
@@ -340,8 +343,9 @@ export class FrequenciasService {
     return frequencia;
   }
 
-  async update(id: string, dto: UpdateFrequenciaDto, requesterRole: Role = Role.PROFESSOR) {
+  async update(id: string, dto: UpdateFrequenciaDto, auditUser?: AuditUserParams) {
     const frequencia = await this.findOne(id);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
 
     // Professor só edita no dia; ADMIN pode retificar qualquer data
     this.validarDataHoje(frequencia.dataAula, requesterRole === Role.ADMIN);
@@ -355,8 +359,9 @@ export class FrequenciasService {
     return this.prisma.frequencia.update({ where: { id }, data: dadosParaAtualizar });
   }
 
-  async remove(id: string, requesterRole: Role = Role.PROFESSOR) {
+  async remove(id: string, auditUser?: AuditUserParams) {
     const frequencia = await this.findOne(id);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
     this.validarDataHoje(frequencia.dataAula, requesterRole === Role.ADMIN);
     await this.verificarDiarioAberto(frequencia.turmaId, frequencia.dataAula, requesterRole);
     return this.prisma.frequencia.delete({ where: { id } });
@@ -372,10 +377,11 @@ export class FrequenciasService {
   async fecharDiario(
     turmaId: string,
     dataAula: string,
-    userId: string,
-    requesterRole: Role,
+    auditUser?: AuditUserParams,
   ) {
     const data = new Date(dataAula);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+    const userId = auditUser?.sub || 'desconhecido';
 
     // Professor só fecha o diário do dia atual
     if (requesterRole !== Role.ADMIN && !this.ehHoje(data)) {
@@ -414,7 +420,8 @@ export class FrequenciasService {
   /**
    * ADMIN reabre o diário para retificação. Volta fechado = false.
    */
-  async reabrirDiario(turmaId: string, dataAula: string, requesterRole: Role) {
+  async reabrirDiario(turmaId: string, dataAula: string, auditUser?: AuditUserParams) {
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
     if (requesterRole !== Role.ADMIN) {
       throw new ForbiddenException('Somente administradores podem reabrir um diário fechado.');
     }

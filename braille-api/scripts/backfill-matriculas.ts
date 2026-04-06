@@ -16,30 +16,68 @@ async function backfillAlunosMatriculas() {
     const ano = new Date().getFullYear();
     const prefix = `${ano}`;
 
+    console.log(`🔍 Localizando teto numérico (matrícula mais alta) para o prefixo ${prefix}...`);
+    const ultimoRegistro = await prisma.aluno.findFirst({
+        where: { matricula: { startsWith: prefix } },
+        orderBy: { matricula: 'desc' },
+        select: { matricula: true }
+    });
+
+    let sequencial = 1;
+    if (ultimoRegistro?.matricula) {
+        // Separa o prefixo (ex: '2026') do sequencial ('00014')
+        const nroStr = ultimoRegistro.matricula.replace(prefix, '');
+        const maxNro = Number.parseInt(nroStr, 10);
+        if (!Number.isNaN(maxNro)) {
+            sequencial = maxNro + 1;
+        }
+    }
+
     const alunosSemMatricula = await prisma.aluno.findMany({
         where: { matricula: null },
         orderBy: { criadoEm: 'asc' },
         select: { id: true, nomeCompleto: true },
     });
 
-    console.log(`🎓 Gerando matrículas para ${alunosSemMatricula.length} alunos...`);
-    let sequencial = 1;
-
-    for (const aluno of alunosSemMatricula) {
-        let matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        while (await prisma.aluno.findUnique({ where: { matricula } })) {
-            sequencial++;
-            matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        }
-        await prisma.aluno.update({ where: { id: aluno.id }, data: { matricula } });
-        console.log(`  ✅ ${aluno.nomeCompleto} → ${matricula}`);
-        sequencial++;
+    if (alunosSemMatricula.length === 0) {
+        console.log(`🎓 Alertas de vazio: Nenhuma matrícula nova pendente para Alunos.`);
+        return;
     }
+
+    console.log(`🎓 Gerando ${alunosSemMatricula.length} matrículas in-memory...`);
+    
+    // Geração na RAM (O(N)) - Desativa Code Smell de N+1 Loops
+    const updates = alunosSemMatricula.map((aluno) => {
+        const matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
+        sequencial++;
+        return prisma.aluno.update({ where: { id: aluno.id }, data: { matricula } });
+    });
+
+    console.log(`🚀 Comitando Lote Transacional (Prisma.$transaction)...`);
+    await prisma.$transaction(updates);
+    
+    console.log(`  ✅ OK! Ex de matrícula gerada: ${prefix}${String(sequencial - updates.length).padStart(5, '0')} a ${prefix}${String(sequencial - 1).padStart(5, '0')}.`);
 }
 
 async function backfillStaffMatriculas() {
     const ano = new Date().getFullYear();
     const prefix = `P${ano}`;
+
+    console.log(`🔍 Localizando teto numérico (matrícula mais alta) para o prefixo da Staff ${prefix}...`);
+    const ultimoRegistro = await prisma.user.findFirst({
+        where: { matricula: { startsWith: prefix } },
+        orderBy: { matricula: 'desc' },
+        select: { matricula: true }
+    });
+
+    let sequencial = 1;
+    if (ultimoRegistro?.matricula) {
+        const nroStr = ultimoRegistro.matricula.replace(prefix, '');
+        const maxNro = Number.parseInt(nroStr, 10);
+        if (!Number.isNaN(maxNro)) {
+            sequencial = maxNro + 1;
+        }
+    }
 
     const staffSemMatricula = await prisma.user.findMany({
         where: { matricula: null },
@@ -47,19 +85,23 @@ async function backfillStaffMatriculas() {
         select: { id: true, nome: true },
     });
 
-    console.log(`👤 Gerando matrículas para ${staffSemMatricula.length} funcionários...`);
-    let sequencial = 1;
-
-    for (const user of staffSemMatricula) {
-        let matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        while (await prisma.user.findUnique({ where: { matricula } })) {
-            sequencial++;
-            matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        }
-        await prisma.user.update({ where: { id: user.id }, data: { matricula } });
-        console.log(`  ✅ ${user.nome} → ${matricula}`);
-        sequencial++;
+    if (staffSemMatricula.length === 0) {
+        console.log(`👤 Alertas de vazio: Nenhum funcionário pendente de matrícula.`);
+        return;
     }
+
+    console.log(`👤 Gerando ${staffSemMatricula.length} matrículas para staff (Custo-Zero de Banco)...`);
+
+    const updates = staffSemMatricula.map((user) => {
+        const matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
+        sequencial++;
+        return prisma.user.update({ where: { id: user.id }, data: { matricula } });
+    });
+
+    console.log(`🚀 Comitando Lote Funcional via Transactions...`);
+    await prisma.$transaction(updates);
+
+    console.log(`  ✅ Concluído (Sequencial parou em: ${prefix}${String(sequencial - 1).padStart(5, '0')}).`);
 }
 
 async function main() {

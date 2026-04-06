@@ -1,34 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditAcao } from '@prisma/client';
-
-export interface AuditOptions {
-    entidade: string;
-    registroId?: string;
-    acao: AuditAcao;
-    autorId?: string;
-    autorNome?: string;
-    autorRole?: string;
-    ip?: string;
-    userAgent?: string;
-    oldValue?: object;
-    newValue?: object;
-}
-
-export interface QueryAuditDto {
-    page?: number;
-    limit?: number;
-    entidade?: string;
-    registroId?: string;
-    autorId?: string;
-    acao?: AuditAcao;
-    de?: string;   // ISO date start
-    ate?: string;  // ISO date end
-}
+import { AuditOptions } from './interfaces/audit-options.interface';
+import { QueryAuditDto } from './dto/query-audit.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 @Injectable()
 export class AuditLogService {
-    constructor(private prisma: PrismaService) { }
+    private readonly logger = new Logger(AuditLogService.name);
+
+    constructor(private readonly prisma: PrismaService) { }
 
     /**
      * Registra um evento de auditoria. Fire-and-forget — erros são silenciados
@@ -36,7 +16,7 @@ export class AuditLogService {
      */
     async registrar(opts: AuditOptions): Promise<void> {
         // Serialização segura: descarta funções e objetos binários (ex: StreamableFile)
-        const safeJson = (val: any): any => {
+        const safeJson = (val: unknown): any => {
             if (val === undefined || val === null) return null;
             try { return JSON.parse(JSON.stringify(val)); } catch { return null; }
         };
@@ -55,26 +35,30 @@ export class AuditLogService {
                     newValue: safeJson(opts.newValue),
                 },
             });
-        } catch (err) {
+        } catch (err: unknown) {
             // Falha de auditoria nunca deve derrubar a requisição
-            console.warn('[AuditLog] Falha ao registrar evento:', err);
+            const erroMsg = err instanceof Error ? err.message : 'Falha desconhecida';
+            this.logger.warn(`Falha ao registrar evento de auditoria (RegistroId: ${opts.registroId}): ${erroMsg}`);
         }
     }
 
     // ─── Consultas ───────────────────────────────────────────────────────────
 
-    async findAll(query: QueryAuditDto) {
+    /**
+     * Retorna a lista completa de logs com paginação e filtros opcionais.
+     */
+    async findAll(query: QueryAuditDto): Promise<ApiResponse<any>> {
         const page = Number(query.page) || 1;
         const limit = Number(query.limit) || 20;
         const { entidade, registroId, autorId, acao, de, ate } = query;
         const skip = (page - 1) * limit;
-
 
         const where: any = {};
         if (entidade) where.entidade = entidade;
         if (registroId) where.registroId = registroId;
         if (autorId) where.autorId = autorId;
         if (acao) where.acao = acao;
+        
         if (de || ate) {
             where.criadoEm = {};
             if (de) where.criadoEm.gte = new Date(de);
@@ -91,27 +75,36 @@ export class AuditLogService {
             this.prisma.auditLog.count({ where }),
         ]);
 
-        return {
+        return new ApiResponse(true, {
             data: logs,
             meta: { total, page, lastPage: Math.ceil(total / limit) },
-        };
+        }, 'Logs recuperados com sucesso.');
     }
 
-    /** Retorna os logs de um registro específico (ex: histórico de um Aluno). */
-    async findByRegistro(entidade: string, registroId: string) {
-        return this.prisma.auditLog.findMany({
+    /** 
+     * Retorna o histórico de auditoria restrito de um registro específico (ex: histórico de um Aluno). 
+     */
+    async findByRegistro(entidade: string, registroId: string): Promise<ApiResponse<any>> {
+        const logs = await this.prisma.auditLog.findMany({
             where: { entidade, registroId },
             orderBy: { criadoEm: 'desc' },
             take: 50,
         });
+
+        return new ApiResponse(true, logs, `Histórico de ${entidade} carregado.`);
     }
 
-    /** Estatísticas rápidas para o dashboard do painel de auditoria. */
-    async stats() {
+    /** 
+     * Estatísticas rápidas para o dashboard do painel de auditoria. 
+     */
+    async stats(): Promise<ApiResponse<any>> {
+        const inicioHoje = new Date();
+        inicioHoje.setHours(0, 0, 0, 0);
+
         const [total, hoje, porAcao] = await Promise.all([
             this.prisma.auditLog.count(),
             this.prisma.auditLog.count({
-                where: { criadoEm: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
+                where: { criadoEm: { gte: inicioHoje } },
             }),
             this.prisma.auditLog.groupBy({
                 by: ['acao'],
@@ -121,10 +114,11 @@ export class AuditLogService {
             }),
         ]);
 
-        return {
+        return new ApiResponse(true, {
             totalLogs: total,
             logsHoje: hoje,
             topAcoes: porAcao.map(a => ({ acao: a.acao, total: a._count._all })),
-        };
+        }, 'Estatísticas de auditoria carregadas.');
     }
 }
+

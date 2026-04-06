@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,8 +7,8 @@ import { QueryUserDto } from './dto/query-user.dto';
 import { gerarMatriculaStaff } from '../common/helpers/matricula.helper';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAcao, Role } from '@prisma/client';
-import { REQUEST } from '@nestjs/core';
 import { UploadService } from '../upload/upload.service';
+import { AuditUserParams } from '../upload/upload.controller';
 
 // Senha padrão definida pela instituição (deve ser trocada no primeiro login)
 // Fallback ofuscado para evitar falso-positivo em analisador estático (Snyk)
@@ -19,9 +19,9 @@ const SENHA_PADRAO = process.env.SENHA_PADRAO_USUARIO || ['I', 'l', 'b', 'e', 's
  * Ex: "joao.silva" ou "joao.silva2"
  */
 async function gerarUsername(nome: string, prisma: PrismaService): Promise<string> {
-  const partes = nome.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/);
-  const primeiro = partes[0].replace(/[^a-z0-9]/g, '');
-  const ultimo = partes.length > 1 ? partes[partes.length - 1].replace(/[^a-z0-9]/g, '') : '';
+  const partes = nome.trim().toLowerCase().normalize('NFD').replaceAll(/[\u0300-\u036f]/g, '').split(/\s+/);
+  const primeiro = partes[0].replaceAll(/[^a-z0-9]/g, '');
+  const ultimo = partes.length > 1 ? partes.at(-1)?.replaceAll(/[^a-z0-9]/g, '') : '';
   const base = ultimo ? `${primeiro}.${ultimo}` : primeiro;
 
   let username = base;
@@ -38,23 +38,12 @@ async function gerarUsername(nome: string, prisma: PrismaService): Promise<strin
 @Injectable()
 export class UsersService {
   constructor(
-    private prisma: PrismaService,
-    private auditService: AuditLogService,
-    private uploadService: UploadService,
-    @Inject(REQUEST) private request: any,
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditLogService,
+    private readonly uploadService: UploadService,
   ) { }
 
-  private getAutor() {
-    return {
-      autorId: this.request.user?.sub,
-      autorNome: this.request.user?.nome,
-      autorRole: this.request.user?.role as Role,
-      ip: (this.request.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request.socket?.remoteAddress,
-      userAgent: this.request.headers?.['user-agent'],
-    };
-  }
-
-  async create(createUserDto: CreateUserDto) {
+  async create(createUserDto: CreateUserDto, auditUser: AuditUserParams) {
     const { nome, cpf, email, role, telefone, cep, rua, numero, complemento, bairro, cidade, uf } = createUserDto;
 
     // 1. Verificar se CPF já existe
@@ -103,7 +92,11 @@ export class UsersService {
       entidade: 'User',
       registroId: user.id,
       acao: AuditAcao.CRIAR,
-      ...this.getAutor(),
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
       // Como não temos a requisição HTTP completa aqui, salvamos o mínimo possível ou passamos autor via payload futuramente
       newValue: result,
     });
@@ -118,7 +111,7 @@ export class UsersService {
     };
   }
 
-  async reativar(id: string) {
+  async reativar(id: string, auditUser: AuditUserParams) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -140,7 +133,11 @@ export class UsersService {
       entidade: 'User',
       registroId: id,
       acao: AuditAcao.RESTAURAR,
-      ...this.getAutor(),
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
       oldValue: { statusAtivo: user.statusAtivo, excluido: user.excluido, precisaTrocarSenha: user.precisaTrocarSenha },
       newValue: { statusAtivo: true, excluido: false, precisaTrocarSenha: true, mensagem: 'Senha resetada e usuário reativado.' },
     });
@@ -156,7 +153,7 @@ export class UsersService {
   }
 
   async checkCpf(cpf?: string) {
-    const cpfLimpo = (cpf ?? '').replace(/\D/g, '');
+    const cpfLimpo = (cpf ?? '').replaceAll(/\D/g, '');
     if (!cpfLimpo) return { status: 'livre' };
 
     const user = await this.prisma.user.findUnique({
@@ -220,21 +217,21 @@ export class UsersService {
     };
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  async update(id: string, updateUserDto: UpdateUserDto, auditUser: AuditUserParams) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     // Se a foto de perfil for atualizada, deleta o arquivo antigo do Cloudinary
     if (updateUserDto.fotoPerfil !== undefined && user.fotoPerfil && updateUserDto.fotoPerfil !== user.fotoPerfil) {
       try {
-        await this.uploadService.deleteFile(user.fotoPerfil);
+        await this.uploadService.deleteFile(user.fotoPerfil, auditUser);
       } catch (e: any) {
         console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
       }
     }
 
     if (updateUserDto.cpf) {
-      const cpfLimpo = updateUserDto.cpf.replace(/\D/g, '');
+      const cpfLimpo = updateUserDto.cpf.replaceAll(/\D/g, '');
       const cpfExists = await this.prisma.user.findUnique({ where: { cpf: cpfLimpo } });
       if (cpfExists && cpfExists.id !== id) {
         throw new ConflictException('Este CPF já está sendo usado por outro usuário no sistema.');
@@ -261,7 +258,11 @@ export class UsersService {
       entidade: 'User',
       registroId: id,
       acao: AuditAcao.ATUALIZAR,
-      ...this.getAutor(),
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
       oldValue: Object.fromEntries(Object.entries(user).filter(([k]) => k !== 'senha')),
       newValue: userAtualizado,
     });
@@ -269,12 +270,12 @@ export class UsersService {
     return userAtualizado;
   }
 
-  async remove(id: string) {
+  async remove(id: string, auditUser: AuditUserParams) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     // Impedir auto-exclusão: um admin não pode desativar a si mesmo
-    const autorId = this.request.user?.sub;
+    const autorId = auditUser.sub;
     if (autorId && autorId === id) {
       throw new BadRequestException('Não é possível desativar o usuário que está logado.');
     }
@@ -285,7 +286,11 @@ export class UsersService {
       entidade: 'User',
       registroId: id,
       acao: AuditAcao.MUDAR_STATUS,
-      ...this.getAutor(),
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
       oldValue: { statusAtivo: true },
       newValue: { statusAtivo: false },
     });
@@ -293,7 +298,7 @@ export class UsersService {
     return result;
   }
 
-  async restore(id: string) {
+  async restore(id: string, auditUser: AuditUserParams) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: true } });
@@ -302,7 +307,11 @@ export class UsersService {
       entidade: 'User',
       registroId: id,
       acao: AuditAcao.RESTAURAR,
-      ...this.getAutor(),
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
       oldValue: { statusAtivo: false },
       newValue: { statusAtivo: true },
     });
@@ -310,7 +319,7 @@ export class UsersService {
     return result;
   }
 
-  async resetPassword(id: string) {
+  async resetPassword(id: string, auditUser: AuditUserParams) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     const defaultPasswordHashed = await bcrypt.hash(SENHA_PADRAO, 10);
@@ -324,7 +333,11 @@ export class UsersService {
       entidade: 'User',
       registroId: id,
       acao: AuditAcao.ATUALIZAR,
-      ...this.getAutor(),
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
       oldValue: { precisaTrocarSenha: user.precisaTrocarSenha },
       newValue: { precisaTrocarSenha: true, mensagem: 'Senha resetada pelo administrador com senha padrão.' },
     });
@@ -332,12 +345,12 @@ export class UsersService {
     return result;
   }
 
-  async removeHard(id: string) {
+  async removeHard(id: string, auditUser: AuditUserParams) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     // Impedir auto-exclusão permanente
-    const autorId = this.request.user?.sub;
+    const autorId = auditUser.sub;
     if (autorId && autorId === id) {
       throw new BadRequestException('Não é possível excluir o usuário que está logado.');
     }
@@ -348,7 +361,11 @@ export class UsersService {
       entidade: 'User',
       registroId: id,
       acao: AuditAcao.ARQUIVAR,
-      ...this.getAutor(),
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role as Role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
       oldValue: { excluido: false },
       newValue: { excluido: true },
     });

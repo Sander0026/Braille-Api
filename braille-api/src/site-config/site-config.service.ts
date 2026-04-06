@@ -1,8 +1,8 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { REQUEST } from '@nestjs/core';
 import { AuditAcao, Role } from '@prisma/client';
+import { AuditUserParams } from './site-config.controller';
 
 // Valores padrão usados como fallback quando nao ha registro no banco
 export const SITE_CONFIG_DEFAULTS: Record<string, string> = {
@@ -66,20 +66,9 @@ export const SECAO_DEFAULTS: Record<string, Record<string, string>> = {
 @Injectable()
 export class SiteConfigService {
     constructor(
-        private prisma: PrismaService,
-        private auditService: AuditLogService,
-        @Inject(REQUEST) private request: any,
+        private readonly prisma: PrismaService,
+        private readonly auditService: AuditLogService,
     ) { }
-
-    private getAutor() {
-        return {
-            autorId: this.request?.user?.sub,
-            autorNome: this.request?.user?.nome,
-            autorRole: this.request?.user?.role as Role,
-            ip: (this.request?.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() || this.request?.socket?.remoteAddress,
-            userAgent: this.request?.headers?.['user-agent'],
-        };
-    }
 
     // ── Configs gerais ──────────────────────────────────────
     async getAll(): Promise<Record<string, string>> {
@@ -89,7 +78,7 @@ export class SiteConfigService {
         return result;
     }
 
-    async updateMany(dados: Record<string, string>): Promise<void> {
+    async updateMany(dados: Record<string, string>, auditUser: AuditUserParams): Promise<void> {
         const oldState = await this.getAll();
         const chaves = Object.keys(dados);
 
@@ -108,7 +97,11 @@ export class SiteConfigService {
             entidade: 'ConteudoSite',
             registroId: 'ConfigGeral',
             acao: AuditAcao.ATUALIZAR,
-            ...this.getAutor(),
+            autorId: auditUser.sub,
+            autorNome: auditUser.nome,
+            autorRole: auditUser.role as Role,
+            ip: auditUser.ip,
+            userAgent: auditUser.userAgent,
             oldValue: oldState,
             newValue: newState,
         });
@@ -136,7 +129,7 @@ export class SiteConfigService {
         return secoes[secao] ?? {};
     }
 
-    async updateSecao(secao: string, dados: Record<string, string>): Promise<void> {
+    async updateSecao(secao: string, dados: Record<string, string>, auditUser: AuditUserParams): Promise<void> {
         const oldState = await this.getSecao(secao);
 
         // deleteMany + createMany: 2 operações vs N upserts sequenciais
@@ -154,7 +147,11 @@ export class SiteConfigService {
             entidade: 'ConteudoSecao',
             registroId: secao,
             acao: AuditAcao.ATUALIZAR,
-            ...this.getAutor(),
+            autorId: auditUser.sub,
+            autorNome: auditUser.nome,
+            autorRole: auditUser.role as Role,
+            ip: auditUser.ip,
+            userAgent: auditUser.userAgent,
             oldValue: oldState,
             newValue: newState,
         });

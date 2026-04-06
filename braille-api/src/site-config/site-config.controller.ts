@@ -1,8 +1,28 @@
-import { Controller, Get, Patch, Body, UseGuards, Param, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Patch, Body, UseGuards, Param, UsePipes, ValidationPipe, Req } from '@nestjs/common';
 import { SiteConfigService } from './site-config.service';
 import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+
+export interface AuditUserParams {
+  sub: string;
+  nome: string;
+  role: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
+  return {
+    sub: req.user?.sub ?? '',
+    // @ts-ignore
+    nome: req.user?.nome || req.user?.email || 'Desconhecido',
+    role: req.user?.role ?? 'USER',
+    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
+    userAgent: req.headers['user-agent'],
+  };
+}
 
 @ApiTags('CMS — Configurações do Site')
 @Controller('site-config')
@@ -34,8 +54,8 @@ export class SiteConfigController {
     @Patch()
     @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }), new SanitizeHtmlPipe())
     @ApiOperation({ summary: 'Atualiza configurações gerais do site' })
-    updateAll(@Body() body: Record<string, string>) {
-        return this.service.updateMany(body);
+    updateAll(@Body() body: Record<string, string>, @Req() req: AuthenticatedRequest) {
+        return this.service.updateMany(body, getAuditUser(req));
     }
 
     @ApiBearerAuth()
@@ -43,7 +63,7 @@ export class SiteConfigController {
     @Patch('secoes/:secao')
     @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }), new SanitizeHtmlPipe())
     @ApiOperation({ summary: 'Atualiza o conteúdo de uma seção' })
-    updateSecao(@Param('secao') secao: string, @Body() body: Record<string, string>) {
-        return this.service.updateSecao(secao, body);
+    updateSecao(@Param('secao') secao: string, @Body() body: Record<string, string>, @Req() req: AuthenticatedRequest) {
+        return this.service.updateSecao(secao, body, getAuditUser(req));
     }
 }
