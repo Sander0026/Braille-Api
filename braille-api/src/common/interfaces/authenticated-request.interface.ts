@@ -17,4 +17,6 @@ export interface AuthenticatedUser {
  */
 export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
+  /** Valor anterior do registo, populado por middlewares antes da mutação (para auditoria). */
+  auditOldValue?: unknown;
 }

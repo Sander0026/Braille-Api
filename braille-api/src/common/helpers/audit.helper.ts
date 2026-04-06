@@ -29,9 +29,9 @@ export function getAuditUser(req: AuthenticatedRequest): AuditUser {
 
 /**
  * Resolve o IP real do cliente com suporte a proxies reversos.
- * Prioriza x-forwarded-for, depois x-real-ip, e por fim o socket.
+ * Exportada para reutilização no AuditInterceptor — elimina duplicação.
  */
-function resolverIp(req: AuthenticatedRequest): string | undefined {
+export function resolverIp(req: AuthenticatedRequest): string | undefined {
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {
     const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];

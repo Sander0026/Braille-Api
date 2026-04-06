@@ -1,158 +1,219 @@
 import {
-    Injectable,
-    NestInterceptor,
-    ExecutionContext,
-    CallHandler,
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
 } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { Observable }      from 'rxjs';
+import { tap }             from 'rxjs/operators';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { AuditAcao } from '@prisma/client';
-import type { Request } from 'express';
+import { AuditAcao }       from '@prisma/client';
+import type { Request }    from 'express';
 import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
+import { resolverIp }      from '../helpers/audit.helper';
+
+// ── Mapas de Heurística ───────────────────────────────────────────────────────
 
 /**
- * Mapeamento de método HTTP + rota → AuditAcao.
- * O interceptor usa heurísticas baseadas no método e no path para decidir a ação.
+ * Mapeamento de método HTTP → AuditAcao.
+ * Funções puras que recebem o path e retornam a ação correspondente.
  */
 const ACAO_MAP: Record<string, (path: string) => AuditAcao | null> = {
-    POST: (path: string) => {
-        if (path.includes('/alunos/')) return AuditAcao.MATRICULAR;
-        if (path.includes('/diario/fechar')) return AuditAcao.FECHAR_DIARIO;
-        if (path.includes('/diario/reabrir')) return AuditAcao.REABRIR_DIARIO;
-        if (path.includes('/auth/login')) return AuditAcao.LOGIN;
-        return AuditAcao.CRIAR;
-    },
-    PATCH: (path: string) => {
-        if (path.includes('/restaurar')) return AuditAcao.RESTAURAR;
-        if (path.includes('/status')) return AuditAcao.MUDAR_STATUS;
-        return AuditAcao.ATUALIZAR;
-    },
-    PUT: () => AuditAcao.ATUALIZAR,
-    DELETE: (path: string) => {
-        if (path.includes('/alunos/')) return AuditAcao.DESMATRICULAR;
-        return AuditAcao.EXCLUIR;
-    },
+  POST: (path) => {
+    if (path.includes('/alunos/'))        return AuditAcao.MATRICULAR;
+    if (path.includes('/diario/fechar'))  return AuditAcao.FECHAR_DIARIO;
+    if (path.includes('/diario/reabrir')) return AuditAcao.REABRIR_DIARIO;
+    if (path.includes('/auth/login'))     return AuditAcao.LOGIN;
+    return AuditAcao.CRIAR;
+  },
+  PATCH: (path) => {
+    if (path.includes('/restaurar')) return AuditAcao.RESTAURAR;
+    if (path.includes('/status'))    return AuditAcao.MUDAR_STATUS;
+    return AuditAcao.ATUALIZAR;
+  },
+  PUT:    ()     => AuditAcao.ATUALIZAR,
+  DELETE: (path) => {
+    if (path.includes('/alunos/')) return AuditAcao.DESMATRICULAR;
+    return AuditAcao.EXCLUIR;
+  },
 };
 
-/** Entidades auditadas: extrai o nome a partir do primeiro segmento da rota após /api/ */
+/** Mapeamento de segmento de rota → nome canónico da entidade auditada. */
 const ENTIDADE_MAP: Record<string, string> = {
-    'turmas': 'Turma',
-    'frequencias': 'Frequencia',
-    'beneficiaries': 'Aluno',
-    'usuarios': 'User',
-    'auth': 'Auth',
-    'audit-log': 'AuditLog',
-    'comunicados': 'Comunicado',
+  turmas:        'Turma',
+  frequencias:   'Frequencia',
+  beneficiaries: 'Aluno',
+  usuarios:      'User',
+  auth:          'Auth',
+  'audit-log':   'AuditLog',
+  comunicados:   'Comunicado',
 };
+
+/**
+ * Paths excluídos da auditoria automática:
+ * - Infra (docs, health)
+ * - Módulos já instrumentados manualmente no Service (evita log duplicado)
+ */
+const PATHS_EXCLUIDOS = [
+  '/api-docs',
+  '/health',
+  '/audit-log',
+  '/frequencias',
+  '/turmas',
+  '/beneficiaries',
+  '/users',
+  '/comunicados',
+  '/site-config',
+] as const;
+
+// ── Campos sensíveis a remover do payload antes de persistir ──────────────────
+const CAMPOS_SENSIVEIS = new Set([
+  'senha', 'password', 'hash', 'passwordHash',
+  'senhaHash', 'token', 'refreshToken', 'secret',
+]);
+
+// ── Interceptor ───────────────────────────────────────────────────────────────
 
 /**
  * AuditInterceptor — interceptor global que registra automaticamente
  * todas as operações de mutação (POST, PATCH, PUT, DELETE) nas rotas críticas.
  *
  * Estratégia: fire-and-forget via tap(). Erros de auditoria nunca bloqueiam a resposta.
+ *
+ * Melhorias em relação à versão anterior:
+ * - @ts-ignore removido (nome? / email? já existem em AuthenticatedUser)
+ * - IP resolution centralizado em resolverIp() de common/helpers/audit.helper.ts
+ * - (req as any).auditOldValue → req.auditOldValue (tipado na interface)
+ * - sanitizePayload() recursivo (depth=2) — remove campos sensíveis em níveis aninhados
+ * - Strings > 500 chars truncadas — evita blobs de base64 nos logs
  */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
-    constructor(private readonly auditLogService: AuditLogService) { }
+  constructor(private readonly auditLogService: AuditLogService) {}
 
-    intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-        const req = context.switchToHttp().getRequest<Request>();
-        const method = req.method;
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const req    = context.switchToHttp().getRequest<Request>();
+    const method = req.method;
 
-        // Só auditar mutações
-        const acaoFn = ACAO_MAP[method];
-        if (!acaoFn) return next.handle();
+    // Só auditar mutações (POST, PATCH, PUT, DELETE)
+    const acaoFn = ACAO_MAP[method];
+    if (!acaoFn) return next.handle();
 
-        const path = req.path.toLowerCase();
+    const path = req.path.toLowerCase();
 
-        // Ignorar rotas de saúde / swagger / a própria rota de auditoria (evita recursão)
-        // Ignorar também entidades que já foram completamente instrumentadas manualmente via Service (evita log duplicado)!
-        if (
-            path.startsWith('/api-docs') ||
-            path === '/health' ||
-            path.includes('/audit-log') ||
-            path.includes('/frequencias') ||
-            path.includes('/turmas') ||
-            path.includes('/beneficiaries') || // Controller name is 'beneficiaries'
-            path.includes('/users') ||         // Controller name is 'users'
-            path.includes('/comunicados') ||
-            path.includes('/site-config')
-        ) return next.handle();
-
-
-        const acao = acaoFn(path);
-        if (!acao) return next.handle();
-
-        // Extrai entidade a partir do path (ex: /api/turmas/... → "Turma")
-        const segments = path.replace('/api/', '').split('/');
-        const entidade = ENTIDADE_MAP[segments[0]] ?? segments[0];
-
-        // ID do registro: segundo ou terceiro segmento dependendo da rota
-        const registroId = this.extrairRegistroId(segments);
-
-        // Extrai dados do usuário autenticado (populado pelo AuthGuard)
-        const reqAuth = req as AuthenticatedRequest;
-        const user = reqAuth.user;
-        const autorId = user?.sub ?? undefined;
-        // @ts-ignore - 'nome' e 'email' podem estar contidos no Payload JWT mas escapam da tipagem restrita padrão
-        const autorNome = user?.nome ?? user?.email ?? undefined;
-        const autorRole = user?.role ?? undefined;
-
-        // IP e User-Agent
-        const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-            ?? req.socket?.remoteAddress
-            ?? undefined;
-        const userAgent = req.headers['user-agent'] ?? undefined;
-
-        return next.handle().pipe(
-            tap({
-                next: (responseBody: any) => {
-                    // newValue = resposta do endpoint (o objeto criado/atualizado)
-                    // Limitar tamanho para não estourar o banco com payloads enormes
-                    const newValue = responseBody ? this.sanitize(responseBody) : undefined;
-
-                    this.auditLogService.registrar({
-                        entidade,
-                        registroId: registroId ?? responseBody?.id ?? undefined,
-                        acao,
-                        autorId,
-                        autorNome,
-                        autorRole,
-                        ip,
-                        userAgent,
-                        oldValue: (req as any).auditOldValue ? this.sanitize((req as any).auditOldValue) : undefined,
-                        newValue,
-                    });
-                },
-                // Em caso de erro (4xx/5xx), não registra — a ação não foi concluída
-            })
-        );
+    // Cláusula de guarda: paths de infra ou módulos já instrumentados
+    if (PATHS_EXCLUIDOS.some(excluido => path.startsWith(excluido))) {
+      return next.handle();
     }
 
-    private extrairRegistroId(segments: string[]): string | undefined {
-        // /turmas/:id → segments[1]
-        // /turmas/:id/alunos/:alunoId → segments[1]
-        // /frequencias/diario/fechar/:turmaId/:data → segments[3]
-        if (segments[0] === 'frequencias' && segments[1] === 'diario') {
-            return segments[3]; // turmaId
-        }
-        return segments[1] && segments[1].length > 0 ? segments[1] : undefined;
-    }
+    const acao = acaoFn(path);
+    if (!acao) return next.handle();
 
-    /** Remove campos sensíveis e trunca o objeto para evitar payloads gigantes. */
-    private sanitize(obj: any): object {
-        if (typeof obj !== 'object' || obj === null) return {};
-        const clone = { ...obj };
-        delete clone.senha;
-        delete clone.password;
-        delete clone.hash;
-        // Trunca arrays grandes (ex: lista de alunos em uma resposta de turma)
-        for (const key of Object.keys(clone)) {
-            if (Array.isArray(clone[key]) && clone[key].length > 20) {
-                clone[key] = `[Array truncado: ${clone[key].length} itens]`;
-            }
-        }
-        return clone;
+    // Extrai entidade a partir do path (ex: /api/turmas/... → "Turma")
+    const segments  = path.replace('/api/', '').split('/');
+    const entidade  = ENTIDADE_MAP[segments[0]] ?? segments[0];
+    const registroId = this.extrairRegistroId(segments);
+
+    // Dados do utilizador — tipados, sem @ts-ignore
+    const reqAuth  = req as AuthenticatedRequest;
+    const user     = reqAuth.user;
+    const autorId  = user?.sub;
+    const autorNome = user?.nome ?? user?.email;
+    const autorRole = user?.role;
+
+    // Centralizado no helper — elimina duplicação de IP extraction
+    const ip        = resolverIp(reqAuth);
+    const userAgent = req.headers['user-agent'];
+
+    return next.handle().pipe(
+      tap({
+        next: (responseBody: unknown) => {
+          // oldValue populado por middlewares upstream via req.auditOldValue (tipado)
+          const oldValue = reqAuth.auditOldValue
+            ? sanitizePayload(reqAuth.auditOldValue)
+            : undefined;
+
+          const newValue = responseBody
+            ? sanitizePayload(responseBody)
+            : undefined;
+
+          const resolvedId = registroId
+            ?? (isRecordWithId(responseBody) ? responseBody.id : undefined);
+
+          this.auditLogService.registrar({
+            entidade,
+            registroId: resolvedId,
+            acao,
+            autorId,
+            autorNome,
+            autorRole,
+            ip,
+            userAgent,
+            oldValue,
+            newValue,
+          });
+        },
+        // Erros (4xx/5xx) não são auditados — a ação não foi concluída
+      }),
+    );
+  }
+
+  private extrairRegistroId(segments: string[]): string | undefined {
+    // /frequencias/diario/fechar/:turmaId/:data → segments[3]
+    if (segments[0] === 'frequencias' && segments[1] === 'diario') {
+      return segments[3];
     }
+    return segments[1]?.length > 0 ? segments[1] : undefined;
+  }
+}
+
+/**
+ * Sanitiza um payload antes de persistir no log de auditoria.
+ * Remove campos sensíveis, trunca strings longas e arrays grandes (depth máx 2).
+ */
+function sanitizePayload(obj: unknown, depth = 0): Record<string, unknown> {
+  if (typeof obj !== 'object' || obj === null) return {};
+  if (depth > 2) return { '[truncado]': 'profundidade máxima atingida' };
+
+  const clone: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (CAMPOS_SENSIVEIS.has(key.toLowerCase())) continue;
+    clone[key] = sanitizeValue(value, depth);
+  }
+
+  return clone;
+}
+
+/** Sanitiza um valor individual (delega a helpers por tipo). */
+function sanitizeValue(value: unknown, depth: number): unknown {
+  if (typeof value === 'string')       return sanitizeString(value);
+  if (Array.isArray(value))            return sanitizeArray(value, depth);
+  if (typeof value === 'object' && value !== null) return sanitizePayload(value, depth + 1);
+  return value;
+}
+
+/** Trunca strings longas (base64, tokens, SVGs). */
+function sanitizeString(value: string): string {
+  return value.length > 500
+    ? `${value.slice(0, 100)}…[truncado ${value.length} chars]`
+    : value;
+}
+
+/** Trunca arrays grandes ou sanitiza cada elemento. */
+function sanitizeArray(value: unknown[], depth: number): unknown {
+  if (value.length > 20) return `[Array truncado: ${value.length} itens]`;
+  return value.map(item =>
+    typeof item === 'object' && item !== null ? sanitizePayload(item, depth + 1) : item,
+  );
+}
+
+/** Type guard: verifica se o valor é um objeto com campo `id` (string). */
+function isRecordWithId(val: unknown): val is { id: string } {
+  return (
+    typeof val === 'object' &&
+    val !== null &&
+    'id' in val &&
+    typeof (val as Record<string, unknown>).id === 'string'
+  );
 }
