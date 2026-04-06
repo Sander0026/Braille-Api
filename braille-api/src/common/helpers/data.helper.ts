@@ -98,10 +98,57 @@ export function calcularCargaHorariaTotal(
   const minutosRestantes = totalMinutos % 60;
 
   if (horas === 0) {
-    return `${minutosRestantes} minuto${minutosRestantes !== 1 ? 's' : ''}`;
+    return `${minutosRestantes} minuto${minutosRestantes === 1 ? '' : 's'}`;
   } else if (minutosRestantes === 0) {
-    return `${horas} hora${horas !== 1 ? 's' : ''}`;
+    return `${horas} hora${horas === 1 ? '' : 's'}`;
   } else {
-    return `${horas} hora${horas !== 1 ? 's' : ''} e ${minutosRestantes} minuto${minutosRestantes !== 1 ? 's' : ''}`;
+    return `${horas} hora${horas === 1 ? '' : 's'} e ${minutosRestantes} minuto${minutosRestantes === 1 ? '' : 's'}`;
   }
+}
+
+// ── Helpers de Formatação para Certificados ─────────────────────────────────
+
+/**
+ * Formata uma string ISO 8601 para o formato brasileiro DD/MM/AAAA
+ * **sem deslocamento de fuso horário** (evita o bug de datas voltando 1 dia).
+ *
+ * É segura para datas vindas do banco (ISO com 'T') e strings simples 'YYYY-MM-DD'.
+ *
+ * @example
+ *   formatarDataBR('2026-03-27T00:00:00.000Z') // '27/03/2026'
+ *   formatarDataBR('2026-03-27')               // '27/03/2026'
+ */
+export function formatarDataBR(isoStr: string): string {
+  const partes = isoStr.split('T')[0].split('-');
+  if (partes.length === 3) {
+    return `${partes[2]}/${partes[1]}/${partes[0]}`;
+  }
+  // Fallback: se formato inesperado, usa Intl com timezone explícito
+  return new Date(isoStr).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
+/** Variáveis disponíveis para substituição num template de certificado. */
+export interface TemplateVars {
+  nomeDestinatario: string;
+  motivo:           string;
+  dataEmissao:      string; // já formatado em DD/MM/AAAA
+}
+
+/**
+ * Preenche as tags de template `{{TAG}}` com os valores fornecidos.
+ *
+ * Suporta múltiplas variações de nome por compatibilidade com templates legados.
+ * Centraliza a lógica — elimina as 18 linhas de replaceAll duplicadas no service.
+ */
+export function preencherTemplateTexto(template: string, vars: TemplateVars): string {
+  return template
+    .replaceAll('{{ALUNO}}',         vars.nomeDestinatario)
+    .replaceAll('{{NOME}}',          vars.nomeDestinatario)
+    .replaceAll('{{APOIADOR}}',      vars.nomeDestinatario)
+    .replaceAll('{{PARCEIRO}}',      vars.nomeDestinatario)
+    .replaceAll('{{NOME_APOIADOR}}', vars.nomeDestinatario)
+    .replaceAll('{{MOTIVO}}',        vars.motivo)
+    .replaceAll('{{DATA_EMISSAO}}',  vars.dataEmissao)
+    .replaceAll('{{DATA_EVENTO}}',   vars.dataEmissao)
+    .replaceAll('{{DATA}}',          vars.dataEmissao);
 }

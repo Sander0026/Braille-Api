@@ -2,8 +2,12 @@ import { Request } from 'express';
 import { Role } from '@prisma/client';
 
 export interface AuthenticatedUser {
-  sub: string;
-  role: Role;
+  sub:   string;
+  role:  Role;
+  /** Nome do utilizador injetado no JWT payload pelo AuthService. */
+  nome?: string;
+  /** Email como fallback para identificação em logs de auditoria. */
+  email?: string;
 }
 
 /**

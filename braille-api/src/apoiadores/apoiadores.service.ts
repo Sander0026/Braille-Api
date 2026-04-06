@@ -1,34 +1,78 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { PrismaService }    from '../prisma/prisma.service';
+import { PdfService }       from '../certificados/pdf.service';
+import { UploadService }    from '../upload/upload.service';
+import { AuditLogService }  from '../audit-log/audit-log.service';
+import { AuditUser }        from '../common/interfaces/audit-user.interface';
+import { formatarDataBR, preencherTemplateTexto } from '../common/helpers/data.helper';
+import {
+  CreateApoiadorDto,
+  UpdateApoiadorDto,
+  CreateAcaoApoiadorDto,
+  UpdateAcaoApoiadorDto,
+} from './dto/apoiador.dto';
 import { EmitirCertificadoApoiadorDto } from './dto/emitir-certificado-apoiador.dto';
 import { Prisma, TipoApoiador, AuditAcao } from '@prisma/client';
-import { PdfService } from '../certificados/pdf.service';
-import { UploadService } from '../upload/upload.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
 import * as crypto from 'node:crypto';
 
-export interface AuditUserParams {
-  sub: string;
-  nome: string;
-  role: string;
-  ip?: string;
-  userAgent?: string;
-}
+// ── Tipos Internos ─────────────────────────────────────────────────────────────
+
+/** Campos seguros para endpoints públicos — exclui dados sensíveis PII. */
+const PUBLIC_SELECT = {
+  id:                   true,
+  tipo:                 true,
+  nomeRazaoSocial:      true,
+  nomeFantasia:         true,
+  atividadeEspecialidade: true,
+  logoUrl:              true,
+  exibirNoSite:         true,
+} as const;
+
+/** Campos para listagens admin — inclui dados operacionais, exclui observações pesadas. */
+const LIST_SELECT = {
+  id:                   true,
+  tipo:                 true,
+  nomeRazaoSocial:      true,
+  nomeFantasia:         true,
+  cpfCnpj:              true,
+  contatoPessoa:        true,
+  telefone:             true,
+  email:                true,
+  endereco:             true,
+  atividadeEspecialidade: true,
+  logoUrl:              true,
+  ativo:                true,
+  exibirNoSite:         true,
+  criadoEm:             true,
+  atualizadoEm:         true,
+} as const;
+
+/** Hosts autorizados para redirect de PDFs — SSRF prevention (OWASP A10 / CWE-918). */
+const REDIRECT_ALLOWLIST = new Set(['res.cloudinary.com', 'api.cloudinary.com']);
+
+// ── Tipo de retorno do gerarPdf ────────────────────────────────────────────────
+
+export type PdfResult =
+  | { type: 'buffer';   buffer: Buffer }
+  | { type: 'redirect'; url: string };
+
+// ── Service ────────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class ApoiadoresService {
   private readonly logger = new Logger(ApoiadoresService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly pdfService: PdfService,
+    private readonly prisma:       PrismaService,
+    private readonly pdfService:   PdfService,
     private readonly uploadService: UploadService,
     private readonly auditService: AuditLogService,
   ) {}
 
-  async create(createApoiadorDto: CreateApoiadorDto, auditUser?: AuditUserParams) {
-    const { acoes, ...rest } = createApoiadorDto;
+  // ── CRUD Principal ──────────────────────────────────────────────────────────
+
+  async create(dto: CreateApoiadorDto, auditUser?: AuditUser) {
+    const { acoes, ...rest } = dto;
     const result = await this.prisma.apoiador.create({
       data: {
         ...rest,
@@ -36,169 +80,173 @@ export class ApoiadoresService {
       },
     });
 
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'Apoiador',
-        registroId: result.id,
-        acao: AuditAcao.CRIAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        newValue: result,
-      }).catch(e => this.logger.warn(`Auditoria falhou em create Apoiador: ${e.message}`));
-    }
-    
+    this.dispararAuditoria({
+      entidade: 'Apoiador', registroId: result.id,
+      acao: AuditAcao.CRIAR, auditUser, newValue: result,
+    });
+
     return result;
   }
 
-  async findAll(params: { skip?: number; take?: number; tipo?: TipoApoiador; search?: string; ativo?: boolean }) {
+  async findAll(params: {
+    skip?:   number;
+    take?:   number;
+    tipo?:   TipoApoiador;
+    search?: string;
+    ativo?:  boolean;
+  }) {
     const { skip, take, tipo, search, ativo } = params;
-    const where: Prisma.ApoiadorWhereInput = {};
 
-    // Por padrão lista apenas ativos; passa ativo=false para listar inativos
-    if (ativo === undefined) {
-      where.ativo = true; // comportamento padrão
-    } else {
-      where.ativo = ativo;
-    }
+    const where: Prisma.ApoiadorWhereInput = {
+      // Por padrão lista apenas ativos; ativo=false lista inativos; ativo=undefined lista todos
+      ativo: ativo ?? true,
+      ...(tipo   && { tipo }),
+      ...(search && {
+        OR: [
+          { nomeRazaoSocial:       { contains: search, mode: 'insensitive' } },
+          { nomeFantasia:          { contains: search, mode: 'insensitive' } },
+          { atividadeEspecialidade:{ contains: search, mode: 'insensitive' } },
+        ],
+      }),
+    };
 
-    if (tipo) {
-      where.tipo = tipo;
-    }
-
-    if (search) {
-      where.OR = [
-        { nomeRazaoSocial: { contains: search, mode: 'insensitive' } },
-        { nomeFantasia: { contains: search, mode: 'insensitive' } },
-        { atividadeEspecialidade: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    const [apoiadores, total] = await Promise.all([
+    // Promise.all paralelo — elimina N+1 entre findMany e count
+    const [data, total] = await Promise.all([
       this.prisma.apoiador.findMany({
         skip,
         take,
         where,
+        select:  LIST_SELECT, // exclui observacoes (campo @db.Text) da listagem
         orderBy: { criadoEm: 'desc' },
       }),
       this.prisma.apoiador.count({ where }),
     ]);
 
-    return { total, data: apoiadores };
+    return { total, data };
   }
 
+  /** Endpoint público — exclui campos PII (cpfCnpj, email, observacoes, contatoPessoa). */
   async findPublic() {
     return this.prisma.apoiador.findMany({
-      where: {
-        ativo: true,
-        exibirNoSite: true,
-      },
+      where:   { ativo: true, exibirNoSite: true },
+      select:  PUBLIC_SELECT,
       orderBy: { nomeRazaoSocial: 'asc' },
     });
   }
 
+  /** Busca completa por ID (inclui observacoes e todos os campos). */
   async findOne(id: string) {
-    const apoiador = await this.prisma.apoiador.findUnique({
-      where: { id },
-    });
+    const apoiador = await this.prisma.apoiador.findUnique({ where: { id } });
     if (!apoiador) {
-      throw new NotFoundException(`Apoiador com ID ${id} não encontrado`);
+      throw new NotFoundException(`Apoiador com ID ${id} não encontrado.`);
     }
     return apoiador;
   }
 
-  async update(id: string, updateApoiadorDto: UpdateApoiadorDto, auditUser?: AuditUserParams) {
-    const { acoes, ...rest } = updateApoiadorDto;
+  async update(id: string, dto: UpdateApoiadorDto, auditUser?: AuditUser) {
+    const { acoes, ...rest } = dto;
     const oldApoiador = await this.findOne(id);
-    const result = await this.prisma.apoiador.update({
-      where: { id },
-      data: rest,
-    });
+    const result = await this.prisma.apoiador.update({ where: { id }, data: rest });
 
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'Apoiador',
-        registroId: id,
-        acao: AuditAcao.ATUALIZAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: oldApoiador,
-        newValue: result,
-      }).catch(e => this.logger.warn(`Auditoria falhou em update Apoiador: ${e.message}`));
-    }
+    this.dispararAuditoria({
+      entidade: 'Apoiador', registroId: id,
+      acao: AuditAcao.ATUALIZAR, auditUser,
+      oldValue: oldApoiador, newValue: result,
+    });
 
     return result;
   }
 
-  async updateLogo(id: string, logoUrl: string, auditUser?: AuditUserParams) {
+  /**
+   * Atualiza somente o campo logoUrl — chamado após upload bem-sucedido pelo Controller.
+   * A verificação de existência já foi feita pelo Controller antes do upload.
+   */
+  async updateLogo(id: string, logoUrl: string, auditUser?: AuditUser) {
     const oldApoiador = await this.findOne(id);
     const result = await this.prisma.apoiador.update({
       where: { id },
-      data: { logoUrl },
+      data:  { logoUrl },
+      select: { id: true, logoUrl: true }, // retorna mínimo necessário
     });
 
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'Apoiador',
-        registroId: id,
-        acao: AuditAcao.ATUALIZAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { logoUrl: oldApoiador.logoUrl },
-        newValue: { logoUrl: result.logoUrl },
-      }).catch(e => this.logger.warn(`Auditoria falhou em updateLogo Apoiador: ${e.message}`));
-    }
+    this.dispararAuditoria({
+      entidade: 'Apoiador', registroId: id,
+      acao: AuditAcao.ATUALIZAR, auditUser,
+      oldValue: { logoUrl: oldApoiador.logoUrl },
+      newValue:  { logoUrl: result.logoUrl },
+    });
 
     return result;
   }
 
-  // ---- Histórico de Ações (Tracking Relacional) ----
-  async addAcao(apoiadorId: string, dto: CreateAcaoApoiadorDto, auditUser?: AuditUserParams) {
-    await this.findOne(apoiadorId); // garante existencia
+  async inativar(id: string, auditUser?: AuditUser) {
+    await this.findOne(id); // cláusula de guarda: garante existência
+    const result = await this.prisma.apoiador.update({
+      where: { id },
+      data:  { ativo: false, exibirNoSite: false },
+    });
+
+    this.dispararAuditoria({
+      entidade: 'Apoiador', registroId: id,
+      acao: AuditAcao.MUDAR_STATUS, auditUser,
+      oldValue: { ativo: true, exibirNoSite: true },
+      newValue:  { ativo: false, exibirNoSite: false },
+    });
+
+    return result;
+  }
+
+  async reativar(id: string, auditUser?: AuditUser) {
+    const apoiador = await this.findOne(id);
+    const result = await this.prisma.apoiador.update({
+      where: { id },
+      data:  { ativo: true, exibirNoSite: true },
+    });
+
+    this.dispararAuditoria({
+      entidade: 'Apoiador', registroId: id,
+      acao: AuditAcao.RESTAURAR, auditUser,
+      oldValue: { ativo: apoiador.ativo, exibirNoSite: apoiador.exibirNoSite },
+      newValue:  { ativo: true, exibirNoSite: true },
+    });
+
+    return result;
+  }
+
+  // ── Histórico de Ações ──────────────────────────────────────────────────────
+
+  async addAcao(apoiadorId: string, dto: CreateAcaoApoiadorDto, auditUser?: AuditUser) {
+    await this.findOne(apoiadorId); // cláusula de guarda
+
     const acao = await this.prisma.acaoApoiador.create({
       data: {
-        dataEvento: new Date(dto.dataEvento), // Força a deserialização da string vinda do POST
+        dataEvento:    new Date(dto.dataEvento),
         descricaoAcao: dto.descricaoAcao,
         apoiadorId,
       },
     });
 
+    // Certificado automático é opcional — falha silenciosa não bloqueia a ação
     if (dto.modeloCertificadoId) {
       await this.emitirCertificado(apoiadorId, {
-        modeloId: dto.modeloCertificadoId,
-        acaoId: acao.id,
-        motivoPersonalizado: dto.motivoPersonalizado || dto.descricaoAcao,
-        dataEmissao: dto.dataEvento,
+        modeloId:           dto.modeloCertificadoId,
+        acaoId:             acao.id,
+        motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
+        dataEmissao:        dto.dataEvento,
       }, auditUser);
     }
-    
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'AcaoApoiador',
-        registroId: acao.id,
-        acao: AuditAcao.CRIAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        newValue: acao,
-      }).catch(e => this.logger.warn(`Auditoria falhou em addAcao: ${e.message}`));
-    }
+
+    this.dispararAuditoria({
+      entidade: 'AcaoApoiador', registroId: acao.id,
+      acao: AuditAcao.CRIAR, auditUser, newValue: acao,
+    });
 
     return acao;
   }
-  
-  async updateAcao(apoiadorId: string, acaoId: string, dto: UpdateAcaoApoiadorDto, auditUser?: AuditUserParams) {
+
+  async updateAcao(apoiadorId: string, acaoId: string, dto: UpdateAcaoApoiadorDto, auditUser?: AuditUser) {
     await this.findOne(apoiadorId);
+
     const acao = await this.prisma.acaoApoiador.findFirst({
       where: { id: acaoId, apoiadorId },
     });
@@ -206,40 +254,28 @@ export class ApoiadoresService {
 
     const acaoAtualizada = await this.prisma.acaoApoiador.update({
       where: { id: acaoId },
-      data: {
-        dataEvento: new Date(dto.dataEvento),
-        descricaoAcao: dto.descricaoAcao,
+      data:  {
+        ...(dto.dataEvento    && { dataEvento: new Date(dto.dataEvento) }),
+        ...(dto.descricaoAcao && { descricaoAcao: dto.descricaoAcao }),
       },
     });
 
-    // Se forneceu um modeloId, então recarrega (deleta qualquer antigo, recria)
+    // Reemissão de certificado: atômica — deleta existentes e recria num único fluxo
     if (dto.modeloCertificadoId) {
-       await this.prisma.certificadoEmitido.deleteMany({
-         where: { acaoId: acaoId }
-       });
-       
-       await this.emitirCertificado(apoiadorId, {
-         modeloId: dto.modeloCertificadoId,
-         acaoId: acaoId,
-         motivoPersonalizado: dto.motivoPersonalizado || dto.descricaoAcao,
-         dataEmissao: dto.dataEvento,
-       }, auditUser);
+      await this.prisma.certificadoEmitido.deleteMany({ where: { acaoId } });
+      await this.emitirCertificado(apoiadorId, {
+        modeloId:           dto.modeloCertificadoId,
+        acaoId,
+        motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
+        dataEmissao:        dto.dataEvento,
+      }, auditUser);
     }
-    
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'AcaoApoiador',
-        registroId: acao.id,
-        acao: AuditAcao.ATUALIZAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: acao,
-        newValue: acaoAtualizada,
-      }).catch(e => this.logger.warn(`Auditoria falhou em updateAcao: ${e.message}`));
-    }
+
+    this.dispararAuditoria({
+      entidade: 'AcaoApoiador', registroId: acao.id,
+      acao: AuditAcao.ATUALIZAR, auditUser,
+      oldValue: acao, newValue: acaoAtualizada,
+    });
 
     return acaoAtualizada;
   }
@@ -247,247 +283,218 @@ export class ApoiadoresService {
   async getAcoes(apoiadorId: string) {
     await this.findOne(apoiadorId);
     return this.prisma.acaoApoiador.findMany({
-      where: { apoiadorId },
+      where:   { apoiadorId },
       orderBy: { dataEvento: 'desc' },
     });
   }
 
-  async removeAcao(apoiadorId: string, acaoId: string, auditUser?: AuditUserParams) {
+  async removeAcao(apoiadorId: string, acaoId: string, auditUser?: AuditUser) {
     const acao = await this.prisma.acaoApoiador.findFirst({
       where: { id: acaoId, apoiadorId },
     });
     if (!acao) throw new NotFoundException('Ação não encontrada nesse perfil.');
 
-    // Exclui certificados vinculados a esta ação primeiro (cascade logic)
-    await this.prisma.certificadoEmitido.deleteMany({
-      where: { acaoId: acaoId }
-    });
+    // $transaction garante ACID: certificados relacionados + ação excluídos atomicamente
+    await this.prisma.$transaction([
+      this.prisma.certificadoEmitido.deleteMany({ where: { acaoId } }),
+      this.prisma.acaoApoiador.delete({ where: { id: acaoId } }),
+    ]);
 
-    await this.prisma.acaoApoiador.delete({
-      where: { id: acaoId },
+    this.dispararAuditoria({
+      entidade: 'AcaoApoiador', registroId: acao.id,
+      acao: AuditAcao.EXCLUIR, auditUser, oldValue: acao, newValue: null,
     });
-    
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'AcaoApoiador',
-        registroId: acao.id,
-        acao: AuditAcao.EXCLUIR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: acao,
-        newValue: null,
-      }).catch(e => this.logger.warn(`Auditoria falhou ao excluir acaoApoiador: ${e.message}`));
-    }
   }
 
-  async inativar(id: string, auditUser?: AuditUserParams) {
-    await this.findOne(id);
-    const result = await this.prisma.apoiador.update({
-      where: { id },
-      data: { ativo: false, exibirNoSite: false },
-    });
-    
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'Apoiador',
-        registroId: id,
-        acao: AuditAcao.MUDAR_STATUS,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { ativo: true, exibirNoSite: true },
-        newValue: { ativo: false, exibirNoSite: false },
-      }).catch(e => this.logger.warn(`Auditoria falhou em inativar Apoiador: ${e.message}`));
-    }
+  // ── Certificados ────────────────────────────────────────────────────────────
 
-    return result;
-  }
-
-  async reativar(id: string, auditUser?: AuditUserParams) {
-    const apoiador = await this.prisma.apoiador.findUnique({ where: { id } });
-    if (!apoiador) throw new NotFoundException(`Apoiador com ID ${id} não encontrado`);
-    const result = await this.prisma.apoiador.update({
-      where: { id },
-      data: { ativo: true, exibirNoSite: true },
-    });
-
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'Apoiador',
-        registroId: id,
-        acao: AuditAcao.RESTAURAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { ativo: apoiador.ativo, exibirNoSite: apoiador.exibirNoSite },
-        newValue: { ativo: true, exibirNoSite: true },
-      }).catch(e => this.logger.warn(`Auditoria falhou em reativar Apoiador: ${e.message}`));
-    }
-    
-    return result;
-  }
-
-  // ---- Certificados (Honrarias) ----
-
-  async emitirCertificado(apoiadorId: string, dto: EmitirCertificadoApoiadorDto, auditUser?: AuditUserParams) {
-    const apoiador = await this.findOne(apoiadorId);
-    
-    const modelo = await this.prisma.modeloCertificado.findUnique({
-      where: { id: dto.modeloId },
-    });
+  async emitirCertificado(
+    apoiadorId: string,
+    dto:        EmitirCertificadoApoiadorDto,
+    auditUser?: AuditUser,
+  ) {
+    // Promise.all paralelo: apoiador + modelo buscados numa só rodada de I/O
+    const [apoiador, modelo] = await Promise.all([
+      this.findOne(apoiadorId),
+      this.prisma.modeloCertificado.findUnique({ where: { id: dto.modeloId } }),
+    ]);
 
     if (!modelo) {
       throw new NotFoundException('Modelo de certificado não encontrado.');
     }
 
-    const codigoValidacao = crypto.randomBytes(6).toString('hex').toUpperCase();
-    const dataEmissaoStr = dto.dataEmissao || new Date().toISOString();
+    const codigoValidacao    = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const dataEmissaoStr     = dto.dataEmissao ?? new Date().toISOString();
+    const nomeDestinatario   = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
+    const dataEmissaoFormatada = formatarDataBR(dataEmissaoStr);
 
-    const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
+    const textoFormatado = preencherTemplateTexto(modelo.textoTemplate ?? '', {
+      nomeDestinatario,
+      motivo:      dto.motivoPersonalizado ?? '',
+      dataEmissao: dataEmissaoFormatada,
+    });
 
-    // Formata a data sem erro de timezone: "2026-03-27" → "27/03/2026"
-    const formatarDataSemTimezone = (isoStr: string): string => {
-      const partes = isoStr.split('T')[0].split('-');
-      if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
-      return new Date(isoStr).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    };
-
-    const dataEmissaoFormatada = formatarDataSemTimezone(dataEmissaoStr);
-
-    // Substituição das tags no template do modelo
-    // Suporta múltiplas variações de nome e data para compatibilidade com templates
-    const textoFormatado = (modelo.textoTemplate || '')
-      .replaceAll('{{ALUNO}}', nomeDestinatario)
-      .replaceAll('{{NOME}}', nomeDestinatario)
-      .replaceAll('{{APOIADOR}}', nomeDestinatario)
-      .replaceAll('{{PARCEIRO}}', nomeDestinatario)
-      .replaceAll('{{NOME_APOIADOR}}', nomeDestinatario)
-      .replaceAll('{{MOTIVO}}', dto.motivoPersonalizado || '')
-      .replaceAll('{{DATA_EMISSAO}}', dataEmissaoFormatada)
-      .replaceAll('{{DATA_EVENTO}}', dataEmissaoFormatada)
-      .replaceAll('{{DATA}}', dataEmissaoFormatada);
-
-    // O 4º parâmetro é o "nomeAluno" que é desenhado usando fonte cursiva (se configurado no modelo)
     const pdfBuffer = await this.pdfService.construirPdfBase(
       modelo,
       textoFormatado,
       codigoValidacao,
-      nomeDestinatario
+      nomeDestinatario,
     );
 
-    // Faz upload do PDF para o Cloudinary e persiste a URL
+    // Upload opcional — falha não impede o registro do certificado
     let pdfUrl: string | null = null;
     try {
       const fileName = `certificado-${codigoValidacao}.pdf`;
       const uploaded = await this.uploadService.uploadPdfBuffer(pdfBuffer, fileName);
       pdfUrl = uploaded.url;
-    } catch (uploadErr) {
-      this.logger.error(`[CertificadoEmitido] Falha no upload para o Cloudinary, pdfUrl não salvo: ${uploadErr}`);
+    } catch (uploadErr: unknown) {
+      const msg = uploadErr instanceof Error ? uploadErr.message : JSON.stringify(uploadErr);
+      this.logger.error(`[CertificadoEmitido] Falha no upload para o Cloudinary: ${msg}`);
     }
-
-    const pdfBase64 = pdfBuffer.toString('base64');
 
     const certificado = await this.prisma.certificadoEmitido.create({
       data: {
         codigoValidacao,
-        modeloId: modelo.id,
-        apoiadorId: apoiador.id,
-        acaoId: dto.acaoId || null,
-        motivoPersonalizado: dto.motivoPersonalizado || null,
-        dataEmissao: new Date(dataEmissaoStr),
+        modeloId:            modelo.id,
+        apoiadorId:          apoiador.id,
+        acaoId:              dto.acaoId ?? null,
+        motivoPersonalizado: dto.motivoPersonalizado ?? null,
+        dataEmissao:         new Date(dataEmissaoStr),
         pdfUrl,
       },
     });
 
-    if (auditUser) {
-      this.auditService.registrar({
-        entidade: 'CertificadoEmitido',
-        registroId: certificado.id,
-        acao: AuditAcao.CRIAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as any,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        newValue: certificado,
-      }).catch(e => this.logger.warn(`Auditoria falhou em emitirCertificado de Apoiador: ${e.message}`));
-    }
+    this.dispararAuditoria({
+      entidade: 'CertificadoEmitido', registroId: certificado.id,
+      acao: AuditAcao.CRIAR, auditUser, newValue: certificado,
+    });
 
-    return {
-      certificado,
-      pdfBase64,
-    };
+    return { certificado, pdfBase64: pdfBuffer.toString('base64') };
   }
 
   async getCertificados(apoiadorId: string) {
     await this.findOne(apoiadorId);
     return this.prisma.certificadoEmitido.findMany({
-      where: { apoiadorId },
+      where:   { apoiadorId },
       include: {
         modelo: { select: { nome: true } },
-        acao: { select: { descricaoAcao: true, dataEvento: true } },
+        acao:   { select: { descricaoAcao: true, dataEvento: true } },
       },
       orderBy: { dataEmissao: 'desc' },
     });
   }
 
-  async gerarPdfCertificado(apoiadorId: string, certId: string): Promise<{ type: 'buffer'; buffer: Buffer } | { type: 'redirect'; url: string }> {
-    const apoiador = await this.findOne(apoiadorId);
-
-    const cert = await this.prisma.certificadoEmitido.findFirst({
-      where: { id: certId, apoiadorId },
-      include: {
-        modelo: true,
-        acao: true,
-      },
-    });
+  /**
+   * Gera ou redireciona para o PDF do certificado.
+   *
+   * Inclui SSRF prevention (OWASP A10 / CWE-918): valida o host da URL
+   * antes de retornar ao Controller — Controller nunca recebe URL não validada.
+   */
+  async gerarPdfCertificado(apoiadorId: string, certId: string): Promise<PdfResult> {
+    const [apoiador, cert] = await Promise.all([
+      this.findOne(apoiadorId),
+      this.prisma.certificadoEmitido.findFirst({
+        where:   { id: certId, apoiadorId },
+        include: {
+        modelo: { select: {
+          id:             true,
+          nome:           true,
+          textoTemplate:  true,
+          arteBaseUrl:    true,
+          assinaturaUrl:  true,
+          assinaturaUrl2: true,
+          nomeAssinante:  true,
+          cargoAssinante: true,
+          nomeAssinante2: true,
+          cargoAssinante2:true,
+          layoutConfig:   true,
+          tipo:           true,
+        } },
+          acao:   { select: { descricaoAcao: true } },
+        },
+      }),
+    ]);
 
     if (!cert) throw new NotFoundException('Certificado não encontrado.');
 
-    // Se já tiver URL salva no Cloudinary, re-gera localmente de qualquer forma
-    // mas avisa que o ideal é retornar redirect. O controller vai redirect.
+    // Modelo excluído mas URL salva: redirect validado
     if (!cert.modelo) {
-      // Modelo excluído mas há URL salva
-      if (cert.pdfUrl) {
-        return { type: 'redirect', url: cert.pdfUrl };
+      if (!cert.pdfUrl) {
+        throw new NotFoundException('Modelo do certificado foi excluído e não há PDF salvo.');
       }
-      throw new NotFoundException('Modelo do certificado foi excluído e não há PDF salvo.');
+      return { type: 'redirect', url: this.validarUrlRedirect(cert.pdfUrl) };
     }
 
     const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
-    const motivo = cert.motivoPersonalizado || cert.acao?.descricaoAcao || '';
-    const dataEmissaoStr = cert.dataEmissao?.toISOString() || new Date().toISOString();
+    const motivo           = cert.motivoPersonalizado || cert.acao?.descricaoAcao || '';
+    const dataEmissaoStr   = cert.dataEmissao?.toISOString() ?? new Date().toISOString();
 
-    // Formata sem offset de timezone
-    const partes = dataEmissaoStr.split('T')[0].split('-');
-    const dataFormatada = partes.length === 3
-      ? `${partes[2]}/${partes[1]}/${partes[0]}`
-      : new Date(dataEmissaoStr).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-
-    const textoFormatado = (cert.modelo.textoTemplate || '')
-      .replaceAll('{{ALUNO}}', nomeDestinatario)
-      .replaceAll('{{NOME}}', nomeDestinatario)
-      .replaceAll('{{APOIADOR}}', nomeDestinatario)
-      .replaceAll('{{PARCEIRO}}', nomeDestinatario)
-      .replaceAll('{{NOME_APOIADOR}}', nomeDestinatario)
-      .replaceAll('{{MOTIVO}}', motivo)
-      .replaceAll('{{DATA_EMISSAO}}', dataFormatada)
-      .replaceAll('{{DATA_EVENTO}}', dataFormatada)
-      .replaceAll('{{DATA}}', dataFormatada);
+    const textoFormatado = preencherTemplateTexto(cert.modelo.textoTemplate ?? '', {
+      nomeDestinatario,
+      motivo,
+      dataEmissao: formatarDataBR(dataEmissaoStr),
+    });
 
     const buffer = await this.pdfService.construirPdfBase(
-      cert.modelo,
+      cert.modelo as Parameters<PdfService['construirPdfBase']>[0],
       textoFormatado,
       cert.codigoValidacao,
       nomeDestinatario,
     );
+
     return { type: 'buffer', buffer };
+  }
+
+  // ── Helpers Privados ────────────────────────────────────────────────────────
+
+  /**
+   * Valida que a URL pertence à allowlist de hosts autorizados.
+   * Lança BadRequestException se o host não estiver na lista.
+   * Centraliza SSRF prevention — Controller recebe URL já validada.
+   */
+  private validarUrlRedirect(url: string): string {
+    try {
+      const { hostname } = new URL(url);
+      if (!REDIRECT_ALLOWLIST.has(hostname)) {
+        throw new BadRequestException('Destino de redirect não autorizado.');
+      }
+      return url;
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException('URL do certificado inválida.');
+    }
+  }
+
+  /**
+   * Fire-and-forget com tratamento seguro de erro.
+   * A auditoria nunca bloqueia o fluxo principal — falhas são logadas.
+   */
+  private dispararAuditoria(params: {
+    entidade:   string;
+    registroId: string;
+    acao:       AuditAcao;
+    auditUser?: AuditUser;
+    oldValue?:  unknown;
+    newValue?:  unknown;
+  }): void {
+    if (!params.auditUser) return;
+
+    const { entidade, registroId, acao, auditUser, oldValue, newValue } = params;
+
+    this.auditService.registrar({
+      entidade,
+      registroId,
+      acao,
+      autorId:    auditUser.sub,
+      autorNome:  auditUser.nome,
+      autorRole:  auditUser.role, // tipado — sem 'as any'
+      ip:         auditUser.ip,
+      userAgent:  auditUser.userAgent,
+      oldValue,
+      newValue,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : JSON.stringify(err);
+      this.logger.warn(`Auditoria falhou [${entidade}/${acao}]: ${msg}`);
+    });
   }
 }
