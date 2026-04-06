@@ -1,34 +1,42 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
-import { PrismaService } from '../prisma/prisma.service';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService }       from '@nestjs/jwt';
+import { PrismaService }    from '../prisma/prisma.service';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
-    private jwtService: JwtService,
-    private prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly prisma:     PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const token = this.extractTokenFromHeader(request);
-    
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const token   = this.extractTokenFromHeader(request);
+
     if (!token) {
       throw new UnauthorizedException('Acesso negado. Token não fornecido.');
     }
-    
-    try {
-      // Verifica se o token é válido usando a mesma chave do .env
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_SECRET,
-      });
 
-      // ── Verificação em Tempo Real: o usuário ainda está ativo? ──
-      // Consulta rápida ao banco para garantir que contas deletadas ou
-      // inativadas PERCAM ACESSO IMEDIATAMENTE, sem esperar o JWT expirar.
+    try {
+      /**
+       * Não passamos `secret` manualmente — o JwtService usa o secret configurado
+       * via JwtModule.registerAsync + ConfigService no auth.module.ts.
+       *
+       * CORREÇÃO DE SEGURANÇA: passar `process.env.JWT_SECRET` diretamente poderia
+       * ser `undefined` se a variável não estivesse injetada, permitindo que
+       * verifyAsync aceite qualquer token sem validação de assinatura (OWASP A2).
+       */
+      const payload = await this.jwtService.verifyAsync(token);
+
+      // Verificação em tempo real: conta ativa? Garante revogação imediata sem esperar JWT expirar.
       const userAtivo = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
+        where:  { id: payload.sub },
         select: { id: true, statusAtivo: true, excluido: true },
       });
 
@@ -36,16 +44,17 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
       }
 
-      // Pendura os dados do usuário na requisição para usarmos depois
-      request['user'] = payload;
+      // Popula req.user com tipagem — sem índice de string 'user'
+      request.user = payload;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
       throw new UnauthorizedException('Token inválido ou expirado.');
     }
+
     return true;
   }
 
-  private extractTokenFromHeader(request: Request): string | undefined {
+  private extractTokenFromHeader(request: AuthenticatedRequest): string | undefined {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     return type === 'Bearer' ? token : undefined;
   }
