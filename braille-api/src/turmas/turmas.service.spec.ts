@@ -11,7 +11,7 @@ describe('TurmasService', () => {
       providers: [
         TurmasService,
         { provide: PrismaService, useValue: {} },
-        { provide: AuditLogService, useValue: { registrar: jest.fn().mockResolvedValue(true) } }
+        { provide: AuditLogService, useValue: { registrar: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 

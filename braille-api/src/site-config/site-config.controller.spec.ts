@@ -4,8 +4,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 // Prevents Jest from loading jsdom ESM modules which crashes the test suite
 jest.mock('../common/pipes/sanitize-html.pipe', () => ({
   SanitizeHtmlPipe: jest.fn().mockImplementation(() => ({
-    transform: jest.fn().mockImplementation((val) => val)
-  }))
+    transform: jest.fn().mockImplementation((val) => val),
+  })),
 }));
 
 import { SiteConfigController } from './site-config.controller';
@@ -25,13 +25,13 @@ describe('SiteConfigController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SiteConfigController],
-      providers: [
-        { provide: SiteConfigService, useValue: mockService },
-      ],
+      providers: [{ provide: SiteConfigService, useValue: mockService }],
     })
-    .overrideGuard(AuthGuard).useValue({ canActivate: () => true })
-    .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
-    .compile();
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<SiteConfigController>(SiteConfigController);
   });

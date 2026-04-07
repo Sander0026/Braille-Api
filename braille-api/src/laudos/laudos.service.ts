@@ -37,17 +37,19 @@ export class LaudosService {
         },
       });
 
-      this.auditService.registrar({
-        entidade: 'LaudoMedico',
-        registroId: laudo.id,
-        acao: AuditAcao.CRIAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        newValue: laudo,
-      }).catch(e => this.logger.warn(`Falha na auditoria ao criar laudo do aluno ${aluno.id}: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'LaudoMedico',
+          registroId: laudo.id,
+          acao: AuditAcao.CRIAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          newValue: laudo,
+        })
+        .catch((e) => this.logger.warn(`Falha na auditoria ao criar laudo do aluno ${aluno.id}: ${e.message}`));
 
       return laudo;
     } catch (error: any) {
@@ -92,18 +94,20 @@ export class LaudosService {
         },
       });
 
-      this.auditService.registrar({
-        entidade: 'LaudoMedico',
-        registroId: laudo.id,
-        acao: AuditAcao.ATUALIZAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: laudo,
-        newValue: laudoAtualizado,
-      }).catch(e => this.logger.warn(`Falha na auditoria ao atualizar laudo ${id}: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'LaudoMedico',
+          registroId: laudo.id,
+          acao: AuditAcao.ATUALIZAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: laudo,
+          newValue: laudoAtualizado,
+        })
+        .catch((e) => this.logger.warn(`Falha na auditoria ao atualizar laudo ${id}: ${e.message}`));
 
       return laudoAtualizado;
     } catch (error: any) {
@@ -134,18 +138,20 @@ export class LaudosService {
         where: { id },
       });
 
-      this.auditService.registrar({
-        entidade: 'LaudoMedico',
-        registroId: laudo.id,
-        acao: AuditAcao.EXCLUIR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: laudo,
-        newValue: null,
-      }).catch(e => this.logger.warn(`Falha na auditoria ao excluir laudo ${id}: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'LaudoMedico',
+          registroId: laudo.id,
+          acao: AuditAcao.EXCLUIR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: laudo,
+          newValue: null,
+        })
+        .catch((e) => this.logger.warn(`Falha na auditoria ao excluir laudo ${id}: ${e.message}`));
 
       return { message: 'Laudo removido com sucesso.' };
     } catch (error: any) {

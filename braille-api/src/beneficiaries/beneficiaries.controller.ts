@@ -1,21 +1,32 @@
 import {
-  Controller, Get, Post, Body, Patch, Param, Delete,
-  UseGuards, Query, UseInterceptors, UploadedFile,
-  BadRequestException, Res, Req,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  Res,
+  Req,
 } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import type { Response }              from 'express';
-import { FileInterceptor }            from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
-import { BeneficiariesService }       from './beneficiaries.service';
-import { CreateBeneficiaryDto }       from './dto/create-beneficiary.dto';
-import { UpdateBeneficiaryDto }       from './dto/update-beneficiary.dto';
-import { QueryBeneficiaryDto }        from './dto/query-beneficiary.dto';
-import { AuthGuard }                  from '../auth/auth.guard';
-import { RolesGuard }                 from '../auth/roles.guard';
-import { Roles }                      from '../auth/roles.decorator';
-import { getAuditUser }               from '../common/helpers/audit.helper';
-import type { AuthenticatedRequest }  from '../common/interfaces/authenticated-request.interface';
+import { BeneficiariesService } from './beneficiaries.service';
+import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
+import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
+import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
+import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { getAuditUser } from '../common/helpers/audit.helper';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 const ALLOWED_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -42,18 +53,19 @@ export class BeneficiariesController {
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Importar alunos via planilha Excel (.xlsx) ou CSV' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file', {
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
-    fileFilter: (_req, file, callback) => {
-      const allowed = ALLOWED_MIME_TYPES.includes(file.mimetype)
-        || /\.(xlsx|xls|csv)$/i.test(file.originalname);
-      if (allowed) {
-        callback(null, true);
-      } else {
-        callback(new BadRequestException('Tipo de arquivo não permitido. Envie um arquivo .xlsx ou .csv.'), false);
-      }
-    },
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+      fileFilter: (_req, file, callback) => {
+        const allowed = ALLOWED_MIME_TYPES.includes(file.mimetype) || /\.(xlsx|xls|csv)$/i.test(file.originalname);
+        if (allowed) {
+          callback(null, true);
+        } else {
+          callback(new BadRequestException('Tipo de arquivo não permitido. Envie um arquivo .xlsx ou .csv.'), false);
+        }
+      },
+    }),
+  )
   importFromSheet(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado.');
     return this.beneficiariesService.importFromSheet(file.buffer, getAuditUser(req));
@@ -80,14 +92,14 @@ export class BeneficiariesController {
   @ApiOperation({ summary: 'Exportar lista de alunos filtrada como planilha Excel (.xlsx)' })
   async exportXlsx(@Query() query: QueryBeneficiaryDto, @Res() res: Response) {
     const buffer = await this.beneficiariesService.exportToXlsx(query);
-    const date   = new Date().toISOString().slice(0, 10);
+    const date = new Date().toISOString().slice(0, 10);
     // Sanitiza status para prevenir header injection (OWASP A3)
     const status = query.inativos ? 'Inativos' : 'Ativos';
     const filename = `Alunos_${status}_${date}.xlsx`.replaceAll(/[^\w._-]/g, '_');
     res.set({
-      'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Length':       buffer.length,
+      'Content-Length': buffer.length,
     });
     res.end(buffer);
   }
@@ -103,11 +115,7 @@ export class BeneficiariesController {
   @Patch(':id')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Atualizar dados de um aluno existente' })
-  update(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') id: string,
-    @Body() dto: UpdateBeneficiaryDto,
-  ) {
+  update(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: UpdateBeneficiaryDto) {
     return this.beneficiariesService.update(id, dto, getAuditUser(req));
   }
 

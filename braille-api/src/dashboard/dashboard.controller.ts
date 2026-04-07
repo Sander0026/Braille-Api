@@ -14,7 +14,7 @@ import { EstatisticasResponseDto } from './dto/estatisticas-response.dto';
 @Roles(Role.ADMIN, Role.SECRETARIA, Role.COMUNICACAO, Role.PROFESSOR) // Limitando o ACESSO para usuários internos
 @Controller('dashboard')
 export class DashboardController {
-  constructor(private readonly dashboardService: DashboardService) { }
+  constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('estatisticas')
   @UseInterceptors(CacheInterceptor)

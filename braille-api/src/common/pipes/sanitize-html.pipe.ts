@@ -12,14 +12,33 @@ const { window } = new JSDOM('');
 const purify = createDOMPurify(window as unknown as WindowLike);
 
 const ALLOWED_TAGS: string[] = [
-  'b', 'i', 'em', 'strong', 'a', 'p', 'br',
-  'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'span', 'div', 'img', 's', 'u', 'blockquote', 'code', 'pre',
+  'b',
+  'i',
+  'em',
+  'strong',
+  'a',
+  'p',
+  'br',
+  'ul',
+  'ol',
+  'li',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'span',
+  'div',
+  'img',
+  's',
+  'u',
+  'blockquote',
+  'code',
+  'pre',
 ];
 
-const ALLOWED_ATTR: string[] = [
-  'href', 'target', 'src', 'alt', 'class', 'style', 'rel', 'data-list',
-];
+const ALLOWED_ATTR: string[] = ['href', 'target', 'src', 'alt', 'class', 'style', 'rel', 'data-list'];
 
 /**
  * Pipe global de sanitização de HTML.
@@ -51,8 +70,8 @@ export class SanitizeHtmlPipe implements PipeTransform {
  */
 function sanitizeRecursively(obj: unknown): unknown {
   if (typeof obj === 'string') return sanitizeString(obj);
-  if (Array.isArray(obj))      return obj.map(sanitizeRecursively);
-  if (isPlainObject(obj))      return sanitizeObject(obj);
+  if (Array.isArray(obj)) return obj.map(sanitizeRecursively);
+  if (isPlainObject(obj)) return sanitizeObject(obj);
   return obj;
 }
 

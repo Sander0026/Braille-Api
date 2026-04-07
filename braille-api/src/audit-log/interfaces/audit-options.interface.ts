@@ -7,15 +7,15 @@ import { AuditAcao } from '@prisma/client';
  * Não use any: objetos complexos são serializados com segurança pelo AuditLogService.
  */
 export interface AuditOptions {
-  entidade:    string;
+  entidade: string;
   registroId?: string;
-  acao:        AuditAcao;
-  autorId?:    string;
-  autorNome?:  string;
+  acao: AuditAcao;
+  autorId?: string;
+  autorNome?: string;
   /** Aceita Role enum ou string literal para compatibilidade com módulos não migrados. */
-  autorRole?:  string;
-  ip?:         string;
-  userAgent?:  string;
-  oldValue?:   unknown;
-  newValue?:   unknown;
+  autorRole?: string;
+  ip?: string;
+  userAgent?: string;
+  oldValue?: unknown;
+  newValue?: unknown;
 }

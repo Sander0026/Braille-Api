@@ -1,19 +1,24 @@
 import {
-  Controller, Post, Body, HttpCode, HttpStatus,
-  UseGuards, Patch, Get, Req, UnauthorizedException,
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Patch,
+  Get,
+  Req,
+  UnauthorizedException,
 } from '@nestjs/common';
-import {
-  ApiTags, ApiOperation,
-  ApiResponse as SwaggerResponse, ApiBearerAuth,
-} from '@nestjs/swagger';
-import { AuthService }          from './auth.service';
-import { AuthGuard }            from './auth.guard';
-import { LoginDto }             from './dto/login.dto';
-import { RefreshTokenDto }      from './dto/refresh-token.dto';
-import { TrocarSenhaDto }       from './dto/trocar-senha.dto';
-import { AtualizarFotoDto }     from './dto/atualizar-foto.dto';
-import { AtualizarPerfilDto }   from './dto/atualizar-perfil.dto';
-import { ApiResponse }          from '../common/dto/api-response.dto';
+import { ApiTags, ApiOperation, ApiResponse as SwaggerResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthService } from './auth.service';
+import { AuthGuard } from './auth.guard';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { TrocarSenhaDto } from './dto/trocar-senha.dto';
+import { AtualizarFotoDto } from './dto/atualizar-foto.dto';
+import { AtualizarPerfilDto } from './dto/atualizar-perfil.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 /**
@@ -57,10 +62,7 @@ export class AuthController {
   @Patch('trocar-senha')
   @ApiOperation({ summary: 'Trocar a própria senha (requer senha atual)' })
   @SwaggerResponse({ status: 200, description: 'Senha alterada com sucesso' })
-  trocarSenha(
-    @Req()  req: AuthenticatedRequest,
-    @Body() dto: TrocarSenhaDto,
-  ): Promise<ApiResponse<null>> {
+  trocarSenha(@Req() req: AuthenticatedRequest, @Body() dto: TrocarSenhaDto): Promise<ApiResponse<null>> {
     return this.authService.trocarSenha(this.resolverUserId(req), dto);
   }
 
@@ -69,10 +71,7 @@ export class AuthController {
   @Patch('foto-perfil')
   @ApiOperation({ summary: 'Atualizar a foto de perfil do usuário logado' })
   @SwaggerResponse({ status: 200, description: 'Foto URL atualizada com sucesso' })
-  atualizarFotoPerfil(
-    @Req()  req: AuthenticatedRequest,
-    @Body() dto: AtualizarFotoDto,
-  ): Promise<ApiResponse<unknown>> {
+  atualizarFotoPerfil(@Req() req: AuthenticatedRequest, @Body() dto: AtualizarFotoDto): Promise<ApiResponse<unknown>> {
     return this.authService.atualizarFotoPerfil(this.resolverUserId(req), dto.fotoPerfil);
   }
 
@@ -81,10 +80,7 @@ export class AuthController {
   @Patch('perfil')
   @ApiOperation({ summary: 'Atualizar nome e e-mail do perfil do usuário logado' })
   @SwaggerResponse({ status: 200, description: 'Dados do perfil atualizados com sucesso' })
-  atualizarPerfil(
-    @Req()  req: AuthenticatedRequest,
-    @Body() dto: AtualizarPerfilDto,
-  ): Promise<ApiResponse<unknown>> {
+  atualizarPerfil(@Req() req: AuthenticatedRequest, @Body() dto: AtualizarPerfilDto): Promise<ApiResponse<unknown>> {
     return this.authService.atualizarPerfil(this.resolverUserId(req), dto);
   }
 

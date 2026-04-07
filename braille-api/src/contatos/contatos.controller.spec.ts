@@ -12,11 +12,11 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 // ── Mock do Service ───────────────────────────────────────────────────────────
 
 const serviceMock = {
-  create:         jest.fn(),
-  findAll:        jest.fn(),
-  findOne:        jest.fn(),
+  create: jest.fn(),
+  findAll: jest.fn(),
+  findOne: jest.fn(),
   marcarComoLida: jest.fn(),
-  remove:         jest.fn(),
+  remove: jest.fn(),
 };
 
 // ── Helpers de teste ──────────────────────────────────────────────────────────
@@ -24,13 +24,13 @@ const serviceMock = {
 function buildRequest(overrides?: Partial<AuthenticatedRequest>): AuthenticatedRequest {
   return {
     user: {
-      sub:   'user-uuid-admin',
-      nome:  'Admin Teste',
-      role:  Role.ADMIN,
+      sub: 'user-uuid-admin',
+      nome: 'Admin Teste',
+      role: Role.ADMIN,
       email: 'admin@test.com',
     },
-    headers:               { 'user-agent': 'jest', 'x-forwarded-for': '10.0.0.1' },
-    socket:                { remoteAddress: '127.0.0.1' } as never,
+    headers: { 'user-agent': 'jest', 'x-forwarded-for': '10.0.0.1' },
+    socket: { remoteAddress: '127.0.0.1' } as never,
     auditOldValue: undefined,
     ...overrides,
   } as AuthenticatedRequest;
@@ -46,11 +46,14 @@ describe('ContatosController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ContatosController],
-      providers:   [{ provide: ContatosService, useValue: serviceMock }],
+      providers: [{ provide: ContatosService, useValue: serviceMock }],
     })
-      .overrideGuard(AuthGuard).useValue({ canActivate: () => true })
-      .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
-      .overrideInterceptor(CacheInterceptor).useValue({ intercept: (context: any, next: any) => next.handle() })
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .overrideInterceptor(CacheInterceptor)
+      .useValue({ intercept: (context: any, next: any) => next.handle() })
       .compile();
 
     controller = module.get<ContatosController>(ContatosController);
@@ -65,9 +68,9 @@ describe('ContatosController', () => {
   describe('create()', () => {
     it('deve delegar ao service e retornar o resultado', async () => {
       const dto: CreateContatoDto = {
-        nome:     'Maria Souza',
-        email:    'maria@test.com',
-        assunto:  'Matrícula',
+        nome: 'Maria Souza',
+        email: 'maria@test.com',
+        assunto: 'Matrícula',
         mensagem: 'Como faço para matricular meu filho?',
       };
       const esperado = { id: 'uuid-001', ...dto, lida: false };
@@ -140,10 +143,7 @@ describe('ContatosController', () => {
 
       await controller.remove('uuid-001', req);
 
-      expect(serviceMock.remove).toHaveBeenCalledWith(
-        'uuid-001',
-        expect.objectContaining({ sub: 'user-uuid-admin' }),
-      );
+      expect(serviceMock.remove).toHaveBeenCalledWith('uuid-001', expect.objectContaining({ sub: 'user-uuid-admin' }));
     });
   });
 });

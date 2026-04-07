@@ -8,4 +8,4 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
   controllers: [FrequenciasController],
   providers: [FrequenciasService],
 })
-export class FrequenciasModule { }
+export class FrequenciasModule {}

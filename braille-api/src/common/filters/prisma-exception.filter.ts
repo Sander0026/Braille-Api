@@ -17,9 +17,9 @@ function resolveHttpStatus(code: string): number {
 // ── Mensagens públicas — nunca expõem detalhes internos do banco ────────────
 
 const MSG_PUBLICAS: Record<string, string> = {
-  P2002: "Violação de regra única. O campo informado já está em uso.",
-  P2003: "Operação inválida. O registro possui vínculos em outras entidades e não pode ser apagado ou modificado.",
-  P2025: "O registro solicitado não foi encontrado.",
+  P2002: 'Violação de regra única. O campo informado já está em uso.',
+  P2003: 'Operação inválida. O registro possui vínculos em outras entidades e não pode ser apagado ou modificado.',
+  P2025: 'O registro solicitado não foi encontrado.',
 };
 
 const MSG_DEFAULT_PUBLICO = 'Erro interno no servidor. Por favor, tente novamente.';
@@ -37,7 +37,7 @@ export class PrismaExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(PrismaExceptionFilter.name);
 
   catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
-    const ctx      = host.switchToHttp();
+    const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 
     const msgPublica = MSG_PUBLICAS[exception.code];
@@ -51,22 +51,19 @@ export class PrismaExceptionFilter implements ExceptionFilter {
 
       return response.status(status).json({
         statusCode: status,
-        error:      HttpStatus[status],
-        message:    msgPublica,
+        error: HttpStatus[status],
+        message: msgPublica,
       });
     }
 
     // Caso default — erro desconhecido/inesperado:
     // Loga o detalhe completo (server-side), retorna mensagem genérica (client-side).
-    this.logger.error(
-      `[PrismaKnown] Código não mapeado: ${exception.code} | ${exception.message}`,
-      exception.stack,
-    );
+    this.logger.error(`[PrismaKnown] Código não mapeado: ${exception.code} | ${exception.message}`, exception.stack);
 
     return response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      error:      'Internal Server Error',
-      message:    MSG_DEFAULT_PUBLICO,
+      error: 'Internal Server Error',
+      message: MSG_DEFAULT_PUBLICO,
     });
   }
 }
@@ -83,7 +80,7 @@ export class PrismaValidationFilter implements ExceptionFilter {
   private readonly logger = new Logger(PrismaValidationFilter.name);
 
   catch(exception: Prisma.PrismaClientValidationError, host: ArgumentsHost) {
-    const ctx      = host.switchToHttp();
+    const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 
     // Detalhe completo: apenas no log (server-side)
@@ -91,8 +88,8 @@ export class PrismaValidationFilter implements ExceptionFilter {
 
     return response.status(HttpStatus.BAD_REQUEST).json({
       statusCode: HttpStatus.BAD_REQUEST,
-      error:      'Bad Request',
-      message:    MSG_VALIDACAO_PUBLICO,
+      error: 'Bad Request',
+      message: MSG_VALIDACAO_PUBLICO,
     });
   }
 }

@@ -14,13 +14,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import {
-  ApiTags,
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ContatosService } from './contatos.service';
 import { CreateContatoDto } from './dto/create-contato.dto';
 import { QueryContatoDto } from './dto/query-contato.dto';

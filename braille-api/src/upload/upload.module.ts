@@ -7,6 +7,6 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
   imports: [AuditLogModule],
   providers: [UploadService],
   controllers: [UploadController],
-  exports: [UploadService]
+  exports: [UploadService],
 })
 export class UploadModule {}

@@ -16,13 +16,13 @@ describe('UploadController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UploadController],
-      providers: [
-        { provide: UploadService, useValue: mockUploadService },
-      ],
+      providers: [{ provide: UploadService, useValue: mockUploadService }],
     })
-    .overrideGuard(AuthGuard).useValue({ canActivate: () => true })
-    .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
-    .compile();
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<UploadController>(UploadController);
   });

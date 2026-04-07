@@ -20,7 +20,7 @@ export class ApiResponse<T> {
 
   constructor(success: boolean, data?: T, message?: string) {
     this.success = success;
-    this.data    = data;
+    this.data = data;
     this.message = message;
   }
 

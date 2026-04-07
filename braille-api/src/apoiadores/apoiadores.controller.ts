@@ -1,25 +1,31 @@
 import {
-  Controller, Get, Post, Body, Patch, Param, Delete,
-  Query, UseInterceptors, UploadedFile, BadRequestException,
-  UseGuards, Res, Req,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  UseGuards,
+  Res,
+  Req,
 } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { FileInterceptor }            from '@nestjs/platform-express';
-import type { Response }              from 'express';
-import { ApoiadoresService }          from './apoiadores.service';
-import {
-  CreateApoiadorDto,
-  UpdateApoiadorDto,
-  CreateAcaoApoiadorDto,
-  UpdateAcaoApoiadorDto,
-} from './dto/apoiador.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { ApoiadoresService } from './apoiadores.service';
+import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
 import { EmitirCertificadoApoiadorDto } from './dto/emitir-certificado-apoiador.dto';
-import { TipoApoiador }              from '@prisma/client';
-import { UploadService }             from '../upload/upload.service';
-import { AuthGuard }                 from '../auth/auth.guard';
-import { RolesGuard }                from '../auth/roles.guard';
-import { Roles }                     from '../auth/roles.decorator';
-import { getAuditUser }              from '../common/helpers/audit.helper';
+import { TipoApoiador } from '@prisma/client';
+import { UploadService } from '../upload/upload.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { getAuditUser } from '../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 // ── Constante de Roles ─────────────────────────────────────────────────────────
@@ -38,7 +44,7 @@ const GESTAO_ROLES = ['ADMIN', 'COMUNICACAO', 'SECRETARIA'] as const;
 export class ApoiadoresController {
   constructor(
     private readonly apoiadoresService: ApoiadoresService,
-    private readonly uploadService:     UploadService,
+    private readonly uploadService: UploadService,
   ) {}
 
   // ── CRUD Principal ──────────────────────────────────────────────────────────
@@ -46,10 +52,7 @@ export class ApoiadoresController {
   @Post()
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  create(
-    @Body() dto: CreateApoiadorDto,
-    @Req()  req: AuthenticatedRequest,
-  ) {
+  create(@Body() dto: CreateApoiadorDto, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.create(dto, getAuditUser(req));
   }
 
@@ -59,15 +62,15 @@ export class ApoiadoresController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
   findAll(
-    @Query('skip')   skip?:   string,
-    @Query('take')   take?:   string,
-    @Query('tipo')   tipo?:   TipoApoiador,
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+    @Query('tipo') tipo?: TipoApoiador,
     @Query('search') search?: string,
-    @Query('ativo')  ativo?:  string,
+    @Query('ativo') ativo?: string,
   ) {
     return this.apoiadoresService.findAll({
-      skip:  skip  ? Number(skip)  : undefined,
-      take:  take  ? Number(take)  : undefined,
+      skip: skip ? Number(skip) : undefined,
+      take: take ? Number(take) : undefined,
       tipo,
       search,
       ativo: ativo === undefined ? undefined : ativo !== 'false',
@@ -91,11 +94,7 @@ export class ApoiadoresController {
   @Patch(':id')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  update(
-    @Param('id') id:  string,
-    @Body()      dto: UpdateApoiadorDto,
-    @Req()       req: AuthenticatedRequest,
-  ) {
+  update(@Param('id') id: string, @Body() dto: UpdateApoiadorDto, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.update(id, dto, getAuditUser(req));
   }
 
@@ -108,9 +107,9 @@ export class ApoiadoresController {
   @Roles(...GESTAO_ROLES)
   @UseInterceptors(FileInterceptor('file'))
   async uploadLogo(
-    @Param('id')    id:   string,
+    @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
-    @Req()          req:  AuthenticatedRequest,
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado.');
 
@@ -125,20 +124,14 @@ export class ApoiadoresController {
   @Patch(':id/inativar')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  inativar(
-    @Param('id') id:  string,
-    @Req()       req: AuthenticatedRequest,
-  ) {
+  inativar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.inativar(id, getAuditUser(req));
   }
 
   @Patch(':id/reativar')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN')
-  reativar(
-    @Param('id') id:  string,
-    @Req()       req: AuthenticatedRequest,
-  ) {
+  reativar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.reativar(id, getAuditUser(req));
   }
 
@@ -147,11 +140,7 @@ export class ApoiadoresController {
   @Post(':id/acoes')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  addAcao(
-    @Param('id') id:  string,
-    @Body()      dto: CreateAcaoApoiadorDto,
-    @Req()       req: AuthenticatedRequest,
-  ) {
+  addAcao(@Param('id') id: string, @Body() dto: CreateAcaoApoiadorDto, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.addAcao(id, dto, getAuditUser(req));
   }
 
@@ -159,10 +148,10 @@ export class ApoiadoresController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
   updateAcao(
-    @Param('id')     id:     string,
+    @Param('id') id: string,
     @Param('acaoId') acaoId: string,
-    @Body()          dto:    UpdateAcaoApoiadorDto,
-    @Req()           req:    AuthenticatedRequest,
+    @Body() dto: UpdateAcaoApoiadorDto,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.apoiadoresService.updateAcao(id, acaoId, dto, getAuditUser(req));
   }
@@ -179,11 +168,7 @@ export class ApoiadoresController {
   @Delete(':id/acoes/:acaoId')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  removeAcao(
-    @Param('id')     id:     string,
-    @Param('acaoId') acaoId: string,
-    @Req()           req:    AuthenticatedRequest,
-  ) {
+  removeAcao(@Param('id') id: string, @Param('acaoId') acaoId: string, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.removeAcao(id, acaoId, getAuditUser(req));
   }
 
@@ -193,9 +178,9 @@ export class ApoiadoresController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
   emitirCertificado(
-    @Param('id') id:  string,
-    @Body()      dto: EmitirCertificadoApoiadorDto,
-    @Req()       req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: EmitirCertificadoApoiadorDto,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.apoiadoresService.emitirCertificado(id, dto, getAuditUser(req));
   }
@@ -217,11 +202,7 @@ export class ApoiadoresController {
   @Get(':id/certificados/:certId/pdf')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  async getPdfCertificado(
-    @Param('id')     id:     string,
-    @Param('certId') certId: string,
-    @Res()           res:    Response,
-  ) {
+  async getPdfCertificado(@Param('id') id: string, @Param('certId') certId: string, @Res() res: Response) {
     const result = await this.apoiadoresService.gerarPdfCertificado(id, certId);
 
     if (result.type === 'redirect') {
@@ -230,9 +211,9 @@ export class ApoiadoresController {
     }
 
     res.set({
-      'Content-Type':        'application/pdf',
+      'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="certificado-${certId}.pdf"`,
-      'Content-Length':       result.buffer.length,
+      'Content-Length': result.buffer.length,
     });
     res.end(result.buffer);
   }

@@ -10,14 +10,14 @@ import { Prisma } from '@prisma/client';
  */
 export type ComunicadoResponse = Prisma.ComunicadoGetPayload<{
   select: {
-    id:           true;
-    titulo:       true;
-    conteudo:     true;
-    categoria:    true;
-    fixado:       true;
-    imagemCapa:   true;
-    autorId:      true;
-    criadoEm:     true;
+    id: true;
+    titulo: true;
+    conteudo: true;
+    categoria: true;
+    fixado: true;
+    imagemCapa: true;
+    autorId: true;
+    criadoEm: true;
     atualizadoEm: true;
     autor: { select: { nome: true } };
   };

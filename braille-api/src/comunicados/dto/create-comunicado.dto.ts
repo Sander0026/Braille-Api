@@ -1,13 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsString,
-  IsNotEmpty,
-  IsBoolean,
-  IsOptional,
-  IsEnum,
-  IsUrl,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsEnum, IsUrl, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { CategoriaComunicado } from '@prisma/client';
 
@@ -35,7 +27,7 @@ export class CreateComunicadoDto {
 
   @ApiPropertyOptional({ description: 'Se verdadeiro, fixa no topo do mural' })
   @Transform(({ value }: { value: unknown }) => {
-    if (value === 'true'  || value === true)  return true;
+    if (value === 'true' || value === true) return true;
     if (value === 'false' || value === false) return false;
     return value;
   })

@@ -1,24 +1,19 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
-import { PrismaService }        from '../prisma/prisma.service';
-import { UploadService }        from '../upload/upload.service';
-import { AuditUser }            from '../common/interfaces/audit-user.interface';
-import { CreateAtestadoDto }    from './dto/create-atestado.dto';
-import { UpdateAtestadoDto }    from './dto/update-atestado.dto';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { UploadService } from '../upload/upload.service';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { CreateAtestadoDto } from './dto/create-atestado.dto';
+import { UpdateAtestadoDto } from './dto/update-atestado.dto';
 import { StatusFrequencia, Aluno } from '@prisma/client';
-import { ApiResponse }          from '../common/dto/api-response.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 // ── Select de Frequência Vinculada ─────────────────────────────────────────────
 /** Select mínimo reutilizado nas queries de frequências vinculadas ao atestado. */
 const FREQUENCIA_SELECT = {
-  id:       true,
+  id: true,
   dataAula: true,
-  status:   true,
-  turma:    { select: { id: true, nome: true } },
+  status: true,
+  turma: { select: { id: true, nome: true } },
 } as const;
 
 // ── Service ────────────────────────────────────────────────────────────────────
@@ -28,7 +23,7 @@ export class AtestadosService {
   private readonly logger = new Logger(AtestadosService.name);
 
   constructor(
-    private readonly prisma:       PrismaService,
+    private readonly prisma: PrismaService,
     private readonly uploadService: UploadService,
   ) {}
 
@@ -41,15 +36,11 @@ export class AtestadosService {
    * ACID: create + updateMany executados em prisma.$transaction — se qualquer
    * operação falhar, nenhuma alteração é persistida.
    */
-  async criar(
-    alunoId:  string,
-    dto:      CreateAtestadoDto,
-    auditUser: AuditUser,
-  ): Promise<ApiResponse<unknown>> {
+  async criar(alunoId: string, dto: CreateAtestadoDto, auditUser: AuditUser): Promise<ApiResponse<unknown>> {
     await this.validarAluno(alunoId); // cláusula de guarda — 404 se não existir
 
     const inicio = new Date(dto.dataInicio);
-    const fim    = new Date(dto.dataFim);
+    const fim = new Date(dto.dataFim);
 
     this.validarIntervaloData(inicio, fim);
 
@@ -58,10 +49,10 @@ export class AtestadosService {
       const novoAtestado = await tx.atestado.create({
         data: {
           alunoId,
-          dataInicio:      inicio,
-          dataFim:         fim,
-          motivo:          dto.motivo,
-          arquivoUrl:      dto.arquivoUrl,
+          dataInicio: inicio,
+          dataFim: fim,
+          motivo: dto.motivo,
+          arquivoUrl: dto.arquivoUrl,
           registradoPorId: auditUser.sub,
         },
       });
@@ -70,10 +61,10 @@ export class AtestadosService {
         where: {
           alunoId,
           dataAula: { gte: inicio, lte: fim },
-          status:   StatusFrequencia.FALTA,
+          status: StatusFrequencia.FALTA,
         },
         data: {
-          status:          StatusFrequencia.FALTA_JUSTIFICADA,
+          status: StatusFrequencia.FALTA_JUSTIFICADA,
           justificativaId: novoAtestado.id,
         },
       });
@@ -95,7 +86,7 @@ export class AtestadosService {
     await this.validarAluno(alunoId);
 
     const atestados = await this.prisma.atestado.findMany({
-      where:   { alunoId },
+      where: { alunoId },
       orderBy: { dataInicio: 'desc' },
       include: { frequencias: { select: FREQUENCIA_SELECT } },
     });
@@ -108,9 +99,9 @@ export class AtestadosService {
    */
   async findOne(id: string): Promise<ApiResponse<unknown>> {
     const atestado = await this.prisma.atestado.findUnique({
-      where:   { id },
+      where: { id },
       include: {
-        aluno:      { select: { id: true, nomeCompleto: true, matricula: true } },
+        aluno: { select: { id: true, nomeCompleto: true, matricula: true } },
         frequencias: { select: FREQUENCIA_SELECT },
       },
     });
@@ -142,7 +133,7 @@ export class AtestadosService {
     const atestadoAtualizado = await this.prisma.atestado.update({
       where: { id },
       data: {
-        ...(dto.motivo     !== undefined && { motivo:     dto.motivo }),
+        ...(dto.motivo !== undefined && { motivo: dto.motivo }),
         ...(dto.arquivoUrl !== undefined && { arquivoUrl: dto.arquivoUrl }),
       },
       include: { frequencias: { select: FREQUENCIA_SELECT } },
@@ -168,7 +159,7 @@ export class AtestadosService {
     const [revertidas] = await this.prisma.$transaction(async (tx) => {
       const resultado = await tx.frequencia.updateMany({
         where: { justificativaId: id },
-        data:  { status: StatusFrequencia.FALTA, justificativaId: null },
+        data: { status: StatusFrequencia.FALTA, justificativaId: null },
       });
 
       await tx.atestado.delete({ where: { id } });
@@ -187,13 +178,9 @@ export class AtestadosService {
    * Simula quais faltas serão justificadas pelo atestado (preview sem escrita).
    * Valida intervalo de datas antes de consultar o banco.
    */
-  async previewJustificativas(
-    alunoId:    string,
-    dataInicio: string,
-    dataFim:    string,
-  ): Promise<ApiResponse<unknown>> {
+  async previewJustificativas(alunoId: string, dataInicio: string, dataFim: string): Promise<ApiResponse<unknown>> {
     const inicio = new Date(dataInicio);
-    const fim    = new Date(dataFim);
+    const fim = new Date(dataFim);
 
     // Cláusulas de guarda: datas inválidas ou intervalo invertido
     if (isNaN(inicio.getTime())) {
@@ -208,9 +195,9 @@ export class AtestadosService {
       where: {
         alunoId,
         dataAula: { gte: inicio, lte: fim },
-        status:   StatusFrequencia.FALTA,
+        status: StatusFrequencia.FALTA,
       },
-      select:  { id: true, dataAula: true, turma: { select: { nome: true } } },
+      select: { id: true, dataAula: true, turma: { select: { nome: true } } },
       orderBy: { dataAula: 'asc' },
     });
 

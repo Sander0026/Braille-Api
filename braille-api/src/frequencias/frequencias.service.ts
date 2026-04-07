@@ -1,4 +1,12 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Logger, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
@@ -15,7 +23,7 @@ export class FrequenciasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
-  ) { }
+  ) {}
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -41,11 +49,7 @@ export class FrequenciasService {
    * Verifica se o diário (turma+data) está fechado.
    * Se fechado e o usuário não for ADMIN → lança ForbiddenException.
    */
-  private async verificarDiarioAberto(
-    turmaId: string,
-    dataAula: Date,
-    role: Role,
-  ): Promise<void> {
+  private async verificarDiarioAberto(turmaId: string, dataAula: Date, role: Role): Promise<void> {
     // Verifica se qualquer frequência dessa turma+data está marcada como fechado
     const fechado = await this.prisma.frequencia.findFirst({
       where: { turmaId, dataAula, fechado: true },
@@ -54,7 +58,7 @@ export class FrequenciasService {
 
     if (fechado && role !== Role.ADMIN) {
       throw new ForbiddenException(
-        'O diário desta data está fechado. Somente um administrador pode reabri-lo para retificação.'
+        'O diário desta data está fechado. Somente um administrador pode reabri-lo para retificação.',
       );
     }
   }
@@ -85,10 +89,7 @@ export class FrequenciasService {
   }
 
   // ─── Lote Absoluto (Fase 23) ──────────────────────────────────────────────────
-  async salvarLote(
-    dto: CreateFrequenciaLoteDto,
-    auditUser?: AuditUser,
-  ) {
+  async salvarLote(dto: CreateFrequenciaLoteDto, auditUser?: AuditUser) {
     const dataConvertida = new Date(dto.dataAula);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
 
@@ -96,120 +97,130 @@ export class FrequenciasService {
     this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
     await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
 
-    const autorContext = auditUser ? {
-      autorId: auditUser.sub,
-      autorNome: auditUser.nome,
-      autorRole: auditUser.role,
-      ip: auditUser.ip,
-      userAgent: auditUser.userAgent,
-    } : {};
+    const autorContext = auditUser
+      ? {
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+        }
+      : {};
 
     // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
     try {
       const auditPayloads: any[] = [];
 
-      await this.prisma.$transaction(async (tx) => {
-        // Pré-carrega registros existentes para evitar buscas redundantes (O(1) query vs O(N) queries)
-        const alunosIds = dto.alunos.map(a => a.alunoId);
-        const existentesDb = await tx.frequencia.findMany({
-          where: {
-            turmaId: dto.turmaId,
-            dataAula: dataConvertida,
-            alunoId: { in: alunosIds },
-          },
-        });
-        const mapaExistentes = new Map(existentesDb.map(f => [f.alunoId, f]));
+      await this.prisma.$transaction(
+        async (tx) => {
+          // Pré-carrega registros existentes para evitar buscas redundantes (O(1) query vs O(N) queries)
+          const alunosIds = dto.alunos.map((a) => a.alunoId);
+          const existentesDb = await tx.frequencia.findMany({
+            where: {
+              turmaId: dto.turmaId,
+              dataAula: dataConvertida,
+              alunoId: { in: alunosIds },
+            },
+          });
+          const mapaExistentes = new Map(existentesDb.map((f) => [f.alunoId, f]));
 
-        for (const aluno of dto.alunos) {
-          let frequenciaFinal: any;
-          let acaoAudit: AuditAcao;
-          let oldValue: any = undefined;
+          for (const aluno of dto.alunos) {
+            let frequenciaFinal: any;
+            let acaoAudit: AuditAcao;
+            let oldValue: any = undefined;
 
-          // Preferência para a busca no banco pré-carregada via turmaId + dataAula + alunoId
-          const existente = mapaExistentes.get(aluno.alunoId);
+            // Preferência para a busca no banco pré-carregada via turmaId + dataAula + alunoId
+            const existente = mapaExistentes.get(aluno.alunoId);
 
-          if (existente) {
-            oldValue = existente;
+            if (existente) {
+              oldValue = existente;
 
-            // Se já é FALTA_JUSTIFICADA, não sobrescreve o status (preserva o atestado)
-            if (existente.status === 'FALTA_JUSTIFICADA') {
-              frequenciaFinal = existente; // não altera
-              acaoAudit = AuditAcao.ATUALIZAR;
+              // Se já é FALTA_JUSTIFICADA, não sobrescreve o status (preserva o atestado)
+              if (existente.status === 'FALTA_JUSTIFICADA') {
+                frequenciaFinal = existente; // não altera
+                acaoAudit = AuditAcao.ATUALIZAR;
+              } else {
+                frequenciaFinal = await tx.frequencia.update({
+                  where: { id: existente.id },
+                  data: { presente: aluno.presente },
+                });
+                acaoAudit = AuditAcao.ATUALIZAR;
+              }
             } else {
-              frequenciaFinal = await tx.frequencia.update({
-                where: { id: existente.id },
-                data: { presente: aluno.presente },
-              });
-              acaoAudit = AuditAcao.ATUALIZAR;
-            }
-          } else {
-            frequenciaFinal = await tx.frequencia.create({
-              data: {
-                turmaId: dto.turmaId,
-                alunoId: aluno.alunoId,
-                dataAula: dataConvertida,
-                presente: aluno.presente,
-              },
-            });
-            acaoAudit = AuditAcao.CRIAR;
-          }
-
-          // ── Auto-justificativa por Atestado Ativo ────────────────────────────
-          // Se o aluno foi marcado como FALTA, verificar se existe atestado cobrindo esse dia.
-          // Isso garante que faltas lançadas EM DATAS FUTURAS já cobertas por atestado sejam
-          // automaticamente justificadas sem precisar reemitir o atestado.
-          if (!aluno.presente && frequenciaFinal.status !== 'FALTA_JUSTIFICADA') {
-            const atestadoAtivo = await tx.atestado.findFirst({
-              where: {
-                alunoId: aluno.alunoId,
-                dataInicio: { lte: dataConvertida },
-                dataFim:    { gte: dataConvertida },
-              },
-              select: { id: true },
-            });
-
-            if (atestadoAtivo) {
-              frequenciaFinal = await tx.frequencia.update({
-                where: { id: frequenciaFinal.id },
+              frequenciaFinal = await tx.frequencia.create({
                 data: {
-                  status: 'FALTA_JUSTIFICADA',
-                  justificativaId: atestadoAtivo.id,
+                  turmaId: dto.turmaId,
+                  alunoId: aluno.alunoId,
+                  dataAula: dataConvertida,
+                  presente: aluno.presente,
                 },
               });
+              acaoAudit = AuditAcao.CRIAR;
             }
-          }
 
-          // Coleta o log em vez de disparar concorrência pesada no meio da transação
-          auditPayloads.push({
-            entidade: 'Frequencia',
-            registroId: frequenciaFinal.id,
-            acao: acaoAudit,
-            ...autorContext, // Usa a extração global unificada
-            oldValue,
-            newValue: frequenciaFinal,
-          });
-        }
-      }, {
-        maxWait: 10000,
-        timeout: 30000, // Previne "Transaction API error: Transaction not found."
-      });
+            // ── Auto-justificativa por Atestado Ativo ────────────────────────────
+            // Se o aluno foi marcado como FALTA, verificar se existe atestado cobrindo esse dia.
+            // Isso garante que faltas lançadas EM DATAS FUTURAS já cobertas por atestado sejam
+            // automaticamente justificadas sem precisar reemitir o atestado.
+            if (!aluno.presente && frequenciaFinal.status !== 'FALTA_JUSTIFICADA') {
+              const atestadoAtivo = await tx.atestado.findFirst({
+                where: {
+                  alunoId: aluno.alunoId,
+                  dataInicio: { lte: dataConvertida },
+                  dataFim: { gte: dataConvertida },
+                },
+                select: { id: true },
+              });
+
+              if (atestadoAtivo) {
+                frequenciaFinal = await tx.frequencia.update({
+                  where: { id: frequenciaFinal.id },
+                  data: {
+                    status: 'FALTA_JUSTIFICADA',
+                    justificativaId: atestadoAtivo.id,
+                  },
+                });
+              }
+            }
+
+            // Coleta o log em vez de disparar concorrência pesada no meio da transação
+            auditPayloads.push({
+              entidade: 'Frequencia',
+              registroId: frequenciaFinal.id,
+              acao: acaoAudit,
+              ...autorContext, // Usa a extração global unificada
+              oldValue,
+              newValue: frequenciaFinal,
+            });
+          }
+        },
+        {
+          maxWait: 10000,
+          timeout: 30000, // Previne "Transaction API error: Transaction not found."
+        },
+      );
 
       // Dispara a auditoria de forma sequencial, no background, para não exaurir o Pool de Conexões do Prisma nem a transação.
       Promise.resolve().then(async () => {
         for (const payload of auditPayloads) {
           await this.auditService.registrar(payload).catch((e: unknown) => {
-            this.logger.warn(`Falha não bloqueante ao registrar log de lote de Frequencia. Aluno ID: ${payload.registroId}. Erro: ${(e as Error).message}`);
+            this.logger.warn(
+              `Falha não bloqueante ao registrar log de lote de Frequencia. Aluno ID: ${payload.registroId}. Erro: ${(e as Error).message}`,
+            );
           });
         }
       });
 
-      return { sucesso: true, processados: dto.alunos.length, mensagem: 'Operação de lote efetivada com integridade atômica.' };
-
+      return {
+        sucesso: true,
+        processados: dto.alunos.length,
+        mensagem: 'Operação de lote efetivada com integridade atômica.',
+      };
     } catch (error: any) {
       this.logger.error('Erro Crítico Prisma Transação (Lote):', error);
       // Data Leak Prevention: não repassa "error.message" técnico nativo do PGD.
       throw new InternalServerErrorException(
-        'Falha ao processar o Lote de Chamadas. O banco de dados abortou a transação.'
+        'Falha ao processar o Lote de Chamadas. O banco de dados abortou a transação.',
       );
     }
   }
@@ -339,7 +350,7 @@ export class FrequenciasService {
         else acc.faltas++;
         return acc;
       },
-      { presentes: 0, faltas: 0 }
+      { presentes: 0, faltas: 0 },
     );
 
     return {
@@ -392,11 +403,7 @@ export class FrequenciasService {
    * Após fechar: só ADMIN pode reabrir/retificar.
    * Regra: só pode fechar o diário do dia atual (professor), ou qualquer dia (admin).
    */
-  async fecharDiario(
-    turmaId: string,
-    dataAula: string,
-    auditUser?: AuditUser,
-  ) {
+  async fecharDiario(turmaId: string, dataAula: string, auditUser?: AuditUser) {
     const data = new Date(dataAula);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
     const userId = auditUser?.sub || 'desconhecido';
@@ -416,7 +423,7 @@ export class FrequenciasService {
       throw new BadRequestException('Não há registros de chamada para fechar nesta data.');
     }
 
-    const jaFechados = registros.filter(r => r.fechado);
+    const jaFechados = registros.filter((r) => r.fechado);
     if (jaFechados.length === registros.length) {
       throw new BadRequestException('O diário desta data já está fechado.');
     }

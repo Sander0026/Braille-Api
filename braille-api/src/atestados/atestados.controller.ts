@@ -1,20 +1,21 @@
+import { Controller, Post, Get, Delete, Param, Body, Query, Req, UseGuards, Patch } from '@nestjs/common';
 import {
-  Controller, Post, Get, Delete, Param, Body, Query, Req,
-  UseGuards, Patch,
-} from '@nestjs/common';
-import {
-  ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery,
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
   ApiResponse as SwaggerResponse,
 } from '@nestjs/swagger';
-import { AtestadosService }       from './atestados.service';
-import { CreateAtestadoDto }      from './dto/create-atestado.dto';
-import { UpdateAtestadoDto }      from './dto/update-atestado.dto';
-import { AuthGuard }              from '../auth/auth.guard';
-import { RolesGuard }             from '../auth/roles.guard';
-import { Roles }                  from '../auth/roles.decorator';
-import { getAuditUser }           from '../common/helpers/audit.helper';
+import { AtestadosService } from './atestados.service';
+import { CreateAtestadoDto } from './dto/create-atestado.dto';
+import { UpdateAtestadoDto } from './dto/update-atestado.dto';
+import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { getAuditUser } from '../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
-import { ApiResponse }            from '../common/dto/api-response.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 /**
  * Controller extremamente magro — apenas roteamento HTTP.
@@ -38,8 +39,8 @@ export class AtestadosController {
   @SwaggerResponse({ status: 201, description: 'Atestado criado' })
   async criar(
     @Param('alunoId') alunoId: string,
-    @Body()           dto:     CreateAtestadoDto,
-    @Req()            req:     AuthenticatedRequest,
+    @Body() dto: CreateAtestadoDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<ApiResponse<unknown>> {
     return this.atestadosService.criar(alunoId, dto, getAuditUser(req));
   }
@@ -47,9 +48,7 @@ export class AtestadosController {
   @Get('alunos/:alunoId/atestados')
   @ApiOperation({ summary: 'Listar todos os atestados de um aluno' })
   @ApiParam({ name: 'alunoId', description: 'UUID do aluno' })
-  async listar(
-    @Param('alunoId') alunoId: string,
-  ): Promise<ApiResponse<unknown>> {
+  async listar(@Param('alunoId') alunoId: string): Promise<ApiResponse<unknown>> {
     return this.atestadosService.listarPorAluno(alunoId);
   }
 
@@ -57,11 +56,11 @@ export class AtestadosController {
   @ApiOperation({ summary: 'Preview: quais faltas serão justificadas (antes de criar o atestado)' })
   @ApiParam({ name: 'alunoId', description: 'UUID do aluno' })
   @ApiQuery({ name: 'dataInicio', example: '2026-03-18' })
-  @ApiQuery({ name: 'dataFim',    example: '2026-03-20' })
+  @ApiQuery({ name: 'dataFim', example: '2026-03-20' })
   async preview(
-    @Param('alunoId')       alunoId:    string,
-    @Query('dataInicio')    dataInicio: string,
-    @Query('dataFim')       dataFim:    string,
+    @Param('alunoId') alunoId: string,
+    @Query('dataInicio') dataInicio: string,
+    @Query('dataFim') dataFim: string,
   ): Promise<ApiResponse<unknown>> {
     return this.atestadosService.previewJustificativas(alunoId, dataInicio, dataFim);
   }
@@ -70,18 +69,13 @@ export class AtestadosController {
 
   @Get('atestados/:id')
   @ApiOperation({ summary: 'Ver detalhe de um atestado' })
-  async findOne(
-    @Param('id') id: string,
-  ): Promise<ApiResponse<unknown>> {
+  async findOne(@Param('id') id: string): Promise<ApiResponse<unknown>> {
     return this.atestadosService.findOne(id);
   }
 
   @Patch('atestados/:id')
   @ApiOperation({ summary: 'Atualizar dados básicos de um atestado (Motivo e Arquivo URL)' })
-  async atualizar(
-    @Param('id') id:  string,
-    @Body()      dto: UpdateAtestadoDto,
-  ): Promise<ApiResponse<unknown>> {
+  async atualizar(@Param('id') id: string, @Body() dto: UpdateAtestadoDto): Promise<ApiResponse<unknown>> {
     return this.atestadosService.atualizar(id, dto);
   }
 
@@ -94,9 +88,7 @@ export class AtestadosController {
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Remover atestado e reverter faltas justificadas (somente ADMIN e SECRETARIA)' })
-  async remover(
-    @Param('id') id: string,
-  ): Promise<ApiResponse<unknown>> {
+  async remover(@Param('id') id: string): Promise<ApiResponse<unknown>> {
     return this.atestadosService.remover(id);
   }
 }

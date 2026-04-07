@@ -15,13 +15,13 @@ describe('LaudosController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LaudosController],
-      providers: [
-        { provide: LaudosService, useValue: mockService },
-      ],
+      providers: [{ provide: LaudosService, useValue: mockService }],
     })
-    .overrideGuard(AuthGuard).useValue({ canActivate: () => true })
-    .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
-    .compile();
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<LaudosController>(LaudosController);
   });

@@ -1,16 +1,11 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-} from '@nestjs/common';
-import { Observable }      from 'rxjs';
-import { tap }             from 'rxjs/operators';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { AuditAcao }       from '@prisma/client';
-import type { Request }    from 'express';
+import { AuditAcao } from '@prisma/client';
+import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
-import { resolverIp }      from '../helpers/audit.helper';
+import { resolverIp } from '../helpers/audit.helper';
 
 // ── Mapas de Heurística ───────────────────────────────────────────────────────
 
@@ -20,18 +15,18 @@ import { resolverIp }      from '../helpers/audit.helper';
  */
 const ACAO_MAP: Record<string, (path: string) => AuditAcao | null> = {
   POST: (path) => {
-    if (path.includes('/alunos/'))        return AuditAcao.MATRICULAR;
-    if (path.includes('/diario/fechar'))  return AuditAcao.FECHAR_DIARIO;
+    if (path.includes('/alunos/')) return AuditAcao.MATRICULAR;
+    if (path.includes('/diario/fechar')) return AuditAcao.FECHAR_DIARIO;
     if (path.includes('/diario/reabrir')) return AuditAcao.REABRIR_DIARIO;
-    if (path.includes('/auth/login'))     return AuditAcao.LOGIN;
+    if (path.includes('/auth/login')) return AuditAcao.LOGIN;
     return AuditAcao.CRIAR;
   },
   PATCH: (path) => {
     if (path.includes('/restaurar')) return AuditAcao.RESTAURAR;
-    if (path.includes('/status'))    return AuditAcao.MUDAR_STATUS;
+    if (path.includes('/status')) return AuditAcao.MUDAR_STATUS;
     return AuditAcao.ATUALIZAR;
   },
-  PUT:    () => AuditAcao.ATUALIZAR,
+  PUT: () => AuditAcao.ATUALIZAR,
   DELETE: (path) => {
     if (path.includes('/alunos/')) return AuditAcao.DESMATRICULAR;
     return AuditAcao.EXCLUIR;
@@ -43,19 +38,19 @@ const ACAO_MAP: Record<string, (path: string) => AuditAcao | null> = {
  * Centraliza o vocabulário de entidades — adicionar novos módulos aqui.
  */
 const ENTIDADE_MAP: Record<string, string> = {
-  turmas:                 'Turma',
-  frequencias:            'Frequencia',
-  beneficiaries:          'Aluno',
-  usuarios:               'User',
-  auth:                   'Auth',
-  'audit-log':            'AuditLog',
-  comunicados:            'Comunicado',
-  contatos:               'Contato',               // instrumentado manualmente no ContatosService
+  turmas: 'Turma',
+  frequencias: 'Frequencia',
+  beneficiaries: 'Aluno',
+  usuarios: 'User',
+  auth: 'Auth',
+  'audit-log': 'AuditLog',
+  comunicados: 'Comunicado',
+  contatos: 'Contato', // instrumentado manualmente no ContatosService
   // Módulos adicionados na refatoração de 2026-04
   'modelos-certificados': 'ModeloCertificado',
-  certificados:           'CertificadoEmitido',
-  apoiadores:             'Apoiador',
-  'site-config':          'SiteConfig',
+  certificados: 'CertificadoEmitido',
+  apoiadores: 'Apoiador',
+  'site-config': 'SiteConfig',
 };
 
 /**
@@ -77,17 +72,23 @@ const PATHS_EXCLUIDOS = [
   '/beneficiaries',
   '/users',
   '/comunicados',
-  '/contatos',               // instrumentado manualmente no ContatosService (marcarComoLida + remove)
+  '/contatos', // instrumentado manualmente no ContatosService (marcarComoLida + remove)
   '/site-config',
-  '/apoiadores',             // instrumentado manualmente no ApoiadoresService
-  '/modelos-certificados',   // instrumentado manualmente no CertificadosService
-  '/certificados',           // instrumentado manualmente no CertificadosService
+  '/apoiadores', // instrumentado manualmente no ApoiadoresService
+  '/modelos-certificados', // instrumentado manualmente no CertificadosService
+  '/certificados', // instrumentado manualmente no CertificadosService
 ] as const;
 
 // ── Campos sensíveis a remover do payload antes de persistir ──────────────────
 const CAMPOS_SENSIVEIS = new Set([
-  'senha', 'password', 'hash', 'passwordhash',
-  'senhahash', 'token', 'refreshtoken', 'secret',
+  'senha',
+  'password',
+  'hash',
+  'passwordhash',
+  'senhahash',
+  'token',
+  'refreshtoken',
+  'secret',
 ]);
 
 // ── Interceptor ───────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ export class AuditInterceptor implements NestInterceptor {
   constructor(private readonly auditLogService: AuditLogService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const req    = context.switchToHttp().getRequest<Request>();
+    const req = context.switchToHttp().getRequest<Request>();
     const method = req.method;
 
     // Só auditar mutações (POST, PATCH, PUT, DELETE)
@@ -119,7 +120,7 @@ export class AuditInterceptor implements NestInterceptor {
     const path = req.path.toLowerCase();
 
     // Cláusula de guarda: paths de infra ou módulos já instrumentados
-    if (PATHS_EXCLUIDOS.some(excluido => path.startsWith(excluido))) {
+    if (PATHS_EXCLUIDOS.some((excluido) => path.startsWith(excluido))) {
       return next.handle();
     }
 
@@ -127,35 +128,30 @@ export class AuditInterceptor implements NestInterceptor {
     if (!acao) return next.handle();
 
     // Extrai entidade a partir do path (ex: /api/turmas/... → "Turma")
-    const segments   = path.replace('/api/', '').split('/');
-    const entidade   = ENTIDADE_MAP[segments[0]] ?? segments[0];
+    const segments = path.replace('/api/', '').split('/');
+    const entidade = ENTIDADE_MAP[segments[0]] ?? segments[0];
     const registroId = this.extrairRegistroId(segments);
 
     // Dados do utilizador — tipados, sem @ts-ignore
-    const reqAuth   = req as AuthenticatedRequest;
-    const user      = reqAuth.user;
-    const autorId   = user?.sub;
+    const reqAuth = req as AuthenticatedRequest;
+    const user = reqAuth.user;
+    const autorId = user?.sub;
     const autorNome = user?.nome ?? user?.email;
     const autorRole = user?.role;
 
     // Centralizado no helper — elimina duplicação de IP extraction
-    const ip        = resolverIp(reqAuth);
+    const ip = resolverIp(reqAuth);
     const userAgent = req.headers['user-agent'];
 
     return next.handle().pipe(
       tap({
         next: (responseBody: unknown) => {
           // oldValue populado por middlewares upstream via req.auditOldValue (tipado)
-          const oldValue = reqAuth.auditOldValue
-            ? sanitizePayload(reqAuth.auditOldValue)
-            : undefined;
+          const oldValue = reqAuth.auditOldValue ? sanitizePayload(reqAuth.auditOldValue) : undefined;
 
-          const newValue = responseBody
-            ? sanitizePayload(responseBody)
-            : undefined;
+          const newValue = responseBody ? sanitizePayload(responseBody) : undefined;
 
-          const resolvedId = registroId
-            ?? (isRecordWithId(responseBody) ? responseBody.id : undefined);
+          const resolvedId = registroId ?? (isRecordWithId(responseBody) ? responseBody.id : undefined);
 
           this.auditLogService.registrar({
             entidade,
@@ -207,33 +203,26 @@ function sanitizePayload(obj: unknown, depth = 0): Record<string, unknown> {
 
 /** Sanitiza um valor individual (delega a helpers por tipo). */
 function sanitizeValue(value: unknown, depth: number): unknown {
-  if (typeof value === 'string')                          return sanitizeString(value);
-  if (Array.isArray(value))                              return sanitizeArray(value, depth);
-  if (typeof value === 'object' && value !== null)       return sanitizePayload(value, depth + 1);
+  if (typeof value === 'string') return sanitizeString(value);
+  if (Array.isArray(value)) return sanitizeArray(value, depth);
+  if (typeof value === 'object' && value !== null) return sanitizePayload(value, depth + 1);
   return value;
 }
 
 /** Trunca strings longas (base64, tokens, SVGs). */
 function sanitizeString(value: string): string {
-  return value.length > 500
-    ? `${value.slice(0, 100)}…[truncado ${value.length} chars]`
-    : value;
+  return value.length > 500 ? `${value.slice(0, 100)}…[truncado ${value.length} chars]` : value;
 }
 
 /** Trunca arrays grandes ou sanitiza cada elemento. */
 function sanitizeArray(value: unknown[], depth: number): unknown {
   if (value.length > 20) return `[Array truncado: ${value.length} itens]`;
-  return value.map(item =>
-    typeof item === 'object' && item !== null ? sanitizePayload(item, depth + 1) : item,
-  );
+  return value.map((item) => (typeof item === 'object' && item !== null ? sanitizePayload(item, depth + 1) : item));
 }
 
 /** Type guard: verifica se o valor é um objeto com campo `id` (string). */
 function isRecordWithId(val: unknown): val is { id: string } {
   return (
-    typeof val === 'object' &&
-    val !== null &&
-    'id' in val &&
-    typeof (val as Record<string, unknown>).id === 'string'
+    typeof val === 'object' && val !== null && 'id' in val && typeof (val as Record<string, unknown>).id === 'string'
   );
 }

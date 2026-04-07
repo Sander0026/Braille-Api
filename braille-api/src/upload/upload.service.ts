@@ -34,8 +34,8 @@ export class UploadService {
         {
           folder: 'braille_instituicao',
           transformation: [
-            { fetch_format: 'auto', quality: 'auto' } // Otimização Cloudinary LCP Permanente (UX/Performance)
-          ]
+            { fetch_format: 'auto', quality: 'auto' }, // Otimização Cloudinary LCP Permanente (UX/Performance)
+          ],
         },
         (error, result) => {
           if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
@@ -43,17 +43,19 @@ export class UploadService {
           if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar imagem.'));
 
           if (auditUser) {
-            this.auditLogService.registrar({
-              entidade: 'Cloudinary_System',
-              registroId: result.public_id,
-              acao: AuditAcao.CRIAR,
-              autorId: auditUser.sub,
-              autorNome: auditUser.nome,
-              autorRole: auditUser.role as Role,
-              ip: auditUser.ip,
-              userAgent: auditUser.userAgent,
-              newValue: { url: result.secure_url, folder: 'braille_instituicao' },
-            }).catch(e => this.logger.warn(`Failure auditing Cloudinary Upload: ${e.message}`));
+            this.auditLogService
+              .registrar({
+                entidade: 'Cloudinary_System',
+                registroId: result.public_id,
+                acao: AuditAcao.CRIAR,
+                autorId: auditUser.sub,
+                autorNome: auditUser.nome,
+                autorRole: auditUser.role,
+                ip: auditUser.ip,
+                userAgent: auditUser.userAgent,
+                newValue: { url: result.secure_url, folder: 'braille_instituicao' },
+              })
+              .catch((e) => this.logger.warn(`Failure auditing Cloudinary Upload: ${e.message}`));
           }
 
           resolve({ url: result.secure_url }); // Agora o TS sabe que o result existe 100%!
@@ -87,17 +89,19 @@ export class UploadService {
           if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar PDF.'));
 
           if (auditUser) {
-            this.auditLogService.registrar({
-              entidade: 'Cloudinary_System',
-              registroId: result.public_id,
-              acao: AuditAcao.CRIAR,
-              autorId: auditUser.sub,
-              autorNome: auditUser.nome,
-              autorRole: auditUser.role as Role,
-              ip: auditUser.ip,
-              userAgent: auditUser.userAgent,
-              newValue: { url: result.secure_url, folder },
-            }).catch(e => this.logger.warn(`Failure auditing Cloudinary Pdf Upload: ${e.message}`));
+            this.auditLogService
+              .registrar({
+                entidade: 'Cloudinary_System',
+                registroId: result.public_id,
+                acao: AuditAcao.CRIAR,
+                autorId: auditUser.sub,
+                autorNome: auditUser.nome,
+                autorRole: auditUser.role,
+                ip: auditUser.ip,
+                userAgent: auditUser.userAgent,
+                newValue: { url: result.secure_url, folder },
+              })
+              .catch((e) => this.logger.warn(`Failure auditing Cloudinary Pdf Upload: ${e.message}`));
           }
 
           resolve({ url: result.secure_url });
@@ -112,11 +116,7 @@ export class UploadService {
    * Faz upload de um PDF gerado em memória (Buffer) sem depências do Multer.
    * Usado para persistir certificados gerados dinamicamente no Cloudinary.
    */
-  uploadPdfBuffer(
-    buffer: Buffer,
-    fileName: string,
-    folder = 'braille_certificados',
-  ): Promise<{ url: string }> {
+  uploadPdfBuffer(buffer: Buffer, fileName: string, folder = 'braille_certificados'): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -148,7 +148,7 @@ export class UploadService {
       // Precisamos extrair 'braille_instituicao/nome_do_arquivo'
       const urlParts = fileUrl.split('/');
       const filenameWithExtension = urlParts.at(-1); // nome_do_arquivo.jpg
-      const folder = urlParts.at(-2);                // braille_instituicao
+      const folder = urlParts.at(-2); // braille_instituicao
 
       if (!filenameWithExtension || !folder) {
         throw new BadRequestException('URL do Cloudinary inválida.');
@@ -168,17 +168,19 @@ export class UploadService {
       }
 
       if (auditUser) {
-        this.auditLogService.registrar({
-          entidade: 'Cloudinary_System',
-          registroId: publicId,
-          acao: AuditAcao.EXCLUIR,
-          autorId: auditUser.sub,
-          autorNome: auditUser.nome,
-          autorRole: auditUser.role as Role,
-          ip: auditUser.ip,
-          userAgent: auditUser.userAgent,
-          oldValue: { url: fileUrl },
-        }).catch(e => this.logger.warn(`Failure auditing Cloudinary Delete: ${e.message}`));
+        this.auditLogService
+          .registrar({
+            entidade: 'Cloudinary_System',
+            registroId: publicId,
+            acao: AuditAcao.EXCLUIR,
+            autorId: auditUser.sub,
+            autorNome: auditUser.nome,
+            autorRole: auditUser.role,
+            ip: auditUser.ip,
+            userAgent: auditUser.userAgent,
+            oldValue: { url: fileUrl },
+          })
+          .catch((e) => this.logger.warn(`Failure auditing Cloudinary Delete: ${e.message}`));
       }
 
       return { success: true, message: 'Arquivo excluído com sucesso.' };

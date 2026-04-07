@@ -10,7 +10,7 @@ const mockPrisma = {
     count: jest.fn().mockResolvedValue(0),
     groupBy: jest.fn().mockResolvedValue([]),
   },
-  turma: { findMany: jest.fn().mockResolvedValue([]) }
+  turma: { findMany: jest.fn().mockResolvedValue([]) },
 };
 
 const mockAudit = { registrar: jest.fn() };

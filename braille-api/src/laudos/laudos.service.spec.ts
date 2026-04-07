@@ -11,7 +11,7 @@ const mockPrisma = {
   },
   aluno: {
     findUnique: jest.fn().mockResolvedValue({ id: 'aluno123' }),
-  }
+  },
 };
 
 const mockUpload = {

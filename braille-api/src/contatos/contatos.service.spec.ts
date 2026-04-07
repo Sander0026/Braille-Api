@@ -11,22 +11,22 @@ import type { AuditUser } from '../common/interfaces/audit-user.interface';
 // ── Dados de fixture ──────────────────────────────────────────────────────────
 
 const MENSAGEM_FIXTURE = {
-  id:       'uuid-test-001',
-  nome:     'Ana Lima',
-  email:    'ana@test.com',
+  id: 'uuid-test-001',
+  nome: 'Ana Lima',
+  email: 'ana@test.com',
   telefone: null,
-  assunto:  'Dúvida',
-  lida:     false,
+  assunto: 'Dúvida',
+  lida: false,
   criadoEm: new Date('2026-01-01T10:00:00Z'),
 };
 
 const MENSAGEM_COM_TEXTO = { ...MENSAGEM_FIXTURE, mensagem: 'Gostaria de saber mais.' };
 
 const AUDIT_USER: AuditUser = {
-  sub:       'user-uuid-admin',
-  nome:      'Admin Teste',
-  role:      Role.ADMIN,
-  ip:        '127.0.0.1',
+  sub: 'user-uuid-admin',
+  nome: 'Admin Teste',
+  role: Role.ADMIN,
+  ip: '127.0.0.1',
   userAgent: 'jest',
 };
 
@@ -34,12 +34,12 @@ const AUDIT_USER: AuditUser = {
 
 const prismaMock = {
   mensagemContato: {
-    create:     jest.fn(),
-    findMany:   jest.fn(),
-    count:      jest.fn(),
+    create: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
     findUnique: jest.fn(),
-    update:     jest.fn(),
-    delete:     jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
   },
 };
 
@@ -56,8 +56,8 @@ describe('ContatosService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContatosService,
-        { provide: PrismaService,    useValue: prismaMock },
-        { provide: AuditLogService,  useValue: auditMock },
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: AuditLogService, useValue: auditMock },
       ],
     }).compile();
 
@@ -71,17 +71,15 @@ describe('ContatosService', () => {
       prismaMock.mensagemContato.create.mockResolvedValue(MENSAGEM_COM_TEXTO);
 
       const dto: CreateContatoDto = {
-        nome:     'Ana Lima',
-        email:    'ana@test.com',
-        assunto:  'Dúvida',
+        nome: 'Ana Lima',
+        email: 'ana@test.com',
+        assunto: 'Dúvida',
         mensagem: 'Gostaria de saber mais.',
       };
 
       const result = await service.create(dto);
 
-      expect(prismaMock.mensagemContato.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: dto }),
-      );
+      expect(prismaMock.mensagemContato.create).toHaveBeenCalledWith(expect.objectContaining({ data: dto }));
       expect(result).toEqual(MENSAGEM_COM_TEXTO);
     });
   });
@@ -155,12 +153,8 @@ describe('ContatosService', () => {
 
       const result = await service.marcarComoLida('uuid-test-001', AUDIT_USER);
 
-      expect(prismaMock.mensagemContato.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { lida: true } }),
-      );
-      expect(auditMock.registrar).toHaveBeenCalledWith(
-        expect.objectContaining({ acao: AuditAcao.MUDAR_STATUS }),
-      );
+      expect(prismaMock.mensagemContato.update).toHaveBeenCalledWith(expect.objectContaining({ data: { lida: true } }));
+      expect(auditMock.registrar).toHaveBeenCalledWith(expect.objectContaining({ acao: AuditAcao.MUDAR_STATUS }));
       expect(result.lida).toBe(true);
     });
 
@@ -195,7 +189,7 @@ describe('ContatosService', () => {
       );
       expect(auditMock.registrar).toHaveBeenCalledWith(
         expect.objectContaining({
-          acao:     AuditAcao.EXCLUIR,
+          acao: AuditAcao.EXCLUIR,
           oldValue: MENSAGEM_FIXTURE,
         }),
       );

@@ -8,9 +8,12 @@ export class AtualizarFotoDto {
    * @IsUrl permissivo (require_protocol: false) — aceita URLs Cloudinary sem breaking changes.
    * @MaxLength(2000) — previne payloads excessivos.
    */
-  @IsUrl({ require_protocol: false, require_tld: false }, {
-    message: 'fotoPerfil deve ser uma URL válida.',
-  })
+  @IsUrl(
+    { require_protocol: false, require_tld: false },
+    {
+      message: 'fotoPerfil deve ser uma URL válida.',
+    },
+  )
   @MaxLength(2000, { message: 'URL da foto deve ter no máximo 2000 caracteres.' })
   fotoPerfil?: string | null;
 }

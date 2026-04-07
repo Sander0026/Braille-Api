@@ -11,13 +11,13 @@ import { Role } from '@prisma/client';
  */
 export interface AuditUser {
   /** UUID do utilizador autenticado (claim sub do JWT). */
-  sub:        string;
+  sub: string;
   /** Nome display para snapshots de auditoria. */
-  nome:       string;
+  nome: string;
   /** Cargo tipado com o enum do Prisma — elimina os 'as any' do role. */
-  role:       Role;
+  role: Role;
   /** IP real do cliente (com suporte a x-forwarded-for). */
-  ip?:        string;
+  ip?: string;
   /** User-Agent do cliente HTTP. */
   userAgent?: string;
 }

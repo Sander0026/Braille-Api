@@ -21,9 +21,11 @@ describe('TurmasController', () => {
         { provide: CACHE_MANAGER, useValue: { get: jest.fn(), set: jest.fn() } },
       ],
     })
-    .overrideGuard(AuthGuard).useValue({ canActivate: () => true })
-    .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
-    .compile();
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<TurmasController>(TurmasController);
   });

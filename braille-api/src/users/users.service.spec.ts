@@ -14,14 +14,14 @@ describe('UsersService', () => {
         {
           provide: PrismaService,
           useValue: {
-            user: { 
-              findUnique: jest.fn(), 
-              findFirst: jest.fn(), 
-              create: jest.fn(), 
-              update: jest.fn(), 
-              findMany: jest.fn(), 
-              count: jest.fn() 
-            }
+            user: {
+              findUnique: jest.fn(),
+              findFirst: jest.fn(),
+              create: jest.fn(),
+              update: jest.fn(),
+              findMany: jest.fn(),
+              count: jest.fn(),
+            },
           },
         },
         {

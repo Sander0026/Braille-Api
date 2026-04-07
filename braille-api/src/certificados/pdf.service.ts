@@ -1,17 +1,17 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { ConfigService }                                     from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { PDFDocument, PDFPage, PDFFont, rgb, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import * as QRCode from 'qrcode';
 
 /** Tipo explícito para os dados do modelo passados ao PDF engine — elimina `as any` */
 export type ModeloPdf = {
-  arteBaseUrl:     string;
-  assinaturaUrl:   string;
-  assinaturaUrl2:  string | null;
-  layoutConfig:    unknown;
-  nomeAssinante:   string;
-  cargoAssinante:  string;
+  arteBaseUrl: string;
+  assinaturaUrl: string;
+  assinaturaUrl2: string | null;
+  layoutConfig: unknown;
+  nomeAssinante: string;
+  cargoAssinante: string;
   nomeAssinante2?: string | null;
   cargoAssinante2?: string | null;
 };
@@ -19,18 +19,20 @@ export type ModeloPdf = {
 // ── Catálogo de Fontes — URLs estáticas e seguras do Google Fonts (GitHub raw) ────
 const FONTS_URLS: Record<string, string> = {
   // Sans-Serif
-  'Roboto':       'https://raw.githubusercontent.com/google/fonts/main/apache/roboto/static/Roboto-Regular.ttf',
-  'Open Sans':    'https://raw.githubusercontent.com/google/fonts/main/apache/opensans/static/OpenSans-Regular.ttf',
-  'Montserrat':   'https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Regular.ttf',
+  Roboto: 'https://raw.githubusercontent.com/google/fonts/main/apache/roboto/static/Roboto-Regular.ttf',
+  'Open Sans': 'https://raw.githubusercontent.com/google/fonts/main/apache/opensans/static/OpenSans-Regular.ttf',
+  Montserrat: 'https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Regular.ttf',
   // Serif
-  'Merriweather':     'https://raw.githubusercontent.com/google/fonts/main/ofl/merriweather/Merriweather-Regular.ttf',
-  'Cinzel':           'https://raw.githubusercontent.com/google/fonts/main/ofl/cinzel/static/Cinzel-Regular.ttf',
-  'Playfair Display': 'https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay-Regular.ttf',
+  Merriweather: 'https://raw.githubusercontent.com/google/fonts/main/ofl/merriweather/Merriweather-Regular.ttf',
+  Cinzel: 'https://raw.githubusercontent.com/google/fonts/main/ofl/cinzel/static/Cinzel-Regular.ttf',
+  'Playfair Display':
+    'https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay-Regular.ttf',
   // Cursivas elegantes
-  'Great Vibes':    'https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf',
-  'Parisienne':     'https://raw.githubusercontent.com/google/fonts/main/ofl/parisienne/Parisienne-Regular.ttf',
-  'Dancing Script': 'https://raw.githubusercontent.com/google/fonts/main/ofl/dancingscript/static/DancingScript-Regular.ttf',
-  'Pacifico':       'https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf',
+  'Great Vibes': 'https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf',
+  Parisienne: 'https://raw.githubusercontent.com/google/fonts/main/ofl/parisienne/Parisienne-Regular.ttf',
+  'Dancing Script':
+    'https://raw.githubusercontent.com/google/fonts/main/ofl/dancingscript/static/DancingScript-Regular.ttf',
+  Pacifico: 'https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf',
 };
 
 /**
@@ -40,7 +42,7 @@ const FONTS_URLS: Record<string, string> = {
  * - raw.githubusercontent.com: fontes do catálogo Google Fonts (hardcoded)
  */
 const ALLOWED_IMAGE_HOSTS = ['res.cloudinary.com'];
-const ALLOWED_FONT_HOSTS  = ['raw.githubusercontent.com'];
+const ALLOWED_FONT_HOSTS = ['raw.githubusercontent.com'];
 
 function topPctToY(topPct: number, pageHeight: number, elementHeight = 0): number {
   return pageHeight - (topPct / 100) * pageHeight - elementHeight;
@@ -51,32 +53,30 @@ const CANVAS_REF_H = 794;
 
 /** Agrupa os handles do documento PDF para ser passado como parâmetro único */
 type PageCtx = {
-  pdfDoc:   PDFDocument;
-  page:     PDFPage;
-  font:     PDFFont;
+  pdfDoc: PDFDocument;
+  page: PDFPage;
+  font: PDFFont;
   fontBold: PDFFont;
 };
 
 /** Contexto passado ao renderizador de assinatura — agrupa parâmetros para respeitar limite SonarQube (≤ 7) */
 type AssinaturaContext = {
-  config:        Record<string, unknown>;
-  nome?:         string | null;
-  cargo?:        string | null;
+  config: Record<string, unknown>;
+  nome?: string | null;
+  cargo?: string | null;
   assinaturaUrl2: string | null;
-  assinatura1?:  Record<string, unknown>;
+  assinatura1?: Record<string, unknown>;
 };
 
 @Injectable()
 export class PdfService {
-  private readonly logger    = new Logger(PdfService.name);
+  private readonly logger = new Logger(PdfService.name);
   private readonly fontCache = new Map<string, ArrayBuffer>();
   private readonly frontendUrl: string;
 
   constructor(private readonly configService: ConfigService) {
     // Resolve a URL do frontend no startup — elimina require('dotenv') em produção (CWE-547)
-    this.frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ??
-      'https://instituto-luizbraille.vercel.app';
+    this.frontendUrl = this.configService.get<string>('FRONTEND_URL') ?? 'https://instituto-luizbraille.vercel.app';
   }
 
   // ── Validação de URL (SSRF Prevention) ────────────────────────────────────
@@ -95,9 +95,7 @@ export class PdfService {
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
       throw new Error('Protocolo inseguro — apenas https/http são permitidos.');
     }
-    const hostPermitido = allowedHosts.some(
-      h => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`),
-    );
+    const hostPermitido = allowedHosts.some((h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`));
     if (!hostPermitido) {
       throw new Error(`Host não autorizado: "${parsed.hostname}". Apenas ${allowedHosts.join(', ')} são aceitos.`);
     }
@@ -109,9 +107,9 @@ export class PdfService {
   private extrairRgb(hexColor?: string): [number, number, number] {
     if (!hexColor) return [0, 0, 0];
     const hex = hexColor.replace('#', '');
-    const r   = Number.parseInt(hex.substring(0, 2), 16) / 255;
-    const g   = Number.parseInt(hex.substring(2, 4), 16) / 255;
-    const b   = Number.parseInt(hex.substring(4, 6), 16) / 255;
+    const r = Number.parseInt(hex.substring(0, 2), 16) / 255;
+    const g = Number.parseInt(hex.substring(2, 4), 16) / 255;
+    const b = Number.parseInt(hex.substring(4, 6), 16) / 255;
     return [r, g, b];
   }
 
@@ -119,8 +117,8 @@ export class PdfService {
 
   private async carregarFonte(pdfDoc: PDFDocument, fontName?: string): Promise<PDFFont> {
     if (!fontName || fontName === 'Helvetica') return pdfDoc.embedFont(StandardFonts.Helvetica);
-    if (fontName === 'TimesRoman')             return pdfDoc.embedFont(StandardFonts.TimesRoman);
-    if (fontName === 'Courier')                return pdfDoc.embedFont(StandardFonts.Courier);
+    if (fontName === 'TimesRoman') return pdfDoc.embedFont(StandardFonts.TimesRoman);
+    if (fontName === 'Courier') return pdfDoc.embedFont(StandardFonts.Courier);
 
     const fontUrl = FONTS_URLS[fontName];
     if (!fontUrl) {
@@ -155,13 +153,14 @@ export class PdfService {
   // ── Renderizadores de Elementos ────────────────────────────────────────────
 
   private async adicionarArteBase(
-    pdfDoc: PDFDocument, arteBaseUrl: string,
+    pdfDoc: PDFDocument,
+    arteBaseUrl: string,
   ): Promise<{ page: PDFPage; width: number; height: number }> {
     const safeArteUrl = this.sanitizeSafeUrl(arteBaseUrl);
-    const arteRes     = await fetch(safeArteUrl);
-    const arteBytes   = await arteRes.arrayBuffer();
-    const isPng       = arteBaseUrl.toLowerCase().endsWith('.png');
-    const background  = isPng ? await pdfDoc.embedPng(arteBytes) : await pdfDoc.embedJpg(arteBytes);
+    const arteRes = await fetch(safeArteUrl);
+    const arteBytes = await arteRes.arrayBuffer();
+    const isPng = arteBaseUrl.toLowerCase().endsWith('.png');
+    const background = isPng ? await pdfDoc.embedPng(arteBytes) : await pdfDoc.embedJpg(arteBytes);
 
     const { width, height } = background.scale(1);
     const page = pdfDoc.addPage([width, height]);
@@ -171,121 +170,153 @@ export class PdfService {
   }
 
   private async desenharCorpoTexto(
-    pdfDoc: PDFDocument, page: PDFPage, width: number, height: number,
-    config: Record<string, unknown>, textoFormatado: string,
+    pdfDoc: PDFDocument,
+    page: PDFPage,
+    width: number,
+    height: number,
+    config: Record<string, unknown>,
+    textoFormatado: string,
   ): Promise<void> {
     const textConf = (config.textoPronto as Record<string, unknown>) || {};
-    const tXPct    = (textConf.x as number)         ?? 10;
-    const tYPct    = (textConf.y as number)         ?? 20;
-    const tX       = (tXPct / 100) * width;
-    const tMaxW    = textConf.maxWidth
-      ? ((textConf.maxWidth as number) / 100) * width
-      : width - tX - 50;
+    const tXPct = (textConf.x as number) ?? 10;
+    const tYPct = (textConf.y as number) ?? 20;
+    const tX = (tXPct / 100) * width;
+    const tMaxW = textConf.maxWidth ? ((textConf.maxWidth as number) / 100) * width : width - tX - 50;
 
-    const tSize    = (((textConf.fontSize as number) || 32) / CANVAS_REF_W) * width;
-    const tY       = topPctToY(tYPct, height, tSize);
+    const tSize = (((textConf.fontSize as number) || 32) / CANVAS_REF_W) * width;
+    const tY = topPctToY(tYPct, height, tSize);
     const fontCorpo = await this.carregarFonte(pdfDoc, textConf.fontFamily as string);
     const [r, g, b] = this.extrairRgb(textConf.color as string);
 
     page.drawText(textoFormatado, {
-      x: tX, y: tY, size: tSize, font: fontCorpo,
-      color: rgb(r, g, b), maxWidth: tMaxW, lineHeight: tSize * 1.4,
+      x: tX,
+      y: tY,
+      size: tSize,
+      font: fontCorpo,
+      color: rgb(r, g, b),
+      maxWidth: tMaxW,
+      lineHeight: tSize * 1.4,
     });
   }
 
   private async desenharNomeAluno(
-    pdfDoc: PDFDocument, page: PDFPage, width: number, height: number,
-    config: Record<string, unknown>, nomeAluno: string,
+    pdfDoc: PDFDocument,
+    page: PDFPage,
+    width: number,
+    height: number,
+    config: Record<string, unknown>,
+    nomeAluno: string,
   ): Promise<void> {
     const naConf = config.nomeAluno as Record<string, unknown> | undefined;
     if (!naConf) return;
 
-    const naX    = ((naConf.x as number) / 100) * width;
+    const naX = ((naConf.x as number) / 100) * width;
     const naSize = (((naConf.fontSize as number) || 56) / CANVAS_REF_W) * width;
-    const naY    = topPctToY(naConf.y as number, height, naSize);
+    const naY = topPctToY(naConf.y as number, height, naSize);
 
-    const fontNome   = await this.carregarFonte(pdfDoc, naConf.fontFamily as string);
+    const fontNome = await this.carregarFonte(pdfDoc, naConf.fontFamily as string);
     const [naR, naG, naB] = this.extrairRgb(naConf.color as string);
 
     page.drawText(nomeAluno, {
-      x: naX, y: naY, size: naSize, font: fontNome,
+      x: naX,
+      y: naY,
+      size: naSize,
+      font: fontNome,
       color: rgb(naR, naG, naB),
       maxWidth: (((naConf.maxWidth as number) || 80) / 100) * width,
     });
   }
 
   private async injetarAssinaturaUrl(
-    pc:          PageCtx,
-    width:        number,
-    height:       number,
+    pc: PageCtx,
+    width: number,
+    height: number,
     signatureUrl: string,
-    ctx:          AssinaturaContext,
-    isSecondary:  boolean,
+    ctx: AssinaturaContext,
+    isSecondary: boolean,
   ): Promise<void> {
     const safeUrl = this.sanitizeSafeUrl(signatureUrl);
-    const res     = await fetch(safeUrl);
+    const res = await fetch(safeUrl);
     if (!res.ok) return;
 
     const imgBytes = await res.arrayBuffer();
-    const isPng    = safeUrl.toLowerCase().endsWith('.png');
-    const image    = isPng ? await pc.pdfDoc.embedPng(imgBytes) : await pc.pdfDoc.embedJpg(imgBytes);
+    const isPng = safeUrl.toLowerCase().endsWith('.png');
+    const image = isPng ? await pc.pdfDoc.embedPng(imgBytes) : await pc.pdfDoc.embedJpg(imgBytes);
 
-    const conf             = ctx.config;
+    const conf = ctx.config;
     // Extraído de nested ternary — SonarQube: Extract this nested ternary operation
     const defaultXPrimaria = ctx.assinaturaUrl2 ? 20 : 40;
-    const defaultX         = isSecondary ? 60 : defaultXPrimaria;
-    const defaultWpct      = isSecondary ? (ctx.assinatura1?.width as number ?? 20) : 20;
-    const wpct      = (conf.width as number) || defaultWpct;
-    const drawW     = (wpct / 100) * width;
-    const xpct      = (conf.x as number) ?? defaultX;
-    const yTopPct   = (conf.y as number) ?? 70;
+    const defaultX = isSecondary ? 60 : defaultXPrimaria;
+    const defaultWpct = isSecondary ? ((ctx.assinatura1?.width as number) ?? 20) : 20;
+    const wpct = (conf.width as number) || defaultWpct;
+    const drawW = (wpct / 100) * width;
+    const xpct = (conf.x as number) ?? defaultX;
+    const yTopPct = (conf.y as number) ?? 70;
 
-    const maxSigH   = (80  / CANVAS_REF_H) * height;
-    const sigGap    = (4   / CANVAS_REF_H) * height;
-    const sigNmSz   = (11  / CANVAS_REF_W) * width;
-    const sigCgSz   = (9   / CANVAS_REF_W) * width;
+    const maxSigH = (80 / CANVAS_REF_H) * height;
+    const sigGap = (4 / CANVAS_REF_H) * height;
+    const sigNmSz = (11 / CANVAS_REF_W) * width;
+    const sigCgSz = (9 / CANVAS_REF_W) * width;
 
-    const rawAssH  = image.height * (drawW / image.width);
-    const finalH   = Math.min(rawAssH, maxSigH);
-    const finalW   = finalH * (image.width / image.height);
-    const posX     = (xpct / 100) * width;
-    const imgX     = posX + (drawW - finalW) / 2;
-    const posY     = topPctToY(yTopPct, height, maxSigH);
+    const rawAssH = image.height * (drawW / image.width);
+    const finalH = Math.min(rawAssH, maxSigH);
+    const finalW = finalH * (image.width / image.height);
+    const posX = (xpct / 100) * width;
+    const imgX = posX + (drawW - finalW) / 2;
+    const posY = topPctToY(yTopPct, height, maxSigH);
 
     pc.page.drawImage(image, { x: imgX, y: posY + (maxSigH - finalH), width: finalW, height: finalH });
 
     const lineY = posY - sigGap;
     pc.page.drawLine({
-      start:     { x: posX, y: lineY },
-      end:       { x: posX + drawW, y: lineY },
+      start: { x: posX, y: lineY },
+      end: { x: posX + drawW, y: lineY },
       thickness: Math.max(0.5, width * 0.0003),
-      color:     rgb(0.35, 0.29, 0),
+      color: rgb(0.35, 0.29, 0),
     });
 
     if (ctx.nome) {
       const nW = pc.fontBold.widthOfTextAtSize(ctx.nome, sigNmSz);
-      pc.page.drawText(ctx.nome, { x: posX + (drawW - nW) / 2, y: lineY - sigNmSz * 1.3, size: sigNmSz, font: pc.fontBold, color: rgb(0, 0, 0) });
+      pc.page.drawText(ctx.nome, {
+        x: posX + (drawW - nW) / 2,
+        y: lineY - sigNmSz * 1.3,
+        size: sigNmSz,
+        font: pc.fontBold,
+        color: rgb(0, 0, 0),
+      });
     }
     if (ctx.cargo) {
       const cW = pc.font.widthOfTextAtSize(ctx.cargo, sigCgSz);
-      pc.page.drawText(ctx.cargo, { x: posX + (drawW - cW) / 2, y: lineY - sigNmSz * 1.3 - sigCgSz * 1.5, size: sigCgSz, font: pc.font, color: rgb(0.3, 0.3, 0.3) });
+      pc.page.drawText(ctx.cargo, {
+        x: posX + (drawW - cW) / 2,
+        y: lineY - sigNmSz * 1.3 - sigCgSz * 1.5,
+        size: sigCgSz,
+        font: pc.font,
+        color: rgb(0.3, 0.3, 0.3),
+      });
     }
   }
 
   private async desenharQrCode(
-    pdfDoc: PDFDocument, page: PDFPage, width: number, height: number,
-    qrConf: Record<string, unknown> | undefined, codigoValidacao: string,
+    pdfDoc: PDFDocument,
+    page: PDFPage,
+    width: number,
+    height: number,
+    qrConf: Record<string, unknown> | undefined,
+    codigoValidacao: string,
   ): Promise<void> {
-    const qrXPct = (qrConf?.x  as number) ?? 85;
-    const qrYPct = (qrConf?.y  as number) ?? 85;
-    const qrW    = (((qrConf?.size as number) || 10) / 100) * width;
-    const qrX    = (qrXPct / 100) * width;
-    const qrY    = topPctToY(qrYPct, height, qrW);
+    const qrXPct = (qrConf?.x as number) ?? 85;
+    const qrYPct = (qrConf?.y as number) ?? 85;
+    const qrW = (((qrConf?.size as number) || 10) / 100) * width;
+    const qrX = (qrXPct / 100) * width;
+    const qrY = topPctToY(qrYPct, height, qrW);
 
     // frontendUrl resolvido em startup via ConfigService — sem require('dotenv') em prod
-    const linkValidacao  = `${this.frontendUrl}/validar-certificado?codigo=${codigoValidacao}`;
-    const qrCodeDataUrl  = await QRCode.toDataURL(linkValidacao, {
-      margin: 1, width: 150, color: { dark: '#000', light: '#FFF' },
+    const linkValidacao = `${this.frontendUrl}/validar-certificado?codigo=${codigoValidacao}`;
+    const qrCodeDataUrl = await QRCode.toDataURL(linkValidacao, {
+      margin: 1,
+      width: 150,
+      color: { dark: '#000', light: '#FFF' },
     });
     const qrBytes = Buffer.from(qrCodeDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
     const qrImage = await pdfDoc.embedPng(qrBytes);
@@ -295,19 +326,25 @@ export class PdfService {
   // ── Engine Principal ───────────────────────────────────────────────────────
 
   async construirPdfBase(
-    modelo:           ModeloPdf,
-    textoFormatado:   string,
-    codigoValidacao:  string,
-    nomeAluno?:       string,
+    modelo: ModeloPdf,
+    textoFormatado: string,
+    codigoValidacao: string,
+    nomeAluno?: string,
   ): Promise<Buffer> {
     try {
       const {
-        arteBaseUrl, assinaturaUrl, assinaturaUrl2,
-        layoutConfig, nomeAssinante, cargoAssinante, nomeAssinante2, cargoAssinante2,
+        arteBaseUrl,
+        assinaturaUrl,
+        assinaturaUrl2,
+        layoutConfig,
+        nomeAssinante,
+        cargoAssinante,
+        nomeAssinante2,
+        cargoAssinante2,
       } = modelo;
-      const config   = (layoutConfig as Record<string, unknown>) || {};
-      const pdfDoc   = await PDFDocument.create();
-      const font     = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const config = (layoutConfig as Record<string, unknown>) || {};
+      const pdfDoc = await PDFDocument.create();
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
       const { page, width, height } = await this.adicionarArteBase(pdfDoc, arteBaseUrl);
@@ -323,24 +360,50 @@ export class PdfService {
       const assinatura2Conf = (config.assinatura2 as Record<string, unknown> | undefined) ?? {};
 
       if (assinaturaUrl) {
-        await this.injetarAssinaturaUrl(pc, width, height, assinaturaUrl, {
-          config: assinatura1Conf, nome: nomeAssinante, cargo: cargoAssinante,
-          assinaturaUrl2, assinatura1: assinatura1Conf,
-        }, false);
+        await this.injetarAssinaturaUrl(
+          pc,
+          width,
+          height,
+          assinaturaUrl,
+          {
+            config: assinatura1Conf,
+            nome: nomeAssinante,
+            cargo: cargoAssinante,
+            assinaturaUrl2,
+            assinatura1: assinatura1Conf,
+          },
+          false,
+        );
       }
 
       if (assinaturaUrl2) {
-        await this.injetarAssinaturaUrl(pc, width, height, assinaturaUrl2, {
-          config: assinatura2Conf, nome: nomeAssinante2, cargo: cargoAssinante2,
-          assinaturaUrl2, assinatura1: assinatura1Conf,
-        }, true);
+        await this.injetarAssinaturaUrl(
+          pc,
+          width,
+          height,
+          assinaturaUrl2,
+          {
+            config: assinatura2Conf,
+            nome: nomeAssinante2,
+            cargo: cargoAssinante2,
+            assinaturaUrl2,
+            assinatura1: assinatura1Conf,
+          },
+          true,
+        );
       }
 
-      await this.desenharQrCode(pdfDoc, page, width, height, config.qrCode as Record<string, unknown> | undefined, codigoValidacao);
+      await this.desenharQrCode(
+        pdfDoc,
+        page,
+        width,
+        height,
+        config.qrCode as Record<string, unknown> | undefined,
+        codigoValidacao,
+      );
 
       const pdfBytes = await pdfDoc.save();
       return Buffer.from(pdfBytes);
-
     } catch (error: unknown) {
       this.logger.error(`Falha no Engine PDF: ${String(error)}`);
       throw new InternalServerErrorException('Problemas críticos ao montar o PDF das partes gráficas.');

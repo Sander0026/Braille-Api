@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UseInterceptors, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+  UseInterceptors,
+  Req,
+} from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { TurmasService } from './turmas.service';
 import { CreateTurmaDto } from './dto/create-turma.dto';
@@ -23,7 +35,7 @@ class MudarStatusDto {
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('turmas')
 export class TurmasController {
-  constructor(private readonly turmasService: TurmasService) { }
+  constructor(private readonly turmasService: TurmasService) {}
 
   @Post()
   @Roles('ADMIN', 'SECRETARIA')

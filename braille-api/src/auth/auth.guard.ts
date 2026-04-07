@@ -1,23 +1,18 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { JwtService }       from '@nestjs/jwt';
-import { PrismaService }    from '../prisma/prisma.service';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../prisma/prisma.service';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
-    private readonly prisma:     PrismaService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const token   = this.extractTokenFromHeader(request);
+    const token = this.extractTokenFromHeader(request);
 
     if (!token) {
       throw new UnauthorizedException('Acesso negado. Token não fornecido.');
@@ -36,7 +31,7 @@ export class AuthGuard implements CanActivate {
 
       // Verificação em tempo real: conta ativa? Garante revogação imediata sem esperar JWT expirar.
       const userAtivo = await this.prisma.user.findUnique({
-        where:  { id: payload.sub },
+        where: { id: payload.sub },
         select: { id: true, statusAtivo: true, excluido: true },
       });
 

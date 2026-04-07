@@ -1,16 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { PrismaService }    from '../prisma/prisma.service';
-import { PdfService }       from '../certificados/pdf.service';
-import { UploadService }    from '../upload/upload.service';
-import { AuditLogService }  from '../audit-log/audit-log.service';
-import { AuditUser }        from '../common/interfaces/audit-user.interface';
+import { PrismaService } from '../prisma/prisma.service';
+import { PdfService } from '../certificados/pdf.service';
+import { UploadService } from '../upload/upload.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { formatarDataBR, preencherTemplateTexto } from '../common/helpers/data.helper';
-import {
-  CreateApoiadorDto,
-  UpdateApoiadorDto,
-  CreateAcaoApoiadorDto,
-  UpdateAcaoApoiadorDto,
-} from './dto/apoiador.dto';
+import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
 import { EmitirCertificadoApoiadorDto } from './dto/emitir-certificado-apoiador.dto';
 import { Prisma, TipoApoiador, AuditAcao } from '@prisma/client';
 import * as crypto from 'node:crypto';
@@ -19,32 +14,32 @@ import * as crypto from 'node:crypto';
 
 /** Campos seguros para endpoints públicos — exclui dados sensíveis PII. */
 const PUBLIC_SELECT = {
-  id:                   true,
-  tipo:                 true,
-  nomeRazaoSocial:      true,
-  nomeFantasia:         true,
+  id: true,
+  tipo: true,
+  nomeRazaoSocial: true,
+  nomeFantasia: true,
   atividadeEspecialidade: true,
-  logoUrl:              true,
-  exibirNoSite:         true,
+  logoUrl: true,
+  exibirNoSite: true,
 } as const;
 
 /** Campos para listagens admin — inclui dados operacionais, exclui observações pesadas. */
 const LIST_SELECT = {
-  id:                   true,
-  tipo:                 true,
-  nomeRazaoSocial:      true,
-  nomeFantasia:         true,
-  cpfCnpj:              true,
-  contatoPessoa:        true,
-  telefone:             true,
-  email:                true,
-  endereco:             true,
+  id: true,
+  tipo: true,
+  nomeRazaoSocial: true,
+  nomeFantasia: true,
+  cpfCnpj: true,
+  contatoPessoa: true,
+  telefone: true,
+  email: true,
+  endereco: true,
   atividadeEspecialidade: true,
-  logoUrl:              true,
-  ativo:                true,
-  exibirNoSite:         true,
-  criadoEm:             true,
-  atualizadoEm:         true,
+  logoUrl: true,
+  ativo: true,
+  exibirNoSite: true,
+  criadoEm: true,
+  atualizadoEm: true,
 } as const;
 
 /** Hosts autorizados para redirect de PDFs — SSRF prevention (OWASP A10 / CWE-918). */
@@ -52,9 +47,7 @@ const REDIRECT_ALLOWLIST = new Set(['res.cloudinary.com', 'api.cloudinary.com'])
 
 // ── Tipo de retorno do gerarPdf ────────────────────────────────────────────────
 
-export type PdfResult =
-  | { type: 'buffer';   buffer: Buffer }
-  | { type: 'redirect'; url: string };
+export type PdfResult = { type: 'buffer'; buffer: Buffer } | { type: 'redirect'; url: string };
 
 // ── Service ────────────────────────────────────────────────────────────────────
 
@@ -63,8 +56,8 @@ export class ApoiadoresService {
   private readonly logger = new Logger(ApoiadoresService.name);
 
   constructor(
-    private readonly prisma:       PrismaService,
-    private readonly pdfService:   PdfService,
+    private readonly prisma: PrismaService,
+    private readonly pdfService: PdfService,
     private readonly uploadService: UploadService,
     private readonly auditService: AuditLogService,
   ) {}
@@ -81,31 +74,28 @@ export class ApoiadoresService {
     });
 
     this.dispararAuditoria({
-      entidade: 'Apoiador', registroId: result.id,
-      acao: AuditAcao.CRIAR, auditUser, newValue: result,
+      entidade: 'Apoiador',
+      registroId: result.id,
+      acao: AuditAcao.CRIAR,
+      auditUser,
+      newValue: result,
     });
 
     return result;
   }
 
-  async findAll(params: {
-    skip?:   number;
-    take?:   number;
-    tipo?:   TipoApoiador;
-    search?: string;
-    ativo?:  boolean;
-  }) {
+  async findAll(params: { skip?: number; take?: number; tipo?: TipoApoiador; search?: string; ativo?: boolean }) {
     const { skip, take, tipo, search, ativo } = params;
 
     const where: Prisma.ApoiadorWhereInput = {
       // Por padrão lista apenas ativos; ativo=false lista inativos; ativo=undefined lista todos
       ativo: ativo ?? true,
-      ...(tipo   && { tipo }),
+      ...(tipo && { tipo }),
       ...(search && {
         OR: [
-          { nomeRazaoSocial:       { contains: search, mode: 'insensitive' } },
-          { nomeFantasia:          { contains: search, mode: 'insensitive' } },
-          { atividadeEspecialidade:{ contains: search, mode: 'insensitive' } },
+          { nomeRazaoSocial: { contains: search, mode: 'insensitive' } },
+          { nomeFantasia: { contains: search, mode: 'insensitive' } },
+          { atividadeEspecialidade: { contains: search, mode: 'insensitive' } },
         ],
       }),
     };
@@ -116,7 +106,7 @@ export class ApoiadoresService {
         skip,
         take,
         where,
-        select:  LIST_SELECT, // exclui observacoes (campo @db.Text) da listagem
+        select: LIST_SELECT, // exclui observacoes (campo @db.Text) da listagem
         orderBy: { criadoEm: 'desc' },
       }),
       this.prisma.apoiador.count({ where }),
@@ -128,8 +118,8 @@ export class ApoiadoresService {
   /** Endpoint público — exclui campos PII (cpfCnpj, email, observacoes, contatoPessoa). */
   async findPublic() {
     return this.prisma.apoiador.findMany({
-      where:   { ativo: true, exibirNoSite: true },
-      select:  PUBLIC_SELECT,
+      where: { ativo: true, exibirNoSite: true },
+      select: PUBLIC_SELECT,
       orderBy: { nomeRazaoSocial: 'asc' },
     });
   }
@@ -149,9 +139,12 @@ export class ApoiadoresService {
     const result = await this.prisma.apoiador.update({ where: { id }, data: rest });
 
     this.dispararAuditoria({
-      entidade: 'Apoiador', registroId: id,
-      acao: AuditAcao.ATUALIZAR, auditUser,
-      oldValue: oldApoiador, newValue: result,
+      entidade: 'Apoiador',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      auditUser,
+      oldValue: oldApoiador,
+      newValue: result,
     });
 
     return result;
@@ -165,15 +158,17 @@ export class ApoiadoresService {
     const oldApoiador = await this.findOne(id);
     const result = await this.prisma.apoiador.update({
       where: { id },
-      data:  { logoUrl },
+      data: { logoUrl },
       select: { id: true, logoUrl: true }, // retorna mínimo necessário
     });
 
     this.dispararAuditoria({
-      entidade: 'Apoiador', registroId: id,
-      acao: AuditAcao.ATUALIZAR, auditUser,
+      entidade: 'Apoiador',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      auditUser,
       oldValue: { logoUrl: oldApoiador.logoUrl },
-      newValue:  { logoUrl: result.logoUrl },
+      newValue: { logoUrl: result.logoUrl },
     });
 
     return result;
@@ -183,14 +178,16 @@ export class ApoiadoresService {
     await this.findOne(id); // cláusula de guarda: garante existência
     const result = await this.prisma.apoiador.update({
       where: { id },
-      data:  { ativo: false, exibirNoSite: false },
+      data: { ativo: false, exibirNoSite: false },
     });
 
     this.dispararAuditoria({
-      entidade: 'Apoiador', registroId: id,
-      acao: AuditAcao.MUDAR_STATUS, auditUser,
+      entidade: 'Apoiador',
+      registroId: id,
+      acao: AuditAcao.MUDAR_STATUS,
+      auditUser,
       oldValue: { ativo: true, exibirNoSite: true },
-      newValue:  { ativo: false, exibirNoSite: false },
+      newValue: { ativo: false, exibirNoSite: false },
     });
 
     return result;
@@ -200,14 +197,16 @@ export class ApoiadoresService {
     const apoiador = await this.findOne(id);
     const result = await this.prisma.apoiador.update({
       where: { id },
-      data:  { ativo: true, exibirNoSite: true },
+      data: { ativo: true, exibirNoSite: true },
     });
 
     this.dispararAuditoria({
-      entidade: 'Apoiador', registroId: id,
-      acao: AuditAcao.RESTAURAR, auditUser,
+      entidade: 'Apoiador',
+      registroId: id,
+      acao: AuditAcao.RESTAURAR,
+      auditUser,
       oldValue: { ativo: apoiador.ativo, exibirNoSite: apoiador.exibirNoSite },
-      newValue:  { ativo: true, exibirNoSite: true },
+      newValue: { ativo: true, exibirNoSite: true },
     });
 
     return result;
@@ -220,7 +219,7 @@ export class ApoiadoresService {
 
     const acao = await this.prisma.acaoApoiador.create({
       data: {
-        dataEvento:    new Date(dto.dataEvento),
+        dataEvento: new Date(dto.dataEvento),
         descricaoAcao: dto.descricaoAcao,
         apoiadorId,
       },
@@ -228,17 +227,24 @@ export class ApoiadoresService {
 
     // Certificado automático é opcional — falha silenciosa não bloqueia a ação
     if (dto.modeloCertificadoId) {
-      await this.emitirCertificado(apoiadorId, {
-        modeloId:           dto.modeloCertificadoId,
-        acaoId:             acao.id,
-        motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
-        dataEmissao:        dto.dataEvento,
-      }, auditUser);
+      await this.emitirCertificado(
+        apoiadorId,
+        {
+          modeloId: dto.modeloCertificadoId,
+          acaoId: acao.id,
+          motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
+          dataEmissao: dto.dataEvento,
+        },
+        auditUser,
+      );
     }
 
     this.dispararAuditoria({
-      entidade: 'AcaoApoiador', registroId: acao.id,
-      acao: AuditAcao.CRIAR, auditUser, newValue: acao,
+      entidade: 'AcaoApoiador',
+      registroId: acao.id,
+      acao: AuditAcao.CRIAR,
+      auditUser,
+      newValue: acao,
     });
 
     return acao;
@@ -254,8 +260,8 @@ export class ApoiadoresService {
 
     const acaoAtualizada = await this.prisma.acaoApoiador.update({
       where: { id: acaoId },
-      data:  {
-        ...(dto.dataEvento    && { dataEvento: new Date(dto.dataEvento) }),
+      data: {
+        ...(dto.dataEvento && { dataEvento: new Date(dto.dataEvento) }),
         ...(dto.descricaoAcao && { descricaoAcao: dto.descricaoAcao }),
       },
     });
@@ -263,18 +269,25 @@ export class ApoiadoresService {
     // Reemissão de certificado: atômica — deleta existentes e recria num único fluxo
     if (dto.modeloCertificadoId) {
       await this.prisma.certificadoEmitido.deleteMany({ where: { acaoId } });
-      await this.emitirCertificado(apoiadorId, {
-        modeloId:           dto.modeloCertificadoId,
-        acaoId,
-        motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
-        dataEmissao:        dto.dataEvento,
-      }, auditUser);
+      await this.emitirCertificado(
+        apoiadorId,
+        {
+          modeloId: dto.modeloCertificadoId,
+          acaoId,
+          motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
+          dataEmissao: dto.dataEvento,
+        },
+        auditUser,
+      );
     }
 
     this.dispararAuditoria({
-      entidade: 'AcaoApoiador', registroId: acao.id,
-      acao: AuditAcao.ATUALIZAR, auditUser,
-      oldValue: acao, newValue: acaoAtualizada,
+      entidade: 'AcaoApoiador',
+      registroId: acao.id,
+      acao: AuditAcao.ATUALIZAR,
+      auditUser,
+      oldValue: acao,
+      newValue: acaoAtualizada,
     });
 
     return acaoAtualizada;
@@ -283,7 +296,7 @@ export class ApoiadoresService {
   async getAcoes(apoiadorId: string) {
     await this.findOne(apoiadorId);
     return this.prisma.acaoApoiador.findMany({
-      where:   { apoiadorId },
+      where: { apoiadorId },
       orderBy: { dataEvento: 'desc' },
     });
   }
@@ -301,18 +314,18 @@ export class ApoiadoresService {
     ]);
 
     this.dispararAuditoria({
-      entidade: 'AcaoApoiador', registroId: acao.id,
-      acao: AuditAcao.EXCLUIR, auditUser, oldValue: acao, newValue: null,
+      entidade: 'AcaoApoiador',
+      registroId: acao.id,
+      acao: AuditAcao.EXCLUIR,
+      auditUser,
+      oldValue: acao,
+      newValue: null,
     });
   }
 
   // ── Certificados ────────────────────────────────────────────────────────────
 
-  async emitirCertificado(
-    apoiadorId: string,
-    dto:        EmitirCertificadoApoiadorDto,
-    auditUser?: AuditUser,
-  ) {
+  async emitirCertificado(apoiadorId: string, dto: EmitirCertificadoApoiadorDto, auditUser?: AuditUser) {
     // Promise.all paralelo: apoiador + modelo buscados numa só rodada de I/O
     const [apoiador, modelo] = await Promise.all([
       this.findOne(apoiadorId),
@@ -323,23 +336,18 @@ export class ApoiadoresService {
       throw new NotFoundException('Modelo de certificado não encontrado.');
     }
 
-    const codigoValidacao    = crypto.randomBytes(6).toString('hex').toUpperCase();
-    const dataEmissaoStr     = dto.dataEmissao ?? new Date().toISOString();
-    const nomeDestinatario   = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
+    const codigoValidacao = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const dataEmissaoStr = dto.dataEmissao ?? new Date().toISOString();
+    const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
     const dataEmissaoFormatada = formatarDataBR(dataEmissaoStr);
 
     const textoFormatado = preencherTemplateTexto(modelo.textoTemplate ?? '', {
       nomeDestinatario,
-      motivo:      dto.motivoPersonalizado ?? '',
+      motivo: dto.motivoPersonalizado ?? '',
       dataEmissao: dataEmissaoFormatada,
     });
 
-    const pdfBuffer = await this.pdfService.construirPdfBase(
-      modelo,
-      textoFormatado,
-      codigoValidacao,
-      nomeDestinatario,
-    );
+    const pdfBuffer = await this.pdfService.construirPdfBase(modelo, textoFormatado, codigoValidacao, nomeDestinatario);
 
     // Upload opcional — falha não impede o registro do certificado
     let pdfUrl: string | null = null;
@@ -355,18 +363,21 @@ export class ApoiadoresService {
     const certificado = await this.prisma.certificadoEmitido.create({
       data: {
         codigoValidacao,
-        modeloId:            modelo.id,
-        apoiadorId:          apoiador.id,
-        acaoId:              dto.acaoId ?? null,
+        modeloId: modelo.id,
+        apoiadorId: apoiador.id,
+        acaoId: dto.acaoId ?? null,
         motivoPersonalizado: dto.motivoPersonalizado ?? null,
-        dataEmissao:         new Date(dataEmissaoStr),
+        dataEmissao: new Date(dataEmissaoStr),
         pdfUrl,
       },
     });
 
     this.dispararAuditoria({
-      entidade: 'CertificadoEmitido', registroId: certificado.id,
-      acao: AuditAcao.CRIAR, auditUser, newValue: certificado,
+      entidade: 'CertificadoEmitido',
+      registroId: certificado.id,
+      acao: AuditAcao.CRIAR,
+      auditUser,
+      newValue: certificado,
     });
 
     return { certificado, pdfBase64: pdfBuffer.toString('base64') };
@@ -375,10 +386,10 @@ export class ApoiadoresService {
   async getCertificados(apoiadorId: string) {
     await this.findOne(apoiadorId);
     return this.prisma.certificadoEmitido.findMany({
-      where:   { apoiadorId },
+      where: { apoiadorId },
       include: {
         modelo: { select: { nome: true } },
-        acao:   { select: { descricaoAcao: true, dataEvento: true } },
+        acao: { select: { descricaoAcao: true, dataEvento: true } },
       },
       orderBy: { dataEmissao: 'desc' },
     });
@@ -394,23 +405,25 @@ export class ApoiadoresService {
     const [apoiador, cert] = await Promise.all([
       this.findOne(apoiadorId),
       this.prisma.certificadoEmitido.findFirst({
-        where:   { id: certId, apoiadorId },
+        where: { id: certId, apoiadorId },
         include: {
-        modelo: { select: {
-          id:             true,
-          nome:           true,
-          textoTemplate:  true,
-          arteBaseUrl:    true,
-          assinaturaUrl:  true,
-          assinaturaUrl2: true,
-          nomeAssinante:  true,
-          cargoAssinante: true,
-          nomeAssinante2: true,
-          cargoAssinante2:true,
-          layoutConfig:   true,
-          tipo:           true,
-        } },
-          acao:   { select: { descricaoAcao: true } },
+          modelo: {
+            select: {
+              id: true,
+              nome: true,
+              textoTemplate: true,
+              arteBaseUrl: true,
+              assinaturaUrl: true,
+              assinaturaUrl2: true,
+              nomeAssinante: true,
+              cargoAssinante: true,
+              nomeAssinante2: true,
+              cargoAssinante2: true,
+              layoutConfig: true,
+              tipo: true,
+            },
+          },
+          acao: { select: { descricaoAcao: true } },
         },
       }),
     ]);
@@ -426,8 +439,8 @@ export class ApoiadoresService {
     }
 
     const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
-    const motivo           = cert.motivoPersonalizado || cert.acao?.descricaoAcao || '';
-    const dataEmissaoStr   = cert.dataEmissao?.toISOString() ?? new Date().toISOString();
+    const motivo = cert.motivoPersonalizado || cert.acao?.descricaoAcao || '';
+    const dataEmissaoStr = cert.dataEmissao?.toISOString() ?? new Date().toISOString();
 
     const textoFormatado = preencherTemplateTexto(cert.modelo.textoTemplate ?? '', {
       nomeDestinatario,
@@ -470,31 +483,33 @@ export class ApoiadoresService {
    * A auditoria nunca bloqueia o fluxo principal — falhas são logadas.
    */
   private dispararAuditoria(params: {
-    entidade:   string;
+    entidade: string;
     registroId: string;
-    acao:       AuditAcao;
+    acao: AuditAcao;
     auditUser?: AuditUser;
-    oldValue?:  unknown;
-    newValue?:  unknown;
+    oldValue?: unknown;
+    newValue?: unknown;
   }): void {
     if (!params.auditUser) return;
 
     const { entidade, registroId, acao, auditUser, oldValue, newValue } = params;
 
-    this.auditService.registrar({
-      entidade,
-      registroId,
-      acao,
-      autorId:    auditUser.sub,
-      autorNome:  auditUser.nome,
-      autorRole:  auditUser.role, // tipado — sem 'as any'
-      ip:         auditUser.ip,
-      userAgent:  auditUser.userAgent,
-      oldValue,
-      newValue,
-    }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : JSON.stringify(err);
-      this.logger.warn(`Auditoria falhou [${entidade}/${acao}]: ${msg}`);
-    });
+    this.auditService
+      .registrar({
+        entidade,
+        registroId,
+        acao,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role, // tipado — sem 'as any'
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        oldValue,
+        newValue,
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : JSON.stringify(err);
+        this.logger.warn(`Auditoria falhou [${entidade}/${acao}]: ${msg}`);
+      });
   }
 }

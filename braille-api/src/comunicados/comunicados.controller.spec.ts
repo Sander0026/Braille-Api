@@ -7,19 +7,19 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 // ── Mock do service — controller não deve ter lógica própria para testar ──────
 
 const mockService = {
-  create:  jest.fn(),
+  create: jest.fn(),
   findAll: jest.fn(),
   findOne: jest.fn(),
-  update:  jest.fn(),
-  remove:  jest.fn(),
+  update: jest.fn(),
+  remove: jest.fn(),
 };
 
 // ── Fixture de request autenticado para simular o AuthGuard ──────────────────
 
 const mockReq = {
-  user:    { sub: 'user-uuid-1', nome: 'Admin Teste', role: Role.SECRETARIA },
+  user: { sub: 'user-uuid-1', nome: 'Admin Teste', role: Role.SECRETARIA },
   headers: { 'user-agent': 'jest/test' },
-  socket:  { remoteAddress: '127.0.0.1' },
+  socket: { remoteAddress: '127.0.0.1' },
 } as unknown as AuthenticatedRequest;
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ describe('ComunicadosController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ComunicadosController],
-      providers:   [{ provide: ComunicadosService, useValue: mockService }],
+      providers: [{ provide: ComunicadosService, useValue: mockService }],
     }).compile();
 
     controller = module.get<ComunicadosController>(ComunicadosController);
@@ -51,26 +51,19 @@ describe('ComunicadosController', () => {
       await controller.create(dto as any, mockReq);
 
       expect(mockService.create).toHaveBeenCalledTimes(1);
-      expect(mockService.create).toHaveBeenCalledWith(
-        dto,
-        expect.objectContaining({ sub: 'user-uuid-1' }),
-      );
+      expect(mockService.create).toHaveBeenCalledWith(dto, expect.objectContaining({ sub: 'user-uuid-1' }));
     });
   });
 
   describe('update()', () => {
     it('deve delegar ao service com o ID, DTO e auditUser corretos', async () => {
-      const id  = 'uuid-comunicado-1';
+      const id = 'uuid-comunicado-1';
       const dto = { titulo: 'Título Editado' };
       mockService.update.mockResolvedValue({ id, ...dto });
 
       await controller.update(id, dto as any, mockReq);
 
-      expect(mockService.update).toHaveBeenCalledWith(
-        id,
-        dto,
-        expect.objectContaining({ sub: 'user-uuid-1' }),
-      );
+      expect(mockService.update).toHaveBeenCalledWith(id, dto, expect.objectContaining({ sub: 'user-uuid-1' }));
     });
   });
 
@@ -81,10 +74,7 @@ describe('ComunicadosController', () => {
 
       await controller.remove(id, mockReq);
 
-      expect(mockService.remove).toHaveBeenCalledWith(
-        id,
-        expect.objectContaining({ sub: 'user-uuid-1' }),
-      );
+      expect(mockService.remove).toHaveBeenCalledWith(id, expect.objectContaining({ sub: 'user-uuid-1' }));
     });
   });
 

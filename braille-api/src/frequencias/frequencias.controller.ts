@@ -17,7 +17,7 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('frequencias')
 export class FrequenciasController {
-  constructor(private readonly frequenciasService: FrequenciasService) { }
+  constructor(private readonly frequenciasService: FrequenciasService) {}
 
   @Post()
   @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
@@ -28,7 +28,9 @@ export class FrequenciasController {
 
   @Post('lote')
   @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
-  @ApiOperation({ summary: 'Registrar ou atualizar chamada em lote (múltiplos alunos da mesma turma e data, via transação isolada)' })
+  @ApiOperation({
+    summary: 'Registrar ou atualizar chamada em lote (múltiplos alunos da mesma turma e data, via transação isolada)',
+  })
   salvarLote(@Body() dto: CreateFrequenciaLoteDto, @Req() req: AuthenticatedRequest) {
     return this.frequenciasService.salvarLote(dto, getAuditUser(req));
   }
@@ -80,7 +82,7 @@ export class FrequenciasController {
   @Post('diario/fechar/:turmaId/:dataAula')
   @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
   @ApiOperation({
-    summary: 'Fechar o diário de uma turma numa data — congela a chamada (professor: só hoje; admin: qualquer data)'
+    summary: 'Fechar o diário de uma turma numa data — congela a chamada (professor: só hoje; admin: qualquer data)',
   })
   fecharDiario(
     @Param('turmaId') turmaId: string,

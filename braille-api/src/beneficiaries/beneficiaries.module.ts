@@ -9,4 +9,4 @@ import { UploadModule } from '../upload/upload.module';
   controllers: [BeneficiariesController],
   providers: [BeneficiariesService],
 })
-export class BeneficiariesModule { }
+export class BeneficiariesModule {}

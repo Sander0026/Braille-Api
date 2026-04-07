@@ -1,9 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsUUID, IsOptional, IsArray, ValidateNested, IsEnum, IsInt, Min, Max, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsUUID,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsEnum,
+  IsInt,
+  Min,
+  Max,
+  IsDateString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { DiaSemana, TurmaStatus } from '@prisma/client';
-
-
 
 /** Um turno semanal da turma. horaInicio/horaFim em MINUTOS desde meia-noite.
  *  Ex: Segunda 14h00–16h00 → { dia: 'SEG', horaInicio: 840, horaFim: 960 }
@@ -39,7 +49,7 @@ export class CreateTurmaDto {
 
   @ApiPropertyOptional({
     description: 'Texto legado de horário (mantido por compatibilidade). Prefira usar gradeHoraria.',
-    example: 'Seg e Qua, 14h às 16h'
+    example: 'Seg e Qua, 14h às 16h',
   })
   @IsString()
   @IsOptional()
@@ -58,7 +68,7 @@ export class CreateTurmaDto {
 
   @ApiPropertyOptional({
     type: [GradeHorariaDto],
-    description: 'Grade de horários estruturada (dia + horaInicio/horaFim em minutos)'
+    description: 'Grade de horários estruturada (dia + horaInicio/horaFim em minutos)',
   })
   @IsArray()
   @ValidateNested({ each: true })

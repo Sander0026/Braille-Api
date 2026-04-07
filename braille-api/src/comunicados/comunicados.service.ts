@@ -14,14 +14,14 @@ import { QueryComunicadoDto } from './dto/query-comunicado.dto';
 // e que campos internos desnecessários não transitam na memória.
 // Espelha o tipo ComunicadoResponse em entities/comunicado.entity.ts.
 const COMUNICADO_SELECT = {
-  id:           true,
-  titulo:       true,
-  conteudo:     true,
-  categoria:    true,
-  fixado:       true,
-  imagemCapa:   true,
-  autorId:      true,
-  criadoEm:     true,
+  id: true,
+  titulo: true,
+  conteudo: true,
+  categoria: true,
+  fixado: true,
+  imagemCapa: true,
+  autorId: true,
+  criadoEm: true,
   atualizadoEm: true,
   autor: { select: { nome: true } },
 } satisfies Prisma.ComunicadoSelect;
@@ -30,7 +30,7 @@ const COMUNICADO_SELECT = {
 // Evita a duplicação que existia em update() e remove() (violação DRY).
 function omitAutor<T extends { autor?: unknown }>(obj: T): Omit<T, 'autor'> {
   const { autor: _ignored, ...rest } = obj;
-  return rest as Omit<T, 'autor'>;
+  return rest;
 }
 
 @Injectable()
@@ -38,29 +38,27 @@ export class ComunicadosService {
   private readonly logger = new Logger(ComunicadosService.name);
 
   constructor(
-    private readonly prisma:         PrismaService,
-    private readonly auditService:   AuditLogService,
-    private readonly uploadService:  UploadService,
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditLogService,
+    private readonly uploadService: UploadService,
   ) {}
 
   // ── Mapeamento AuditUser → campos esperados pelo AuditLogService.registrar() ─
   private static auditFields(u: AuditUser) {
     return {
-      autorId:   u.sub,
+      autorId: u.sub,
       autorNome: u.nome,
       autorRole: u.role,
-      ip:        u.ip,
+      ip: u.ip,
       userAgent: u.userAgent,
     };
   }
 
   // ── Fire-and-forget seguro — suprime a promise floating; erro vai ao log ──────
   private deleteImagemAsync(publicId: string, contexto: string): void {
-    void this.uploadService.deleteFile(publicId).catch((e: unknown) =>
-      this.logger.warn(
-        `[Comunicado] ${contexto}: ${(e as Error).message}`,
-      ),
-    );
+    void this.uploadService
+      .deleteFile(publicId)
+      .catch((e: unknown) => this.logger.warn(`[Comunicado] ${contexto}: ${(e as Error).message}`));
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -70,22 +68,22 @@ export class ComunicadosService {
   async create(dto: CreateComunicadoDto, auditUser: AuditUser) {
     const comunicado = await this.prisma.comunicado.create({
       data: {
-        titulo:     dto.titulo,
-        conteudo:   dto.conteudo,
-        categoria:  dto.categoria,
-        fixado:     dto.fixado ?? false,
-        autorId:    auditUser.sub,
+        titulo: dto.titulo,
+        conteudo: dto.conteudo,
+        categoria: dto.categoria,
+        fixado: dto.fixado ?? false,
+        autorId: auditUser.sub,
         imagemCapa: dto.imagemCapa,
       },
       select: COMUNICADO_SELECT,
     });
 
     void this.auditService.registrar({
-      entidade:   'Comunicado',
+      entidade: 'Comunicado',
       registroId: comunicado.id,
-      acao:       AuditAcao.CRIAR,
+      acao: AuditAcao.CRIAR,
       ...ComunicadosService.auditFields(auditUser),
-      newValue:   comunicado,
+      newValue: comunicado,
     });
 
     return comunicado;
@@ -97,7 +95,7 @@ export class ComunicadosService {
 
     // Tipo seguro — elimina o 'any' que desactivava a verificação do Prisma
     const where: Prisma.ComunicadoWhereInput = {
-      ...(titulo    && { titulo:    { contains: titulo, mode: 'insensitive' } }),
+      ...(titulo && { titulo: { contains: titulo, mode: 'insensitive' } }),
       ...(categoria && { categoria }),
     };
 
@@ -105,8 +103,8 @@ export class ComunicadosService {
       this.prisma.comunicado.findMany({
         where,
         skip,
-        take:    limit,
-        select:  COMUNICADO_SELECT,
+        take: limit,
+        select: COMUNICADO_SELECT,
         orderBy: [{ fixado: 'desc' }, { criadoEm: 'desc' }],
       }),
       this.prisma.comunicado.count({ where }),
@@ -123,7 +121,7 @@ export class ComunicadosService {
 
   async findOne(id: string) {
     const comunicado = await this.prisma.comunicado.findUnique({
-      where:  { id },
+      where: { id },
       select: COMUNICADO_SELECT,
     });
 
@@ -136,12 +134,12 @@ export class ComunicadosService {
     const comunicadoAntigo = await this.findOne(id);
 
     const comunicadoAtualizado = await this.prisma.comunicado.update({
-      where:  { id },
-      data:   {
-        titulo:     dto.titulo,
-        conteudo:   dto.conteudo,
-        categoria:  dto.categoria,
-        fixado:     dto.fixado,
+      where: { id },
+      data: {
+        titulo: dto.titulo,
+        conteudo: dto.conteudo,
+        categoria: dto.categoria,
+        fixado: dto.fixado,
         imagemCapa: dto.imagemCapa,
       },
       select: COMUNICADO_SELECT,
@@ -149,9 +147,7 @@ export class ComunicadosService {
 
     // Remoção da imagem antiga é operação auxiliar — não bloqueia a resposta HTTP
     const imagemSubstituida =
-      !!comunicadoAntigo.imagemCapa &&
-      dto.imagemCapa !== undefined &&
-      comunicadoAntigo.imagemCapa !== dto.imagemCapa;
+      !!comunicadoAntigo.imagemCapa && dto.imagemCapa !== undefined && comunicadoAntigo.imagemCapa !== dto.imagemCapa;
 
     if (imagemSubstituida) {
       this.deleteImagemAsync(
@@ -161,12 +157,12 @@ export class ComunicadosService {
     }
 
     void this.auditService.registrar({
-      entidade:   'Comunicado',
+      entidade: 'Comunicado',
       registroId: id,
-      acao:       AuditAcao.ATUALIZAR,
+      acao: AuditAcao.ATUALIZAR,
       ...ComunicadosService.auditFields(auditUser),
-      oldValue:   omitAutor(comunicadoAntigo),
-      newValue:   comunicadoAtualizado,
+      oldValue: omitAutor(comunicadoAntigo),
+      newValue: comunicadoAtualizado,
     });
 
     return comunicadoAtualizado;
@@ -180,18 +176,15 @@ export class ComunicadosService {
 
     // Remoção do asset no Cloudinary é auxiliar — não bloqueia a resposta HTTP
     if (comunicado.imagemCapa) {
-      this.deleteImagemAsync(
-        comunicado.imagemCapa,
-        'Falha não-obstrutiva ao remover capa do Cloudinary',
-      );
+      this.deleteImagemAsync(comunicado.imagemCapa, 'Falha não-obstrutiva ao remover capa do Cloudinary');
     }
 
     void this.auditService.registrar({
-      entidade:   'Comunicado',
+      entidade: 'Comunicado',
       registroId: id,
-      acao:       AuditAcao.EXCLUIR,
+      acao: AuditAcao.EXCLUIR,
       ...ComunicadosService.auditFields(auditUser),
-      oldValue:   omitAutor(comunicado),
+      oldValue: omitAutor(comunicado),
     });
 
     return result;

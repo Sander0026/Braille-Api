@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsDateString, MaxLength, IsUrl } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional }                                  from '@nestjs/swagger';
-import { Transform }                                                          from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 const sanitizeString = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.replace(/\0/g, '').trim() : value;

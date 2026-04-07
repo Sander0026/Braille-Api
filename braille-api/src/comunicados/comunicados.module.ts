@@ -9,4 +9,4 @@ import { UploadModule } from '../upload/upload.module';
   controllers: [ComunicadosController],
   providers: [ComunicadosService],
 })
-export class ComunicadosModule { }
+export class ComunicadosModule {}

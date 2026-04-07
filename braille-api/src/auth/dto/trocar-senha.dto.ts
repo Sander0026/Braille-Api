@@ -12,14 +12,17 @@ export class TrocarSenhaDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(72, { message: 'A nova senha deve ter no máximo 72 caracteres.' })
-  @IsStrongPassword({
-    minLength:    8,
-    minLowercase: 1,
-    minUppercase: 1,
-    minNumbers:   1,
-    minSymbols:   1,
-  }, {
-    message: 'A nova senha deve ter pelo menos 8 caracteres, com maiúsculas, minúsculas, números e símbolos.',
-  })
+  @IsStrongPassword(
+    {
+      minLength: 8,
+      minLowercase: 1,
+      minUppercase: 1,
+      minNumbers: 1,
+      minSymbols: 1,
+    },
+    {
+      message: 'A nova senha deve ter pelo menos 8 caracteres, com maiúsculas, minúsculas, números e símbolos.',
+    },
+  )
   novaSenha: string;
 }

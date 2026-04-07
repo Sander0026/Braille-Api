@@ -10,40 +10,40 @@ import { AuditUser } from '../common/interfaces/audit-user.interface';
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const MOCK_AUDIT_USER: AuditUser = {
-  sub:       'user-uuid-1',
-  nome:      'Admin Teste',
-  role:      Role.SECRETARIA,
-  ip:        '127.0.0.1',
+  sub: 'user-uuid-1',
+  nome: 'Admin Teste',
+  role: Role.SECRETARIA,
+  ip: '127.0.0.1',
   userAgent: 'jest/test',
 };
 
 const MOCK_COMUNICADO = {
-  id:           'uuid-comunicado-1',
-  titulo:       'Comunicado Teste',
-  conteudo:     'Conteúdo do comunicado',
-  categoria:    null,
-  fixado:       false,
-  imagemCapa:   null,
-  autorId:      'user-uuid-1',
-  criadoEm:     new Date('2024-01-01'),
+  id: 'uuid-comunicado-1',
+  titulo: 'Comunicado Teste',
+  conteudo: 'Conteúdo do comunicado',
+  categoria: null,
+  fixado: false,
+  imagemCapa: null,
+  autorId: 'user-uuid-1',
+  criadoEm: new Date('2024-01-01'),
   atualizadoEm: new Date('2024-01-01'),
-  autor:        { nome: 'Admin Teste' },
+  autor: { nome: 'Admin Teste' },
 };
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 const mockPrisma = {
   comunicado: {
-    create:     jest.fn(),
-    findMany:   jest.fn(),
+    create: jest.fn(),
+    findMany: jest.fn(),
     findUnique: jest.fn(),
-    count:      jest.fn(),
-    update:     jest.fn(),
-    delete:     jest.fn(),
+    count: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
   },
 };
 
-const mockAuditService  = { registrar:   jest.fn().mockResolvedValue(undefined) };
+const mockAuditService = { registrar: jest.fn().mockResolvedValue(undefined) };
 const mockUploadService = { deleteFile: jest.fn().mockResolvedValue(undefined) };
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
@@ -55,9 +55,9 @@ describe('ComunicadosService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ComunicadosService,
-        { provide: PrismaService,   useValue: mockPrisma },
+        { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditService },
-        { provide: UploadService,   useValue: mockUploadService },
+        { provide: UploadService, useValue: mockUploadService },
       ],
     }).compile();
 
@@ -75,10 +75,7 @@ describe('ComunicadosService', () => {
     it('deve criar o comunicado com o autorId do auditUser', async () => {
       mockPrisma.comunicado.create.mockResolvedValue(MOCK_COMUNICADO);
 
-      const result = await service.create(
-        { titulo: 'Teste', conteudo: 'Conteúdo' },
-        MOCK_AUDIT_USER,
-      );
+      const result = await service.create({ titulo: 'Teste', conteudo: 'Conteúdo' }, MOCK_AUDIT_USER);
 
       expect(mockPrisma.comunicado.create).toHaveBeenCalledTimes(1);
       expect(mockPrisma.comunicado.create).toHaveBeenCalledWith(
@@ -140,11 +137,7 @@ describe('ComunicadosService', () => {
       mockPrisma.comunicado.findUnique.mockResolvedValue(MOCK_COMUNICADO);
       mockPrisma.comunicado.update.mockResolvedValue(comunicadoAtualizado);
 
-      const result = await service.update(
-        'uuid-comunicado-1',
-        { titulo: 'Título Novo' },
-        MOCK_AUDIT_USER,
-      );
+      const result = await service.update('uuid-comunicado-1', { titulo: 'Título Novo' }, MOCK_AUDIT_USER);
 
       expect(result.titulo).toBe('Título Novo');
     });
@@ -152,9 +145,7 @@ describe('ComunicadosService', () => {
     it('deve lançar NotFoundException se o comunicado não existir', async () => {
       mockPrisma.comunicado.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.update('uuid-inexistente', {}, MOCK_AUDIT_USER),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.update('uuid-inexistente', {}, MOCK_AUDIT_USER)).rejects.toThrow(NotFoundException);
     });
 
     it('deve acionar remoção da imagem antiga quando a imagem for substituída', async () => {
@@ -165,11 +156,7 @@ describe('ComunicadosService', () => {
         imagemCapa: 'https://cdn.example.com/new.jpg',
       });
 
-      await service.update(
-        'uuid-comunicado-1',
-        { imagemCapa: 'https://cdn.example.com/new.jpg' },
-        MOCK_AUDIT_USER,
-      );
+      await service.update('uuid-comunicado-1', { imagemCapa: 'https://cdn.example.com/new.jpg' }, MOCK_AUDIT_USER);
 
       // Fire-and-forget: aguardar microtasks para o void promise resolver
       await Promise.resolve();
@@ -195,9 +182,7 @@ describe('ComunicadosService', () => {
     it('deve lançar NotFoundException se o comunicado não existir', async () => {
       mockPrisma.comunicado.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove('uuid-inexistente', MOCK_AUDIT_USER)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.remove('uuid-inexistente', MOCK_AUDIT_USER)).rejects.toThrow(NotFoundException);
     });
   });
 });

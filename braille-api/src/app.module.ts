@@ -34,20 +34,22 @@ import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
-        ttl: configService.get<number>('CACHE_TTL', 300000), 
+        ttl: configService.get<number>('CACHE_TTL', 300000),
       }),
     }),
     // Bloqueia abusos de rede via configurações dinâmicas de ambiente
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => [{
-        ttl: configService.get<number>('THROTTLER_TTL', 60000),
-        limit: configService.get<number>('THROTTLER_LIMIT', 30),
-      }],
+      useFactory: async (configService: ConfigService) => [
+        {
+          ttl: configService.get<number>('THROTTLER_TTL', 60000),
+          limit: configService.get<number>('THROTTLER_LIMIT', 30),
+        },
+      ],
     }),
     PrismaModule,
-    ScheduleModule.forRoot(),  // Habilita @Cron, @Interval, @Timeout globalmente
+    ScheduleModule.forRoot(), // Habilita @Cron, @Interval, @Timeout globalmente
     AuthModule,
     UsersModule,
     BeneficiariesModule,
@@ -58,9 +60,11 @@ import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/
     ContatosModule,
     UploadModule,
     SiteConfigModule,
-    AuditLogModule,   // Fase 5
-    AtestadosModule,  // Módulo de Justificativas de Falta
-    LaudosModule, ApoiadoresModule, CertificadosModule,
+    AuditLogModule, // Fase 5
+    AtestadosModule, // Módulo de Justificativas de Falta
+    LaudosModule,
+    ApoiadoresModule,
+    CertificadosModule,
   ],
   controllers: [AppController],
   providers: [
@@ -86,4 +90,4 @@ import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

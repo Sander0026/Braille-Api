@@ -26,9 +26,7 @@ export class TurmasScheduler {
       });
 
       if (iniciarResult.count > 0) {
-        this.logger.log(
-          `[TurmasScheduler] ${iniciarResult.count} turma(s) alterada(s): PREVISTA → ANDAMENTO`,
-        );
+        this.logger.log(`[TurmasScheduler] ${iniciarResult.count} turma(s) alterada(s): PREVISTA → ANDAMENTO`);
       }
 
       const concluirResult = await this.prisma.turma.updateMany({
@@ -40,13 +38,11 @@ export class TurmasScheduler {
       });
 
       if (concluirResult.count > 0) {
-        this.logger.log(
-          `[TurmasScheduler] ${concluirResult.count} turma(s) alterada(s): ANDAMENTO → CONCLUIDA`,
-        );
+        this.logger.log(`[TurmasScheduler] ${concluirResult.count} turma(s) alterada(s): ANDAMENTO → CONCLUIDA`);
       }
 
       this.logger.log('[TurmasScheduler] Verificação concluída com sucesso.');
-    } catch(err: any) {
+    } catch (err: any) {
       this.logger.error(`[TurmasScheduler] Falha fatal interrompeu a verificação do BD: ${err.message}`, err.stack);
     }
   }

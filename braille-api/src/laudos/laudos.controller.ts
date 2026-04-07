@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  Delete,
-  UseGuards,
-  Patch,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, UseGuards, Patch, Req } from '@nestjs/common';
 import { LaudosService } from './laudos.service';
 import { CreateLaudoDto } from './dto/create-laudo.dto';
 import { UpdateLaudoDto } from './dto/update-laudo.dto';
@@ -30,11 +20,7 @@ export class LaudosController {
   @Roles(Role.ADMIN, Role.SECRETARIA)
   @Post('alunos/:alunoId/laudos')
   @ApiOperation({ summary: 'Anexar novo Laudo Médico Digitalizado à pasta do Beneficiário' })
-  create(
-    @Param('alunoId') alunoId: string,
-    @Body() createLaudoDto: CreateLaudoDto,
-    @Req() req: AuthenticatedRequest,
-  ) {
+  create(@Param('alunoId') alunoId: string, @Body() createLaudoDto: CreateLaudoDto, @Req() req: AuthenticatedRequest) {
     return this.laudosService.criar(alunoId, createLaudoDto, getAuditUser(req));
   }
 
@@ -48,11 +34,7 @@ export class LaudosController {
   @Roles(Role.ADMIN, Role.SECRETARIA)
   @Patch('laudos/:id')
   @ApiOperation({ summary: 'Retificar Metadados de um Laudo Médico' })
-  update(
-    @Param('id') id: string, 
-    @Body() updateLaudoDto: UpdateLaudoDto,
-    @Req() req: AuthenticatedRequest
-  ) {
+  update(@Param('id') id: string, @Body() updateLaudoDto: UpdateLaudoDto, @Req() req: AuthenticatedRequest) {
     return this.laudosService.atualizar(id, updateLaudoDto, getAuditUser(req));
   }
 
@@ -63,4 +45,3 @@ export class LaudosController {
     return this.laudosService.remover(id, getAuditUser(req));
   }
 }
-

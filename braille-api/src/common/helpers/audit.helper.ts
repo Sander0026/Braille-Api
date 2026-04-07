@@ -19,10 +19,10 @@ export function getAuditUser(req: AuthenticatedRequest): AuditUser {
   const role = user?.role ?? Role.SECRETARIA; // fallback seguro: menor privilégio
 
   return {
-    sub:       user?.sub ?? '',
-    nome:      user?.nome ?? user?.email ?? 'Desconhecido',
+    sub: user?.sub ?? '',
+    nome: user?.nome ?? user?.email ?? 'Desconhecido',
     role,
-    ip:        resolverIp(req),
+    ip: resolverIp(req),
     userAgent: req.headers['user-agent'],
   };
 }

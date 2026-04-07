@@ -60,9 +60,7 @@ export function validarCpf(cpf: string): boolean {
 
   // ── 1º Dígito Verificador ──────────────────────────────────────────────────
   // Multiplica os 9 primeiros dígitos pelos pesos 10, 9, 8, ..., 2
-  const soma1 = digitos
-    .slice(0, 9)
-    .reduce((acc, dig, i) => acc + dig * (10 - i), 0);
+  const soma1 = digitos.slice(0, 9).reduce((acc, dig, i) => acc + dig * (10 - i), 0);
 
   const resto1 = soma1 % 11;
   const digito1 = resto1 < 2 ? 0 : 11 - resto1;
@@ -72,9 +70,7 @@ export function validarCpf(cpf: string): boolean {
   // ── 2º Dígito Verificador ──────────────────────────────────────────────────
   // Multiplica os 10 primeiros dígitos (incluindo o 1º dígito verificador)
   // pelos pesos 11, 10, 9, ..., 2
-  const soma2 = digitos
-    .slice(0, 10)
-    .reduce((acc, dig, i) => acc + dig * (11 - i), 0);
+  const soma2 = digitos.slice(0, 10).reduce((acc, dig, i) => acc + dig * (11 - i), 0);
 
   const resto2 = soma2 % 11;
   const digito2 = resto2 < 2 ? 0 : 11 - resto2;
@@ -120,9 +116,7 @@ export function validarCnpj(cnpj: string): boolean {
   const pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 
   // ── 1º Dígito Verificador ──────────────────────────────────────────────────
-  const soma1 = digitos
-    .slice(0, 12)
-    .reduce((acc, dig, i) => acc + dig * pesos1[i], 0);
+  const soma1 = digitos.slice(0, 12).reduce((acc, dig, i) => acc + dig * pesos1[i], 0);
 
   const resto1 = soma1 % 11;
   const digito1 = resto1 < 2 ? 0 : 11 - resto1;
@@ -133,9 +127,7 @@ export function validarCnpj(cnpj: string): boolean {
   const pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 
   // ── 2º Dígito Verificador ──────────────────────────────────────────────────
-  const soma2 = digitos
-    .slice(0, 13)
-    .reduce((acc, dig, i) => acc + dig * pesos2[i], 0);
+  const soma2 = digitos.slice(0, 13).reduce((acc, dig, i) => acc + dig * pesos2[i], 0);
 
   const resto2 = soma2 % 11;
   const digito2 = resto2 < 2 ? 0 : 11 - resto2;

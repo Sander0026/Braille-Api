@@ -1,4 +1,14 @@
-import { Controller, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Query, BadRequestException, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Delete,
+  UseInterceptors,
+  UploadedFile,
+  UseGuards,
+  Query,
+  BadRequestException,
+  Req,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadService } from './upload.service';
@@ -15,22 +25,27 @@ import { getAuditUser } from '../common/helpers/audit.helper';
 @UseGuards(AuthGuard) // 🔒 Só quem está logado pode fazer upload
 @Controller('upload')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) { }
+  constructor(private readonly uploadService: UploadService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file', {
-    storage: memoryStorage(), // Mantém o arquivo na memória RAM para enviar ao Cloudinary
-    limits: { fileSize: 5 * 1024 * 1024 }, // Limite restrito para 5MB por arquivo
-    fileFilter: (_req, file, callback) => {
-      // Whitelist explícita de tipos de arquivos
-      const allowedMimetypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-      if (allowedMimetypes.includes(file.mimetype) || /\.(jpg|jpeg|png|webp|pdf)$/i.exec(file.originalname)) {
-        callback(null, true);
-      } else {
-        callback(new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens (JPG/PNG) ou PDF.'), false);
-      }
-    },
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(), // Mantém o arquivo na memória RAM para enviar ao Cloudinary
+      limits: { fileSize: 5 * 1024 * 1024 }, // Limite restrito para 5MB por arquivo
+      fileFilter: (_req, file, callback) => {
+        // Whitelist explícita de tipos de arquivos
+        const allowedMimetypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (allowedMimetypes.includes(file.mimetype) || /\.(jpg|jpeg|png|webp|pdf)$/i.exec(file.originalname)) {
+          callback(null, true);
+        } else {
+          callback(
+            new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens (JPG/PNG) ou PDF.'),
+            false,
+          );
+        }
+      },
+    }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -59,20 +74,23 @@ export class UploadController {
 
   // ─── Upload de PDF (Termo LGPD / Atestado Médico) ──────────────────────────
   @Post('pdf')
-  @UseInterceptors(FileInterceptor('file', {
-    storage: memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
-    fileFilter: (_req, file, cb) => {
-      if (file.mimetype === 'application/pdf') cb(null, true);
-      else cb(new BadRequestException('Apenas arquivos PDF são aceitos.'), false);
-    },
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+      fileFilter: (_req, file, cb) => {
+        if (file.mimetype === 'application/pdf') cb(null, true);
+        else cb(new BadRequestException('Apenas arquivos PDF são aceitos.'), false);
+      },
+    }),
+  )
   @ApiOperation({ summary: 'Upload de PDF (Termo LGPD ou Atestado Médico)' })
   @ApiQuery({
     name: 'tipo',
     enum: ['lgpd', 'atestado', 'laudo'],
     required: true,
-    description: 'Tipo do documento: "lgpd" grava em braille_lgpd/, "atestado" em braille_atestados/ e "laudo" em braille_laudos/',
+    description:
+      'Tipo do documento: "lgpd" grava em braille_lgpd/, "atestado" em braille_atestados/ e "laudo" em braille_laudos/',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -90,7 +108,7 @@ export class UploadController {
     if (tipo !== 'lgpd' && tipo !== 'atestado' && tipo !== 'laudo') {
       throw new BadRequestException('O parâmetro "tipo" deve ser "lgpd", "atestado" ou "laudo".');
     }
-    
+
     let folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos';
     if (tipo === 'lgpd') {
       folder = 'braille_lgpd';
@@ -99,7 +117,7 @@ export class UploadController {
     } else {
       folder = 'braille_atestados';
     }
-    
+
     return this.uploadService.uploadPdf(file, folder, getAuditUser(req));
   }
 }

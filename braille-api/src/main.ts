@@ -34,11 +34,13 @@ async function bootstrap() {
   });
 
   // 2. Ativar Validação Global Estrita
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true, // Remove campos que não estão no DTO
-    forbidNonWhitelisted: true, // Dá erro se enviarem campos extras
-    transform: true, // Converte tipos automaticamente
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // Remove campos que não estão no DTO
+      forbidNonWhitelisted: true, // Dá erro se enviarem campos extras
+      transform: true, // Converte tipos automaticamente
+    }),
+  );
 
   // 3. Documentação Swagger Extraída para utilitário centralizado (SRP)
   setupSwagger(app);

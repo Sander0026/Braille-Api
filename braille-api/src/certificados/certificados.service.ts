@@ -1,27 +1,27 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
-import { PrismaService }          from '../prisma/prisma.service';
-import { UploadService }          from '../upload/upload.service';
-import { CreateCertificadoDto }   from './dto/create-certificado.dto';
-import { UpdateCertificadoDto }   from './dto/update-certificado.dto';
-import { EmitirAcademicoDto }     from './dto/emitir-academico.dto';
-import { EmitirHonrariaDto }      from './dto/emitir-honraria.dto';
-import { PdfService, ModeloPdf }  from './pdf.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { UploadService } from '../upload/upload.service';
+import { CreateCertificadoDto } from './dto/create-certificado.dto';
+import { UpdateCertificadoDto } from './dto/update-certificado.dto';
+import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
+import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
+import { PdfService, ModeloPdf } from './pdf.service';
 import { ImageProcessingService } from './image-processing.service';
-import { randomBytes }            from 'node:crypto';
-import { AuditLogService }        from '../audit-log/audit-log.service';
-import { AuditUser }              from '../common/interfaces/audit-user.interface';
+import { randomBytes } from 'node:crypto';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
 
 @Injectable()
 export class CertificadosService {
   private readonly logger = new Logger(CertificadosService.name);
 
   constructor(
-    private readonly prisma:          PrismaService,
-    private readonly uploadService:   UploadService,
-    private readonly pdfService:      PdfService,
+    private readonly prisma: PrismaService,
+    private readonly uploadService: UploadService,
+    private readonly pdfService: PdfService,
     private readonly imageProcessing: ImageProcessingService,
-    private readonly auditService:    AuditLogService,
+    private readonly auditService: AuditLogService,
   ) {}
 
   // ── Helpers Privados ───────────────────────────────────────────────────────
@@ -29,10 +29,10 @@ export class CertificadosService {
   /** Converte AuditUser → campos esperados pelo AuditOptions */
   private toAuditMeta(au?: AuditUser) {
     return {
-      autorId:   au?.sub,
+      autorId: au?.sub,
       autorNome: au?.nome,
       autorRole: au?.role as string | undefined,
-      ip:        au?.ip,
+      ip: au?.ip,
       userAgent: au?.userAgent,
     };
   }
@@ -44,8 +44,8 @@ export class CertificadosService {
     const pngBuffer = await this.imageProcessing.removerFundoBrancoAssinatura(file.buffer);
     const pngFile: Express.Multer.File = {
       ...file,
-      buffer:       pngBuffer,
-      mimetype:     'image/png',
+      buffer: pngBuffer,
+      mimetype: 'image/png',
       originalname: file.originalname.replace(/\.[^.]+$/, '.png'),
     };
     return this.uploadService.uploadImage(pngFile);
@@ -61,10 +61,10 @@ export class CertificadosService {
    * @param label       Nome descritivo para logging (ex: 'arteBase').
    */
   private async trocarArquivo(
-    urlAtual:     string | null,
-    novoFile:     Express.Multer.File | undefined,
+    urlAtual: string | null,
+    novoFile: Express.Multer.File | undefined,
     ehAssinatura: boolean,
-    label:        string,
+    label: string,
   ): Promise<string | null> {
     if (!novoFile) return urlAtual;
 
@@ -89,10 +89,7 @@ export class CertificadosService {
    * Método privado — única fonte de verdade para substituição de variáveis.
    */
   private substituirTags(template: string, vars: Record<string, string>): string {
-    return Object.entries(vars).reduce(
-      (acc, [tag, valor]) => acc.replaceAll(`{{${tag}}}`, valor),
-      template,
-    );
+    return Object.entries(vars).reduce((acc, [tag, valor]) => acc.replaceAll(`{{${tag}}}`, valor), template);
   }
 
   /**
@@ -110,10 +107,7 @@ export class CertificadosService {
       where: {
         turmaId,
         alunoId,
-        OR: [
-          { presente: true },
-          { status: { in: ['PRESENTE', 'FALTA_JUSTIFICADA'] } },
-        ],
+        OR: [{ presente: true }, { status: { in: ['PRESENTE', 'FALTA_JUSTIFICADA'] } }],
       },
     });
 
@@ -131,11 +125,11 @@ export class CertificadosService {
    * Prisma exige NullableJsonNullValueInput | InputJsonValue para campos Json nullable.
    */
   private parseLayoutConfig(
-    raw:      string | undefined | null,
+    raw: string | undefined | null,
     contexto: string,
   ): Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue | undefined {
     if (raw === '') return Prisma.JsonNull; // string vazia = apagar o campo (Prisma.JsonNull)
-    if (!raw)       return undefined;       // undefined = não alterar o campo
+    if (!raw) return undefined; // undefined = não alterar o campo
     try {
       return JSON.parse(raw) as Prisma.InputJsonValue;
     } catch (e: unknown) {
@@ -148,24 +142,26 @@ export class CertificadosService {
   // ── CRUD de Modelos ────────────────────────────────────────────────────────
 
   async create(
-    createDto:      CreateCertificadoDto,
-    arteBaseFile?:  Express.Multer.File,
-    assinaturaFile?:  Express.Multer.File,
+    createDto: CreateCertificadoDto,
+    arteBaseFile?: Express.Multer.File,
+    assinaturaFile?: Express.Multer.File,
     assinatura2File?: Express.Multer.File,
-    auditUser?:     AuditUser,
+    auditUser?: AuditUser,
   ) {
     // Upload paralelo dos 3 arquivos — sem dependência entre eles
     const [arteBaseUrlRaw, assinaturaUrlRaw, assinaturaUrl2] = await Promise.all([
-      arteBaseFile    ? this.uploadService.uploadImage(arteBaseFile).then(r => r.url)   : Promise.resolve(''),
-      assinaturaFile  ? this.uploadAssinatura(assinaturaFile).then(r => r.url)           : Promise.resolve(''),
-      assinatura2File ? this.uploadAssinatura(assinatura2File).then(r => r.url as string | null) : Promise.resolve(null),
+      arteBaseFile ? this.uploadService.uploadImage(arteBaseFile).then((r) => r.url) : Promise.resolve(''),
+      assinaturaFile ? this.uploadAssinatura(assinaturaFile).then((r) => r.url) : Promise.resolve(''),
+      assinatura2File
+        ? this.uploadAssinatura(assinatura2File).then((r) => r.url as string | null)
+        : Promise.resolve(null),
     ]);
 
     const novoModelo = await this.prisma.modeloCertificado.create({
       data: {
         ...createDto,
         layoutConfig: this.parseLayoutConfig(createDto.layoutConfig, 'Create'),
-        arteBaseUrl:   arteBaseUrlRaw,
+        arteBaseUrl: arteBaseUrlRaw,
         assinaturaUrl: assinaturaUrlRaw,
         assinaturaUrl2,
       },
@@ -173,10 +169,10 @@ export class CertificadosService {
 
     this.auditService.registrar({
       ...this.toAuditMeta(auditUser),
-      entidade:   'ModeloCertificado',
+      entidade: 'ModeloCertificado',
       registroId: novoModelo.id,
-      acao:       AuditAcao.CRIAR,
-      newValue:   novoModelo,
+      acao: AuditAcao.CRIAR,
+      newValue: novoModelo,
     });
 
     return novoModelo;
@@ -195,19 +191,19 @@ export class CertificadosService {
   }
 
   async update(
-    id:               string,
-    updateDto:        UpdateCertificadoDto,
-    arteBaseFile?:    Express.Multer.File,
-    assinaturaFile?:  Express.Multer.File,
+    id: string,
+    updateDto: UpdateCertificadoDto,
+    arteBaseFile?: Express.Multer.File,
+    assinaturaFile?: Express.Multer.File,
     assinatura2File?: Express.Multer.File,
-    auditUser?:       AuditUser,
+    auditUser?: AuditUser,
   ) {
     const modelo = await this.findOne(id);
 
     // Troca paralela dos 3 arquivos — delete antigo + upload novo (se enviado)
     const [arteBaseUrl, assinaturaUrl, assinaturaUrl2] = await Promise.all([
-      this.trocarArquivo(modelo.arteBaseUrl,   arteBaseFile,    false, 'arteBase'),
-      this.trocarArquivo(modelo.assinaturaUrl, assinaturaFile,  true,  'assinatura'),
+      this.trocarArquivo(modelo.arteBaseUrl, arteBaseFile, false, 'arteBase'),
+      this.trocarArquivo(modelo.assinaturaUrl, assinaturaFile, true, 'assinatura'),
       this.trocarArquivo(modelo.assinaturaUrl2, assinatura2File, true, 'assinatura2'),
     ]);
 
@@ -217,8 +213,8 @@ export class CertificadosService {
       where: { id },
       data: {
         ...updateDto,
-        layoutConfig:  parsedLayout ?? undefined,
-        arteBaseUrl:   arteBaseUrl   ?? modelo.arteBaseUrl,
+        layoutConfig: parsedLayout ?? undefined,
+        arteBaseUrl: arteBaseUrl ?? modelo.arteBaseUrl,
         assinaturaUrl: assinaturaUrl ?? modelo.assinaturaUrl,
         assinaturaUrl2,
       },
@@ -226,11 +222,11 @@ export class CertificadosService {
 
     this.auditService.registrar({
       ...this.toAuditMeta(auditUser),
-      entidade:   'ModeloCertificado',
+      entidade: 'ModeloCertificado',
       registroId: id,
-      acao:       AuditAcao.ATUALIZAR,
-      oldValue:   modelo,
-      newValue:   modeloAtualizado,
+      acao: AuditAcao.ATUALIZAR,
+      oldValue: modelo,
+      newValue: modeloAtualizado,
     });
 
     return modeloAtualizado;
@@ -241,17 +237,21 @@ export class CertificadosService {
 
     // Cleanup paralelo dos 3 arquivos no Cloudinary (soft fail)
     await Promise.all([
-      modelo.arteBaseUrl    ? this.trocarArquivo(modelo.arteBaseUrl,    undefined, false, 'arteBase')    : Promise.resolve(null),
-      modelo.assinaturaUrl  ? this.trocarArquivo(modelo.assinaturaUrl,  undefined, true,  'assinatura')  : Promise.resolve(null),
-      modelo.assinaturaUrl2 ? this.trocarArquivo(modelo.assinaturaUrl2, undefined, true,  'assinatura2') : Promise.resolve(null),
+      modelo.arteBaseUrl ? this.trocarArquivo(modelo.arteBaseUrl, undefined, false, 'arteBase') : Promise.resolve(null),
+      modelo.assinaturaUrl
+        ? this.trocarArquivo(modelo.assinaturaUrl, undefined, true, 'assinatura')
+        : Promise.resolve(null),
+      modelo.assinaturaUrl2
+        ? this.trocarArquivo(modelo.assinaturaUrl2, undefined, true, 'assinatura2')
+        : Promise.resolve(null),
     ]);
 
     // Deleção direta — trocarArquivo sem novoFile apenas deleta; aqui chamamos o delete diretamente
     await Promise.allSettled([
-      modelo.arteBaseUrl    ? this.uploadService.deleteFile(modelo.arteBaseUrl)    : Promise.resolve(),
-      modelo.assinaturaUrl  ? this.uploadService.deleteFile(modelo.assinaturaUrl)  : Promise.resolve(),
+      modelo.arteBaseUrl ? this.uploadService.deleteFile(modelo.arteBaseUrl) : Promise.resolve(),
+      modelo.assinaturaUrl ? this.uploadService.deleteFile(modelo.assinaturaUrl) : Promise.resolve(),
       modelo.assinaturaUrl2 ? this.uploadService.deleteFile(modelo.assinaturaUrl2) : Promise.resolve(),
-    ]).then(results => {
+    ]).then((results) => {
       results.forEach((r, i) => {
         if (r.status === 'rejected') {
           this.logger.warn(`Soft fail no delete arquivo ${i} do Cloudinary: ${String(r.reason)}`);
@@ -263,11 +263,11 @@ export class CertificadosService {
 
     this.auditService.registrar({
       ...this.toAuditMeta(auditUser),
-      entidade:   'ModeloCertificado',
+      entidade: 'ModeloCertificado',
       registroId: id,
-      acao:       AuditAcao.EXCLUIR,
-      oldValue:   modelo,
-      newValue:   null,
+      acao: AuditAcao.EXCLUIR,
+      oldValue: modelo,
+      newValue: null,
     });
 
     return excluido;
@@ -277,50 +277,53 @@ export class CertificadosService {
 
   async emitirAcademico(dto: EmitirAcademicoDto, auditUser?: AuditUser) {
     const turma = await this.prisma.turma.findUnique({
-      where:   { id: dto.turmaId },
+      where: { id: dto.turmaId },
       include: {
         modeloCertificado: true,
         matriculasOficina: { where: { alunoId: dto.alunoId } },
       },
     });
 
-    if (!turma)                                      throw new NotFoundException('Turma não encontrada.');
-    if (turma.status !== 'CONCLUIDA')                throw new BadRequestException('A turma precisa estar CONCLUIDA para emitir certificados.');
-    if (!turma.modeloCertificadoId || !turma.modeloCertificado) throw new BadRequestException('A Turma não possui um Modelo de Certificado configurado.');
-    if (turma.matriculasOficina.length === 0)        throw new BadRequestException('O Aluno não cursa ou não está matriculado nesta turma.');
+    if (!turma) throw new NotFoundException('Turma não encontrada.');
+    if (turma.status !== 'CONCLUIDA')
+      throw new BadRequestException('A turma precisa estar CONCLUIDA para emitir certificados.');
+    if (!turma.modeloCertificadoId || !turma.modeloCertificado)
+      throw new BadRequestException('A Turma não possui um Modelo de Certificado configurado.');
+    if (turma.matriculasOficina.length === 0)
+      throw new BadRequestException('O Aluno não cursa ou não está matriculado nesta turma.');
 
     await this.verificarFrequencia(dto.turmaId, dto.alunoId);
 
     // Select cirúrgico — sem CPF, RG, laudos ou outros dados sensíveis desnecessários
     const aluno = await this.prisma.aluno.findUnique({
-      where:  { id: dto.alunoId },
+      where: { id: dto.alunoId },
       select: { id: true, nomeCompleto: true },
     });
     if (!aluno) throw new NotFoundException('Aluno inativo ou não encontrado.');
 
-    const cargaHr  = turma.cargaHoraria ?? 'Não informada';
+    const cargaHr = turma.cargaHoraria ?? 'Não informada';
     const dataInic = turma.dataInicio ? turma.dataInicio.toLocaleDateString('pt-BR') : 'Data Indefinida';
-    const dataFim  = turma.dataFim    ? turma.dataFim.toLocaleDateString('pt-BR')    : 'Data Indefinida';
+    const dataFim = turma.dataFim ? turma.dataFim.toLocaleDateString('pt-BR') : 'Data Indefinida';
 
     const textoPronto = this.substituirTags(turma.modeloCertificado.textoTemplate, {
-      ALUNO:         aluno.nomeCompleto,
-      TURMA:         turma.nome,
+      ALUNO: aluno.nomeCompleto,
+      TURMA: turma.nome,
       CARGA_HORARIA: cargaHr,
-      DATA_INICIO:   dataInic,
-      DATA_FIM:      dataFim,
+      DATA_INICIO: dataInic,
+      DATA_FIM: dataFim,
     });
 
-    const hashUnique         = randomBytes(4).toString('hex').toUpperCase();
+    const hashUnique = randomBytes(4).toString('hex').toUpperCase();
     const certificadoEmitido = await this.prisma.certificadoEmitido.create({
       data: { codigoValidacao: hashUnique, alunoId: aluno.id, turmaId: turma.id, modeloId: turma.modeloCertificado.id },
     });
 
     this.auditService.registrar({
       ...this.toAuditMeta(auditUser),
-      entidade:   'CertificadoEmitido',
+      entidade: 'CertificadoEmitido',
       registroId: certificadoEmitido.id,
-      acao:       AuditAcao.CRIAR,
-      newValue:   certificadoEmitido,
+      acao: AuditAcao.CRIAR,
+      newValue: certificadoEmitido,
     });
 
     return this.pdfService.construirPdfBase(
@@ -334,26 +337,26 @@ export class CertificadosService {
   async emitirHonraria(dto: EmitirHonrariaDto, auditUser?: AuditUser) {
     const modelo = await this.prisma.modeloCertificado.findUnique({ where: { id: dto.modeloId } });
 
-    if (!modelo)                    throw new NotFoundException('Modelo de certificado não encontrado.');
+    if (!modelo) throw new NotFoundException('Modelo de certificado não encontrado.');
     if (modelo.tipo !== 'HONRARIA') throw new BadRequestException('O Modelo informado não é do tipo HONRARIA.');
 
     const textoPronto = this.substituirTags(modelo.textoTemplate, {
       PARCEIRO: dto.nomeParceiro,
-      MOTIVO:   dto.motivo,
-      DATA:     dto.dataEmissao,
+      MOTIVO: dto.motivo,
+      DATA: dto.dataEmissao,
     });
 
     const hashUnique = randomBytes(4).toString('hex').toUpperCase();
-    const emissao    = await this.prisma.certificadoEmitido.create({
+    const emissao = await this.prisma.certificadoEmitido.create({
       data: { codigoValidacao: hashUnique, modeloId: modelo.id },
     });
 
     this.auditService.registrar({
       ...this.toAuditMeta(auditUser),
-      entidade:   'CertificadoEmitido',
+      entidade: 'CertificadoEmitido',
       registroId: emissao.id,
-      acao:       AuditAcao.CRIAR,
-      newValue:   emissao,
+      acao: AuditAcao.CRIAR,
+      newValue: emissao,
     });
 
     return this.pdfService.construirPdfBase(modelo as ModeloPdf, textoPronto, hashUnique);
@@ -366,10 +369,10 @@ export class CertificadosService {
     }
 
     const emissao = await this.prisma.certificadoEmitido.findUnique({
-      where:   { codigoValidacao: codigo },
+      where: { codigoValidacao: codigo },
       include: {
-        aluno:  { select: { nomeCompleto: true } },
-        turma:  { select: { nome: true } },
+        aluno: { select: { nomeCompleto: true } },
+        turma: { select: { nome: true } },
         modelo: { select: { nome: true, tipo: true } },
       },
     });
@@ -380,10 +383,10 @@ export class CertificadosService {
 
     return {
       valido: true,
-      nome:   isAcademico ? (emissao.aluno?.nomeCompleto ?? 'Desconhecido') : 'Parceiro Institucional / Apoiador',
-      curso:  isAcademico ? (emissao.turma?.nome ?? emissao.modelo.nome)    : emissao.modelo.nome,
-      data:   emissao.dataEmissao.toLocaleDateString('pt-BR'),
-      tipo:   emissao.modelo.tipo,
+      nome: isAcademico ? (emissao.aluno?.nomeCompleto ?? 'Desconhecido') : 'Parceiro Institucional / Apoiador',
+      curso: isAcademico ? (emissao.turma?.nome ?? emissao.modelo.nome) : emissao.modelo.nome,
+      data: emissao.dataEmissao.toLocaleDateString('pt-BR'),
+      tipo: emissao.modelo.tipo,
     };
   }
 }

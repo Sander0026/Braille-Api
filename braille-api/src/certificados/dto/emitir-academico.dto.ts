@@ -3,10 +3,12 @@ import { IsNotEmpty, IsUUID } from 'class-validator';
 
 export class EmitirAcademicoDto {
   @ApiProperty({ description: 'ID da Turma Concluída (UUID)' })
-  @IsUUID('4', { message: 'turmaId deve ser um UUID válido.' }) @IsNotEmpty()
+  @IsUUID('4', { message: 'turmaId deve ser um UUID válido.' })
+  @IsNotEmpty()
   turmaId: string;
 
   @ApiProperty({ description: 'ID do Aluno matriculado na turma (UUID)' })
-  @IsUUID('4', { message: 'alunoId deve ser um UUID válido.' }) @IsNotEmpty()
+  @IsUUID('4', { message: 'alunoId deve ser um UUID válido.' })
+  @IsNotEmpty()
   alunoId: string;
 }

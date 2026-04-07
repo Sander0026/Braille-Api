@@ -1,14 +1,11 @@
 import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
-import {
-  ApiTags, ApiBearerAuth, ApiOperation,
-  ApiResponse as SwaggerResponse,
-} from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse as SwaggerResponse } from '@nestjs/swagger';
 import { AuditLogService } from './audit-log.service';
-import { QueryAuditDto }   from './dto/query-audit.dto';
-import { AuthGuard }       from '../auth/auth.guard';
-import { RolesGuard }      from '../auth/roles.guard';
-import { Roles }           from '../auth/roles.decorator';
-import { ApiResponse }     from '../common/dto/api-response.dto';
+import { QueryAuditDto } from './dto/query-audit.dto';
+import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 /**
  * Módulo de auditoria — acesso restrito a ADMIN.
@@ -40,7 +37,7 @@ export class AuditLogController {
   @ApiOperation({ summary: 'Ver o histórico de auditoria de um registro específico' })
   @SwaggerResponse({ status: 200, description: 'Histórico localizado' })
   findByRegistro(
-    @Param('entidade')   entidade:   string,
+    @Param('entidade') entidade: string,
     @Param('registroId') registroId: string,
   ): Promise<ApiResponse<unknown>> {
     return this.auditLogService.findByRegistro(entidade, registroId);

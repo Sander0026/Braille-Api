@@ -24,9 +24,12 @@ describe('DashboardController', () => {
       controllers: [DashboardController],
       providers: [{ provide: DashboardService, useValue: mockDashboardService }],
     })
-      .overrideGuard(AuthGuard).useValue({ canActivate: () => true })
-      .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
-      .overrideInterceptor(CacheInterceptor).useValue({ intercept: (context: any, next: any) => next.handle() })
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .overrideInterceptor(CacheInterceptor)
+      .useValue({ intercept: (context: any, next: any) => next.handle() })
       .compile();
 
     controller = module.get<DashboardController>(DashboardController);

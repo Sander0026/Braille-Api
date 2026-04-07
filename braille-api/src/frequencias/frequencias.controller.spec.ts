@@ -15,13 +15,13 @@ describe('FrequenciasController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FrequenciasController],
-      providers: [
-        { provide: FrequenciasService, useValue: mockService },
-      ],
+      providers: [{ provide: FrequenciasService, useValue: mockService }],
     })
-    .overrideGuard(AuthGuard).useValue({ canActivate: () => true })
-    .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
-    .compile();
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<FrequenciasController>(FrequenciasController);
   });

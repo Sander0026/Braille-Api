@@ -13,12 +13,12 @@ import { QueryContatoDto } from './dto/query-contato.dto';
  * o volume de dados transferido em queries de paginação.
  */
 const SELECT_LISTA = {
-  id:       true,
-  nome:     true,
-  email:    true,
+  id: true,
+  nome: true,
+  email: true,
   telefone: true,
-  assunto:  true,
-  lida:     true,
+  assunto: true,
+  lida: true,
   criadoEm: true,
 } satisfies Prisma.MensagemContatoSelect;
 
@@ -30,10 +30,10 @@ const SELECT_DETALHE = {
 
 /** Projeção mínima para o snapshot de auditoria de exclusão. */
 const SELECT_AUDIT_SNAPSHOT = {
-  id:       true,
-  nome:     true,
-  assunto:  true,
-  lida:     true,
+  id: true,
+  nome: true,
+  assunto: true,
+  lida: true,
   criadoEm: true,
 } satisfies Prisma.MensagemContatoSelect;
 
@@ -42,15 +42,15 @@ const SELECT_AUDIT_SNAPSHOT = {
 @Injectable()
 export class ContatosService {
   constructor(
-    private readonly prisma:        PrismaService,
-    private readonly auditService:  AuditLogService,
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditLogService,
   ) {}
 
   // ── Mutações ─────────────────────────────────────────────────────────────────
 
   async create(dto: CreateContatoDto) {
     return this.prisma.mensagemContato.create({
-      data:   dto,
+      data: dto,
       select: SELECT_DETALHE,
     });
   }
@@ -62,19 +62,19 @@ export class ContatosService {
     if (mensagem.lida) return mensagem;
 
     const atualizada = await this.prisma.mensagemContato.update({
-      where:  { id },
-      data:   { lida: true },
+      where: { id },
+      data: { lida: true },
       select: { id: true, lida: true },
     });
 
     // Fire-and-forget — falha de auditoria nunca interrompe o fluxo principal
     void this.auditService.registrar({
-      entidade:   'Contato',
+      entidade: 'Contato',
       registroId: id,
-      acao:       AuditAcao.MUDAR_STATUS,
+      acao: AuditAcao.MUDAR_STATUS,
       ...auditUser,
-      oldValue:   { lida: false },
-      newValue:   { lida: true },
+      oldValue: { lida: false },
+      newValue: { lida: true },
     });
 
     return atualizada;
@@ -82,23 +82,23 @@ export class ContatosService {
 
   async remove(id: string, auditUser: AuditUser) {
     const snapshot = await this.prisma.mensagemContato.findUnique({
-      where:  { id },
+      where: { id },
       select: SELECT_AUDIT_SNAPSHOT,
     });
 
     if (!snapshot) throw new NotFoundException('Mensagem não encontrada');
 
     const resultado = await this.prisma.mensagemContato.delete({
-      where:  { id },
+      where: { id },
       select: SELECT_AUDIT_SNAPSHOT,
     });
 
     void this.auditService.registrar({
-      entidade:   'Contato',
+      entidade: 'Contato',
       registroId: id,
-      acao:       AuditAcao.EXCLUIR,
+      acao: AuditAcao.EXCLUIR,
       ...auditUser,
-      oldValue:   snapshot,
+      oldValue: snapshot,
     });
 
     return resultado;
@@ -117,9 +117,9 @@ export class ContatosService {
     const [mensagens, total] = await Promise.all([
       this.prisma.mensagemContato.findMany({
         where,
-        select:  SELECT_LISTA,
+        select: SELECT_LISTA,
         skip,
-        take:    limit,
+        take: limit,
         orderBy: { criadoEm: 'desc' },
       }),
       this.prisma.mensagemContato.count({ where }),
@@ -138,7 +138,7 @@ export class ContatosService {
 
   async findOne(id: string) {
     const mensagem = await this.prisma.mensagemContato.findUnique({
-      where:  { id },
+      where: { id },
       select: SELECT_DETALHE,
     });
 

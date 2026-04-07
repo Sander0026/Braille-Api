@@ -4,7 +4,7 @@ import { EstatisticasResponseDto } from './dto/estatisticas-response.dto';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   async getEstatisticas(): Promise<EstatisticasResponseDto> {
     try {
@@ -24,7 +24,9 @@ export class DashboardService {
 
       return estatisticas;
     } catch (error) {
-      import('@nestjs/common').then(pkg => new pkg.Logger('DashboardService').error('Falha ao contar estatísticas: ', error));
+      import('@nestjs/common').then((pkg) =>
+        new pkg.Logger('DashboardService').error('Falha ao contar estatísticas: ', error),
+      );
       // Data Leak Prevention: Oculta falha crua do banco lançando erro gerenciado (HttpException Filter)
       throw new InternalServerErrorException('Não foi possível obter as estatísticas do painel.');
     }

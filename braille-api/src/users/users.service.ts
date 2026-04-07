@@ -1,4 +1,11 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,7 +26,12 @@ const SENHA_PADRAO = process.env.SENHA_PADRAO_USUARIO || ['I', 'l', 'b', 'e', 's
  * Ex: "joao.silva" ou "joao.silva2"
  */
 async function gerarUsername(nome: string, prisma: PrismaService): Promise<string> {
-  const partes = nome.trim().toLowerCase().normalize('NFD').replaceAll(/[\u0300-\u036f]/g, '').split(/\s+/);
+  const partes = nome
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replaceAll(/[\u0300-\u036f]/g, '')
+    .split(/\s+/);
   const primeiro = partes[0].replaceAll(/[^a-z0-9]/g, '');
   const ultimo = partes.length > 1 ? partes.at(-1)?.replaceAll(/[^a-z0-9]/g, '') : '';
   const base = ultimo ? `${primeiro}.${ultimo}` : primeiro;
@@ -43,7 +55,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
     private readonly uploadService: UploadService,
-  ) { }
+  ) {}
 
   async create(createUserDto: CreateUserDto, auditUser: AuditUser) {
     try {
@@ -72,25 +84,40 @@ export class UsersService {
 
       const user = await this.prisma.user.create({
         data: {
-          nome, username, email, cpf, matricula, role,
-          senha: hashedPassword, precisaTrocarSenha: true,
-          telefone, cep, rua, numero, complemento, bairro, cidade, uf,
+          nome,
+          username,
+          email,
+          cpf,
+          matricula,
+          role,
+          senha: hashedPassword,
+          precisaTrocarSenha: true,
+          telefone,
+          cep,
+          rua,
+          numero,
+          complemento,
+          bairro,
+          cidade,
+          uf,
         },
       });
 
       const { senha: _, ...result } = user;
 
-      this.auditService.registrar({
-        entidade: 'User',
-        registroId: user.id,
-        acao: AuditAcao.CRIAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as Role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        newValue: result,
-      }).catch(e => this.logger.warn(`Failure auditing Create User: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'User',
+          registroId: user.id,
+          acao: AuditAcao.CRIAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          newValue: result,
+        })
+        .catch((e) => this.logger.warn(`Failure auditing Create User: ${e.message}`));
 
       return {
         ...result,
@@ -101,7 +128,12 @@ export class UsersService {
         },
       };
     } catch (error) {
-      if (error instanceof ConflictException || error instanceof NotFoundException || error instanceof BadRequestException) throw error;
+      if (
+        error instanceof ConflictException ||
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      )
+        throw error;
       this.logger.error(`Error on create user: ${error.message}`, error.stack);
       throw new InternalServerErrorException('Erro interno ao cadastrar funcionário.');
     }
@@ -120,18 +152,29 @@ export class UsersService {
         select: { id: true, nome: true, username: true, email: true, role: true, matricula: true },
       });
 
-      this.auditService.registrar({
-        entidade: 'User',
-        registroId: id,
-        acao: AuditAcao.RESTAURAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as Role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { statusAtivo: user.statusAtivo, excluido: user.excluido, precisaTrocarSenha: user.precisaTrocarSenha },
-        newValue: { statusAtivo: true, excluido: false, precisaTrocarSenha: true, mensagem: 'Senha resetada e usuário reativado.' },
-      }).catch(e => this.logger.warn(`Failure auditing Restore User: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'User',
+          registroId: id,
+          acao: AuditAcao.RESTAURAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: {
+            statusAtivo: user.statusAtivo,
+            excluido: user.excluido,
+            precisaTrocarSenha: user.precisaTrocarSenha,
+          },
+          newValue: {
+            statusAtivo: true,
+            excluido: false,
+            precisaTrocarSenha: true,
+            mensagem: 'Senha resetada e usuário reativado.',
+          },
+        })
+        .catch((e) => this.logger.warn(`Failure auditing Restore User: ${e.message}`));
 
       return {
         ...reativado,
@@ -155,7 +198,23 @@ export class UsersService {
 
       const user = await this.prisma.user.findUnique({
         where: { cpf: cpfLimpo },
-        select: { id: true, nome: true, matricula: true, excluido: true, statusAtivo: true, email: true, telefone: true, cep: true, rua: true, numero: true, complemento: true, bairro: true, cidade: true, uf: true, role: true }
+        select: {
+          id: true,
+          nome: true,
+          matricula: true,
+          excluido: true,
+          statusAtivo: true,
+          email: true,
+          telefone: true,
+          cep: true,
+          rua: true,
+          numero: true,
+          complemento: true,
+          bairro: true,
+          cidade: true,
+          uf: true,
+          role: true,
+        },
       });
 
       if (!user) return { status: 'livre' };
@@ -163,7 +222,7 @@ export class UsersService {
       if (user.statusAtivo && !user.excluido) {
         return { status: 'ativo', id: user.id, nome: user.nome, matricula: user.matricula };
       }
-      
+
       if (user.excluido) {
         return { ...user, status: 'excluido' };
       }
@@ -188,7 +247,7 @@ export class UsersService {
       if (nome) {
         whereCondicao.nome = { contains: nome, mode: 'insensitive' };
       }
-      
+
       if (role) {
         whereCondicao.role = role as Role;
       }
@@ -199,10 +258,23 @@ export class UsersService {
           skip,
           take: limit,
           select: {
-            id: true, nome: true, username: true, email: true, role: true,
-            fotoPerfil: true, precisaTrocarSenha: true, matricula: true,
-            cpf: true, telefone: true, cep: true, rua: true, numero: true,
-            complemento: true, bairro: true, cidade: true, uf: true,
+            id: true,
+            nome: true,
+            username: true,
+            email: true,
+            role: true,
+            fotoPerfil: true,
+            precisaTrocarSenha: true,
+            matricula: true,
+            cpf: true,
+            telefone: true,
+            cep: true,
+            rua: true,
+            numero: true,
+            complemento: true,
+            bairro: true,
+            cidade: true,
+            uf: true,
           },
           orderBy: { nome: 'asc' },
         }),
@@ -249,25 +321,40 @@ export class UsersService {
         where: { id },
         data: { ...updateUserDto, role: updateUserDto.role as Role },
         select: {
-          id: true, nome: true, username: true, email: true, role: true,
-          fotoPerfil: true, matricula: true, cpf: true,
-          telefone: true, cep: true, rua: true, numero: true,
-          complemento: true, bairro: true, cidade: true, uf: true, atualizadoEm: true,
+          id: true,
+          nome: true,
+          username: true,
+          email: true,
+          role: true,
+          fotoPerfil: true,
+          matricula: true,
+          cpf: true,
+          telefone: true,
+          cep: true,
+          rua: true,
+          numero: true,
+          complemento: true,
+          bairro: true,
+          cidade: true,
+          uf: true,
+          atualizadoEm: true,
         },
       });
 
-      this.auditService.registrar({
-        entidade: 'User',
-        registroId: id,
-        acao: AuditAcao.ATUALIZAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as Role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: Object.fromEntries(Object.entries(user).filter(([k]) => k !== 'senha')),
-        newValue: userAtualizado,
-      }).catch(e => this.logger.warn(`Failure auditing Update User: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'User',
+          registroId: id,
+          acao: AuditAcao.ATUALIZAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: Object.fromEntries(Object.entries(user).filter(([k]) => k !== 'senha')),
+          newValue: userAtualizado,
+        })
+        .catch((e) => this.logger.warn(`Failure auditing Update User: ${e.message}`));
 
       return userAtualizado;
     } catch (error) {
@@ -289,18 +376,20 @@ export class UsersService {
 
       const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: false } });
 
-      this.auditService.registrar({
-        entidade: 'User',
-        registroId: id,
-        acao: AuditAcao.MUDAR_STATUS,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as Role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { statusAtivo: true },
-        newValue: { statusAtivo: false },
-      }).catch(e => this.logger.warn(`Failure auditing Status Change User: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'User',
+          registroId: id,
+          acao: AuditAcao.MUDAR_STATUS,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: { statusAtivo: true },
+          newValue: { statusAtivo: false },
+        })
+        .catch((e) => this.logger.warn(`Failure auditing Status Change User: ${e.message}`));
 
       return result;
     } catch (error) {
@@ -316,18 +405,20 @@ export class UsersService {
       if (!user) throw new NotFoundException('Usuário não encontrado.');
       const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: true } });
 
-      this.auditService.registrar({
-        entidade: 'User',
-        registroId: id,
-        acao: AuditAcao.RESTAURAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as Role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { statusAtivo: false },
-        newValue: { statusAtivo: true },
-      }).catch(e => this.logger.warn(`Failure auditing Restore User: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'User',
+          registroId: id,
+          acao: AuditAcao.RESTAURAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: { statusAtivo: false },
+          newValue: { statusAtivo: true },
+        })
+        .catch((e) => this.logger.warn(`Failure auditing Restore User: ${e.message}`));
 
       return result;
     } catch (error) {
@@ -348,18 +439,20 @@ export class UsersService {
         select: { id: true, nome: true, email: true, role: true, atualizadoEm: true },
       });
 
-      this.auditService.registrar({
-        entidade: 'User',
-        registroId: id,
-        acao: AuditAcao.ATUALIZAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as Role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { precisaTrocarSenha: user.precisaTrocarSenha },
-        newValue: { precisaTrocarSenha: true, mensagem: 'Senha resetada pelo administrador com senha padrão.' },
-      }).catch(e => this.logger.warn(`Failure auditing Password Reset: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'User',
+          registroId: id,
+          acao: AuditAcao.ATUALIZAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: { precisaTrocarSenha: user.precisaTrocarSenha },
+          newValue: { precisaTrocarSenha: true, mensagem: 'Senha resetada pelo administrador com senha padrão.' },
+        })
+        .catch((e) => this.logger.warn(`Failure auditing Password Reset: ${e.message}`));
 
       return result;
     } catch (error) {
@@ -381,18 +474,20 @@ export class UsersService {
 
       const result = await this.prisma.user.update({ where: { id }, data: { excluido: true } });
 
-      this.auditService.registrar({
-        entidade: 'User',
-        registroId: id,
-        acao: AuditAcao.ARQUIVAR,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role as Role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue: { excluido: false },
-        newValue: { excluido: true },
-      }).catch(e => this.logger.warn(`Failure auditing Hard Remove User: ${e.message}`));
+      this.auditService
+        .registrar({
+          entidade: 'User',
+          registroId: id,
+          acao: AuditAcao.ARQUIVAR,
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+          oldValue: { excluido: false },
+          newValue: { excluido: true },
+        })
+        .catch((e) => this.logger.warn(`Failure auditing Hard Remove User: ${e.message}`));
 
       return result;
     } catch (error) {

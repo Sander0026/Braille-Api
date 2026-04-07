@@ -1,7 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum,
-  IsDateString, ValidateIf, MaxLength, IsEmail, IsUrl,
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+  IsDateString,
+  ValidateIf,
+  MaxLength,
+  IsEmail,
+  IsUrl,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade, CorRaca } from '@prisma/client';
@@ -11,65 +19,82 @@ const trim = ({ value }: { value: unknown }): unknown =>
 
 export class CreateBeneficiaryDto {
   @ApiProperty({ description: 'Nome completo do beneficiário' })
-  @IsString() @IsNotEmpty() @MaxLength(200) @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  @Transform(trim)
   nomeCompleto: string;
 
   @ApiProperty({ description: 'Data de nascimento no formato ISO (YYYY-MM-DD)' })
-  @IsDateString() @IsNotEmpty()
+  @IsDateString()
+  @IsNotEmpty()
   dataNascimento: string;
 
   @ApiPropertyOptional({ description: 'CPF do beneficiário' })
-  @ValidateIf(o => !o.rg)
-  @IsString() @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
-  @MaxLength(14) @Transform(trim)
+  @ValidateIf((o) => !o.rg)
+  @IsString()
+  @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
+  @MaxLength(14)
+  @Transform(trim)
   cpf?: string;
 
   @ApiPropertyOptional({ description: 'RG do beneficiário' })
-  @ValidateIf(o => !o.cpf)
-  @IsString() @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
-  @MaxLength(20) @Transform(trim)
+  @ValidateIf((o) => !o.cpf)
+  @IsString()
+  @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
+  @MaxLength(20)
+  @Transform(trim)
   rg?: string;
 
-  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(60)  @Transform(trim) genero?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(60)  @Transform(trim) estadoCivil?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(60) @Transform(trim) genero?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(60) @Transform(trim) estadoCivil?: string;
 
   @ApiPropertyOptional({ enum: CorRaca })
-  @IsEnum(CorRaca) @IsOptional()
+  @IsEnum(CorRaca)
+  @IsOptional()
   corRaca?: CorRaca;
 
-  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(10)  @Transform(trim) cep?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(10) @Transform(trim) cep?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(200) @Transform(trim) rua?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(20)  @Transform(trim) numero?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(20) @Transform(trim) numero?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(100) @Transform(trim) complemento?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(100) @Transform(trim) bairro?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(100) @Transform(trim) cidade?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(2)   @Transform(trim) uf?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(2) @Transform(trim) uf?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(300) @Transform(trim) pontoReferencia?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(30)  @Transform(trim) telefoneContato?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(30) @Transform(trim) telefoneContato?: string;
 
   @ApiPropertyOptional()
-  @IsEmail({}, { message: 'Informe um e-mail válido.' }) @IsOptional() @MaxLength(254)
+  @IsEmail({}, { message: 'Informe um e-mail válido.' })
+  @IsOptional()
+  @MaxLength(254)
   email?: string;
 
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(200) @Transform(trim) contatoEmergencia?: string;
 
   @ApiPropertyOptional({ enum: TipoDeficiencia })
-  @IsEnum(TipoDeficiencia) @IsOptional()
+  @IsEnum(TipoDeficiencia)
+  @IsOptional()
   tipoDeficiencia?: TipoDeficiencia;
 
   @ApiPropertyOptional({ enum: CausaDeficiencia })
-  @IsEnum(CausaDeficiencia) @IsOptional()
+  @IsEnum(CausaDeficiencia)
+  @IsOptional()
   causaDeficiencia?: CausaDeficiencia;
 
-  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(50)  @Transform(trim) idadeOcorrencia?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(50) @Transform(trim) idadeOcorrencia?: string;
   @ApiPropertyOptional() @IsBoolean() @IsOptional() possuiLaudo?: boolean;
 
   @ApiPropertyOptional({ description: 'URL do laudo médico (Cloudinary)' })
-  @IsUrl({ require_protocol: false, require_tld: false }) @IsOptional() @MaxLength(2000)
+  @IsUrl({ require_protocol: false, require_tld: false })
+  @IsOptional()
+  @MaxLength(2000)
   laudoUrl?: string;
 
   @ApiPropertyOptional({ description: 'URL da foto de perfil (Cloudinary)' })
-  @IsUrl({ require_protocol: false, require_tld: false }) @IsOptional() @MaxLength(2000)
+  @IsUrl({ require_protocol: false, require_tld: false })
+  @IsOptional()
+  @MaxLength(2000)
   fotoPerfil?: string;
 
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(500) @Transform(trim) tecAssistivas?: string;
@@ -83,7 +108,8 @@ export class CreateBeneficiaryDto {
   @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(500) @Transform(trim) outrasComorbidades?: string;
 
   @ApiPropertyOptional({ enum: PreferenciaAcessibilidade })
-  @IsEnum(PreferenciaAcessibilidade) @IsOptional()
+  @IsEnum(PreferenciaAcessibilidade)
+  @IsOptional()
   prefAcessibilidade?: PreferenciaAcessibilidade;
 
   // ── LGPD & Documentos Legais ──────────────────────────────────────────────
@@ -91,11 +117,15 @@ export class CreateBeneficiaryDto {
   @ApiPropertyOptional() @IsDateString() @IsOptional() termoLgpdAceitoEm?: string;
 
   @ApiPropertyOptional({ description: 'URL do Termo LGPD (Cloudinary)' })
-  @IsUrl({ require_protocol: false, require_tld: false }) @IsOptional() @MaxLength(2000)
+  @IsUrl({ require_protocol: false, require_tld: false })
+  @IsOptional()
+  @MaxLength(2000)
   termoLgpdUrl?: string;
 
   @ApiPropertyOptional({ description: 'URL do Atestado Médico (Cloudinary)' })
-  @IsUrl({ require_protocol: false, require_tld: false }) @IsOptional() @MaxLength(2000)
+  @IsUrl({ require_protocol: false, require_tld: false })
+  @IsOptional()
+  @MaxLength(2000)
   atestadoUrl?: string;
 
   @ApiPropertyOptional() @IsDateString() @IsOptional() atestadoEmitidoEm?: string;

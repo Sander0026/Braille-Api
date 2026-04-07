@@ -12,13 +12,15 @@
  */
 
 import { InternalServerErrorException } from '@nestjs/common';
-import { Prisma }                        from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 // Aceita tanto PrismaService quanto o cliente de transação ($transaction callback)
-type PrismaClientOrTx = Prisma.TransactionClient | {
-  aluno: Prisma.TransactionClient['aluno'];
-  user:  Prisma.TransactionClient['user'];
-};
+type PrismaClientOrTx =
+  | Prisma.TransactionClient
+  | {
+      aluno: Prisma.TransactionClient['aluno'];
+      user: Prisma.TransactionClient['user'];
+    };
 
 /** Número máximo de tentativas antes de lançar exceção (previne busy-wait infinito). */
 const MAX_TENTATIVAS = 10;
@@ -31,21 +33,21 @@ const MAX_TENTATIVAS = 10;
  * @param existsFn   Função que verifica se uma matrícula já existe
  */
 async function gerarMatriculaUnica(
-  prefix:   string,
-  countFn:  () => Promise<number>,
+  prefix: string,
+  countFn: () => Promise<number>,
   existsFn: (matricula: string) => Promise<unknown>,
 ): Promise<string> {
-  const count      = await countFn();
-  let sequencial   = count + 1;
-  let matricula    = `${prefix}${String(sequencial).padStart(5, '0')}`;
-  let tentativas   = 0;
+  const count = await countFn();
+  let sequencial = count + 1;
+  let matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
+  let tentativas = 0;
 
   while (await existsFn(matricula)) {
     tentativas++;
     if (tentativas >= MAX_TENTATIVAS) {
       throw new InternalServerErrorException(
         `Não foi possível gerar uma matrícula única após ${MAX_TENTATIVAS} tentativas. ` +
-        `Verifique o sequencial do prefixo "${prefix}".`,
+          `Verifique o sequencial do prefixo "${prefix}".`,
       );
     }
     sequencial++;

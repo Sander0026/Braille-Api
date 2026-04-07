@@ -1,9 +1,7 @@
-import { AuditAcao }       from '@prisma/client';
+import { AuditAcao } from '@prisma/client';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type }              from 'class-transformer';
-import {
-  IsOptional, IsString, IsEnum, IsInt, Min, Max, IsDateString,
-} from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsOptional, IsString, IsEnum, IsInt, Min, Max, IsDateString } from 'class-validator';
 
 export class QueryAuditDto {
   @ApiPropertyOptional({ description: 'Página atual (default: 1)', example: 1 })

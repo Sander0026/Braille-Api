@@ -10,8 +10,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { PartialType }     from '@nestjs/mapped-types';
-import { TipoApoiador }   from '@prisma/client';
+import { PartialType } from '@nestjs/mapped-types';
+import { TipoApoiador } from '@prisma/client';
 
 // ── Helpers de Sanitização ───────────────────────────────────────────────────
 

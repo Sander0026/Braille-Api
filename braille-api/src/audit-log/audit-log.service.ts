@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma }             from '@prisma/client';
-import { PrismaService }      from '../prisma/prisma.service';
-import { AuditOptions }       from './interfaces/audit-options.interface';
-import { QueryAuditDto }      from './dto/query-audit.dto';
-import { ApiResponse }        from '../common/dto/api-response.dto';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { AuditOptions } from './interfaces/audit-options.interface';
+import { QueryAuditDto } from './dto/query-audit.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 @Injectable()
 export class AuditLogService {
@@ -24,16 +24,16 @@ export class AuditLogService {
     try {
       await this.prisma.auditLog.create({
         data: {
-          entidade:   opts.entidade,
+          entidade: opts.entidade,
           registroId: opts.registroId,
-          acao:       opts.acao,
-          autorId:    opts.autorId,
-          autorNome:  opts.autorNome,
-          autorRole:  opts.autorRole,
-          ip:         opts.ip,
-          userAgent:  opts.userAgent,
-      oldValue:   AuditLogService.serializarSeguro(opts.oldValue) ?? undefined,
-          newValue:   AuditLogService.serializarSeguro(opts.newValue) ?? undefined,
+          acao: opts.acao,
+          autorId: opts.autorId,
+          autorNome: opts.autorNome,
+          autorRole: opts.autorRole,
+          ip: opts.ip,
+          userAgent: opts.userAgent,
+          oldValue: AuditLogService.serializarSeguro(opts.oldValue) ?? undefined,
+          newValue: AuditLogService.serializarSeguro(opts.newValue) ?? undefined,
         },
       });
     } catch (err: unknown) {
@@ -49,18 +49,18 @@ export class AuditLogService {
    * `where` tipado como Prisma.AuditLogWhereInput — type-safe, sem `any`.
    */
   async findAll(query: QueryAuditDto): Promise<ApiResponse<unknown>> {
-    const page  = query.page  ?? 1;
+    const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const where: Prisma.AuditLogWhereInput = {
-      ...(query.entidade   && { entidade:   query.entidade }),
+      ...(query.entidade && { entidade: query.entidade }),
       ...(query.registroId && { registroId: query.registroId }),
-      ...(query.autorId    && { autorId:    query.autorId }),
-      ...(query.acao       && { acao:       query.acao }),
+      ...(query.autorId && { autorId: query.autorId }),
+      ...(query.acao && { acao: query.acao }),
       ...((query.de || query.ate) && {
         criadoEm: {
-          ...(query.de  && { gte: new Date(query.de) }),
+          ...(query.de && { gte: new Date(query.de) }),
           ...(query.ate && { lte: new Date(query.ate) }),
         },
       }),
@@ -71,24 +71,28 @@ export class AuditLogService {
       this.prisma.auditLog.findMany({
         where,
         skip,
-        take:    limit,
+        take: limit,
         orderBy: { criadoEm: 'desc' },
       }),
       this.prisma.auditLog.count({ where }),
     ]);
 
-    return new ApiResponse(true, {
-      data: logs,
-      meta: { total, page, lastPage: Math.ceil(total / limit) },
-    }, 'Logs recuperados com sucesso.');
+    return new ApiResponse(
+      true,
+      {
+        data: logs,
+        meta: { total, page, lastPage: Math.ceil(total / limit) },
+      },
+      'Logs recuperados com sucesso.',
+    );
   }
 
   /** Retorna o histórico de auditoria de um registro específico (máx. 50 entradas). */
   async findByRegistro(entidade: string, registroId: string): Promise<ApiResponse<unknown>> {
     const logs = await this.prisma.auditLog.findMany({
-      where:   { entidade, registroId },
+      where: { entidade, registroId },
       orderBy: { criadoEm: 'desc' },
-      take:    50,
+      take: 50,
     });
 
     return new ApiResponse(true, logs, `Histórico de ${entidade} carregado.`);
@@ -107,18 +111,22 @@ export class AuditLogService {
       this.prisma.auditLog.count(),
       this.prisma.auditLog.count({ where: { criadoEm: { gte: inicioHoje } } }),
       this.prisma.auditLog.groupBy({
-        by:      ['acao'],
-        _count:  { _all: true },
+        by: ['acao'],
+        _count: { _all: true },
         orderBy: { _count: { acao: 'desc' } },
-        take:    10,
+        take: 10,
       }),
     ]);
 
-    return new ApiResponse(true, {
-      totalLogs: total,
-      logsHoje:  hoje,
-      topAcoes:  porAcao.map(a => ({ acao: a.acao, total: a._count._all })),
-    }, 'Estatísticas de auditoria carregadas.');
+    return new ApiResponse(
+      true,
+      {
+        totalLogs: total,
+        logsHoje: hoje,
+        topAcoes: porAcao.map((a) => ({ acao: a.acao, total: a._count._all })),
+      },
+      'Estatísticas de auditoria carregadas.',
+    );
   }
 
   // ── Helpers Estáticos ───────────────────────────────────────────────────────
