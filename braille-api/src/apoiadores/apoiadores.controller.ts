@@ -1,55 +1,66 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseInterceptors, UploadedFile, BadRequestException, UseGuards, Res, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  UseGuards,
+  Res,
+  Req,
+} from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { ApoiadoresService } from './apoiadores.service';
 import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
 import { EmitirCertificadoApoiadorDto } from './dto/emitir-certificado-apoiador.dto';
 import { TipoApoiador } from '@prisma/client';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from '../upload/upload.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { getAuditUser } from '../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
-export interface AuditUserParams {
-  sub: string;
-  nome: string;
-  role: string;
-  ip?: string;
-  userAgent?: string;
-}
+// ── Constante de Roles ─────────────────────────────────────────────────────────
+/** Roles com acesso à gestão de apoiadores — evita repetição em cada rota. */
+const GESTAO_ROLES = ['ADMIN', 'COMUNICACAO', 'SECRETARIA'] as const;
 
-function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
-  return {
-    sub: req.user?.sub ?? '',
-    // @ts-ignore
-    nome: req.user?.nome || req.user?.email || 'Desconhecido',
-    role: req.user?.role ?? 'USER',
-    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
-    userAgent: req.headers['user-agent'],
-  };
-}
+// ── Controller ─────────────────────────────────────────────────────────────────
 
+/**
+ * Controller extremamente magro: apenas roteamento HTTP e orquestração de chamadas.
+ * Toda a lógica de negócio, SSRF prevention e auditoria está no ApoiadoresService.
+ *
+ * Importa getAuditUser de common/helpers (única fonte de verdade — sem duplicação).
+ */
 @Controller('apoiadores')
 export class ApoiadoresController {
   constructor(
     private readonly apoiadoresService: ApoiadoresService,
-    private readonly uploadService: UploadService
+    private readonly uploadService: UploadService,
   ) {}
+
+  // ── CRUD Principal ──────────────────────────────────────────────────────────
 
   @Post()
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
-  create(@Body() createApoiadorDto: CreateApoiadorDto, @Req() req: AuthenticatedRequest) {
-    return this.apoiadoresService.create(createApoiadorDto, getAuditUser(req));
+  @Roles(...GESTAO_ROLES)
+  create(@Body() dto: CreateApoiadorDto, @Req() req: AuthenticatedRequest) {
+    return this.apoiadoresService.create(dto, getAuditUser(req));
   }
 
   @Get()
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   findAll(
     @Query('skip') skip?: string,
     @Query('take') take?: string,
@@ -75,39 +86,44 @@ export class ApoiadoresController {
 
   @Get(':id')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   findOne(@Param('id') id: string) {
     return this.apoiadoresService.findOne(id);
   }
 
   @Patch(':id')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
-  update(@Param('id') id: string, @Body() updateApoiadorDto: UpdateApoiadorDto, @Req() req: AuthenticatedRequest) {
-    return this.apoiadoresService.update(id, updateApoiadorDto, getAuditUser(req));
+  @Roles(...GESTAO_ROLES)
+  update(@Param('id') id: string, @Body() dto: UpdateApoiadorDto, @Req() req: AuthenticatedRequest) {
+    return this.apoiadoresService.update(id, dto, getAuditUser(req));
   }
 
+  /**
+   * Upload de logo: valida existência (findOne), faz upload e atualiza URL.
+   * Chamadas em sequência intencional — upload só deve ocorrer se o apoiador existir.
+   */
   @Patch(':id/logo')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   @UseInterceptors(FileInterceptor('file'))
-  async uploadLogo(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Req() req: AuthenticatedRequest) {
-    if (!file) {
-      throw new BadRequestException('Nenhum arquivo enviado.');
-    }
-    
-    // Verifica se apoiador existe antes do upload
+  async uploadLogo(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado.');
+
+    const auditUser = getAuditUser(req);
+
     await this.apoiadoresService.findOne(id);
-    
-    // Upload via UploadService existente no projeto
-    const uploaded = await this.uploadService.uploadImage(file, getAuditUser(req));
-    
-    return this.apoiadoresService.updateLogo(id, uploaded.url, getAuditUser(req));
+    const uploaded = await this.uploadService.uploadImage(file, auditUser);
+
+    return this.apoiadoresService.updateLogo(id, uploaded.url, auditUser);
   }
 
   @Patch(':id/inativar')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   inativar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.inativar(id, getAuditUser(req));
   }
@@ -119,27 +135,23 @@ export class ApoiadoresController {
     return this.apoiadoresService.reativar(id, getAuditUser(req));
   }
 
-  // ---- Histórico de Ações (Tracking Relacional) ----
-  
+  // ── Histórico de Ações ──────────────────────────────────────────────────────
+
   @Post(':id/acoes')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
-  addAcao(
-    @Param('id') id: string, 
-    @Body() dto: CreateAcaoApoiadorDto,
-    @Req() req: AuthenticatedRequest
-  ) {
+  @Roles(...GESTAO_ROLES)
+  addAcao(@Param('id') id: string, @Body() dto: CreateAcaoApoiadorDto, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.addAcao(id, dto, getAuditUser(req));
   }
 
   @Patch(':id/acoes/:acaoId')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   updateAcao(
     @Param('id') id: string,
     @Param('acaoId') acaoId: string,
     @Body() dto: UpdateAcaoApoiadorDto,
-    @Req() req: AuthenticatedRequest
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.apoiadoresService.updateAcao(id, acaoId, dto, getAuditUser(req));
   }
@@ -148,72 +160,53 @@ export class ApoiadoresController {
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   getAcoes(@Param('id') id: string) {
     return this.apoiadoresService.getAcoes(id);
   }
 
   @Delete(':id/acoes/:acaoId')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   removeAcao(@Param('id') id: string, @Param('acaoId') acaoId: string, @Req() req: AuthenticatedRequest) {
     return this.apoiadoresService.removeAcao(id, acaoId, getAuditUser(req));
   }
 
-  // ---- Certificados da Parte de Honrarias ----
+  // ── Certificados ────────────────────────────────────────────────────────────
 
   @Post(':id/certificados')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   emitirCertificado(
     @Param('id') id: string,
-    @Body() emitirDto: EmitirCertificadoApoiadorDto,
-    @Req() req: AuthenticatedRequest
+    @Body() dto: EmitirCertificadoApoiadorDto,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.apoiadoresService.emitirCertificado(id, emitirDto, getAuditUser(req));
+    return this.apoiadoresService.emitirCertificado(id, dto, getAuditUser(req));
   }
 
   @Get(':id/certificados')
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
+  @Roles(...GESTAO_ROLES)
   getCertificados(@Param('id') id: string) {
     return this.apoiadoresService.getCertificados(id);
   }
 
+  /**
+   * Entrega PDF: redirect ou buffer conforme resultado do Service.
+   * SSRF prevention já foi feita no ApoiadoresService.validarUrlRedirect().
+   * Controller não valida URL — recebe apenas URL já certificada como segura.
+   */
   @Get(':id/certificados/:certId/pdf')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
-  async getPdfCertificado(
-    @Param('id') id: string,
-    @Param('certId') certId: string,
-    @Res() res: Response,
-  ) {
+  @Roles(...GESTAO_ROLES)
+  async getPdfCertificado(@Param('id') id: string, @Param('certId') certId: string, @Res() res: Response) {
     const result = await this.apoiadoresService.gerarPdfCertificado(id, certId);
 
     if (result.type === 'redirect') {
-      // ── SSRF Prevention (OWASP A10 / CWE-918) ─────────────────────────────
-      // A URL vem do banco de dados — nunca confiar sem validar o host.
-      // Apenas redirecionamos para hosts da allowlist conhecida (Cloudinary).
-      const REDIRECT_ALLOWLIST = new Set([
-        'res.cloudinary.com',
-        'api.cloudinary.com',
-      ]);
-
-      let redirectHost: string;
-      try {
-        redirectHost = new URL(result.url).hostname;
-      } catch {
-        throw new BadRequestException('URL do certificado inválida.');
-      }
-
-      if (!REDIRECT_ALLOWLIST.has(redirectHost)) {
-        throw new BadRequestException('Destino de redirect não autorizado.');
-      }
-      // ───────────────────────────────────────────────────────────────────────
-
-      res.redirect(301, result.url);
+      res.redirect(301, result.url); // URL validada pelo Service (CWE-918 safe)
       return;
     }
 
@@ -225,4 +218,3 @@ export class ApoiadoresController {
     res.end(result.buffer);
   }
 }
-

@@ -18,8 +18,8 @@ export class ImageProcessingService {
 
       // Limiar: pixels com luminosidade acima de 235 viram transparentes
       // Zona de suavização: 190-235 recebe transparência proporcional (anti-aliasing)
-      const LIMIAR_OPACO = 190;   // abaixo disso: mantém tinta totalmente opaca
-      const LIMIAR_BRANCO = 235;  // acima disso: totalmente transparente
+      const LIMIAR_OPACO = 190; // abaixo disso: mantém tinta totalmente opaca
+      const LIMIAR_BRANCO = 235; // acima disso: totalmente transparente
 
       const { width, height, data } = img.bitmap;
 

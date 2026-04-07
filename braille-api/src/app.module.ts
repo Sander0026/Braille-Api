@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
-import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
@@ -23,22 +23,33 @@ import { AtestadosModule } from './atestados/atestados.module';
 import { LaudosModule } from './laudos/laudos.module';
 import { ApoiadoresModule } from './apoiadores/apoiadores.module';
 import { CertificadosModule } from './certificados/certificados.module';
+import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/prisma-exception.filter';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Memória Cache (Fase 14) - Configurado Globalmente com vida natural padrão de 5 minutos (300.000ms)
-    CacheModule.register({
+    // Memória Cache (Fase 14) - Configurado Globalmente com vida natural padrão (via Config)
+    CacheModule.registerAsync({
       isGlobal: true,
-      ttl: 300000, // Versões v5+ do Cache_Manager adotam Millisegundos
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => ({
+        ttl: configService.get<number>('CACHE_TTL', 300000),
+      }),
     }),
-    // Bloqueia abusos de rede: máximo de 30 chamadas por IP por minuto
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 30,
-    }]),
+    // Bloqueia abusos de rede via configurações dinâmicas de ambiente
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => [
+        {
+          ttl: configService.get<number>('THROTTLER_TTL', 60000),
+          limit: configService.get<number>('THROTTLER_LIMIT', 30),
+        },
+      ],
+    }),
     PrismaModule,
-    ScheduleModule.forRoot(),  // Habilita @Cron, @Interval, @Timeout globalmente
+    ScheduleModule.forRoot(), // Habilita @Cron, @Interval, @Timeout globalmente
     AuthModule,
     UsersModule,
     BeneficiariesModule,
@@ -49,9 +60,11 @@ import { CertificadosModule } from './certificados/certificados.module';
     ContatosModule,
     UploadModule,
     SiteConfigModule,
-    AuditLogModule,   // Fase 5
-    AtestadosModule,  // Módulo de Justificativas de Falta
-    LaudosModule, ApoiadoresModule, CertificadosModule,     // Módulo de Múltiplos Laudos Médicos
+    AuditLogModule, // Fase 5
+    AtestadosModule, // Módulo de Justificativas de Falta
+    LaudosModule,
+    ApoiadoresModule,
+    CertificadosModule,
   ],
   controllers: [AppController],
   providers: [
@@ -66,6 +79,15 @@ import { CertificadosModule } from './certificados/certificados.module';
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,
     },
+    // Filtros Globais de Exceção injetados na Árvore de Dependências IoC
+    {
+      provide: APP_FILTER,
+      useClass: PrismaExceptionFilter,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: PrismaValidationFilter,
+    },
   ],
 })
-export class AppModule { }
+export class AppModule {}

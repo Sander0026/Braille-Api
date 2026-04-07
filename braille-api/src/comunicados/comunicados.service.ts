@@ -1,17 +1,36 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
-import { CreateComunicadoDto } from './dto/create-comunicado.dto';
-import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
+import { Prisma, AuditAcao } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { UploadService } from '../upload/upload.service';
-import { AuditAcao, Role } from '@prisma/client';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { CreateComunicadoDto } from './dto/create-comunicado.dto';
+import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
+import { QueryComunicadoDto } from './dto/query-comunicado.dto';
 
-export interface AuditUserParams {
-  sub: string;
-  nome: string;
-  role: string;
-  ip?: string;
-  userAgent?: string;
+// ── Select cirúrgico — única fonte de verdade para os campos retornados ────────
+//
+// Centralizar aqui garante que findAll() e findOne() nunca divergem nos campos
+// e que campos internos desnecessários não transitam na memória.
+// Espelha o tipo ComunicadoResponse em entities/comunicado.entity.ts.
+const COMUNICADO_SELECT = {
+  id: true,
+  titulo: true,
+  conteudo: true,
+  categoria: true,
+  fixado: true,
+  imagemCapa: true,
+  autorId: true,
+  criadoEm: true,
+  atualizadoEm: true,
+  autor: { select: { nome: true } },
+} satisfies Prisma.ComunicadoSelect;
+
+// ── Helper puro — remove relações aninhadas do snapshot de auditoria ──────────
+// Evita a duplicação que existia em update() e remove() (violação DRY).
+function omitAutor<T extends { autor?: unknown }>(obj: T): Omit<T, 'autor'> {
+  const { autor: _ignored, ...rest } = obj;
+  return rest;
 }
 
 @Injectable()
@@ -22,75 +41,71 @@ export class ComunicadosService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
     private readonly uploadService: UploadService,
-  ) { }
+  ) {}
 
-  private getAutorPadrao(auditUser?: AuditUserParams) {
-    if (!auditUser) return {};
+  // ── Mapeamento AuditUser → campos esperados pelo AuditLogService.registrar() ─
+  private static auditFields(u: AuditUser) {
     return {
-      autorId: auditUser.sub,
-      autorNome: auditUser.nome,
-      autorRole: auditUser.role as Role,
-      ip: auditUser.ip,
-      userAgent: auditUser.userAgent,
+      autorId: u.sub,
+      autorNome: u.nome,
+      autorRole: u.role,
+      ip: u.ip,
+      userAgent: u.userAgent,
     };
   }
 
-  async create(createComunicadoDto: CreateComunicadoDto, auditUser?: AuditUserParams) {
-    // Se não houver autor detectado no auditUser, exigiremos pelo menos achar um admin pra fallback
-    let autorRealId = auditUser?.sub;
-
-    if (!autorRealId) {
-      const admin = await this.prisma.user.findFirst({ where: { username: 'admin' } });
-      if (!admin) {
-        throw new NotFoundException('Nenhum autor autenticado e Administrador principal não encontrado para assinar o comunicado.');
-      }
-      autorRealId = admin.id;
-    }
-
-    const comunicadoNovo = await this.prisma.comunicado.create({
-      data: {
-        titulo: createComunicadoDto.titulo,
-        conteudo: createComunicadoDto.conteudo,
-        categoria: createComunicadoDto.categoria,
-        fixado: createComunicadoDto.fixado || false,
-        autorId: autorRealId,
-        imagemCapa: createComunicadoDto.imagemCapa,
-      },
-    });
-
-    this.auditService.registrar({
-      entidade: 'Comunicado',
-      registroId: comunicadoNovo.id,
-      acao: AuditAcao.CRIAR,
-      ...this.getAutorPadrao(auditUser),
-      newValue: comunicadoNovo,
-    });
-
-    return comunicadoNovo;
+  // ── Fire-and-forget seguro — suprime a promise floating; erro vai ao log ──────
+  private deleteImagemAsync(publicId: string, contexto: string): void {
+    void this.uploadService
+      .deleteFile(publicId)
+      .catch((e: unknown) => this.logger.warn(`[Comunicado] ${contexto}: ${(e as Error).message}`));
   }
 
-  async findAll(query: import('./dto/query-comunicado.dto').QueryComunicadoDto = {}) {
+  // ────────────────────────────────────────────────────────────────────────────
+  //  CRUD
+  // ────────────────────────────────────────────────────────────────────────────
+
+  async create(dto: CreateComunicadoDto, auditUser: AuditUser) {
+    const comunicado = await this.prisma.comunicado.create({
+      data: {
+        titulo: dto.titulo,
+        conteudo: dto.conteudo,
+        categoria: dto.categoria,
+        fixado: dto.fixado ?? false,
+        autorId: auditUser.sub,
+        imagemCapa: dto.imagemCapa,
+      },
+      select: COMUNICADO_SELECT,
+    });
+
+    void this.auditService.registrar({
+      entidade: 'Comunicado',
+      registroId: comunicado.id,
+      acao: AuditAcao.CRIAR,
+      ...ComunicadosService.auditFields(auditUser),
+      newValue: comunicado,
+    });
+
+    return comunicado;
+  }
+
+  async findAll(query: QueryComunicadoDto = {}) {
     const { page = 1, limit = 10, titulo, categoria } = query;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
-    if (titulo) {
-      where.titulo = { contains: titulo, mode: 'insensitive' };
-    }
-    if (categoria) {
-      where.categoria = categoria; // Enum CategoriaComunicado
-    }
+    // Tipo seguro — elimina o 'any' que desactivava a verificação do Prisma
+    const where: Prisma.ComunicadoWhereInput = {
+      ...(titulo && { titulo: { contains: titulo, mode: 'insensitive' } }),
+      ...(categoria && { categoria }),
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.comunicado.findMany({
         where,
         skip,
         take: limit,
-        include: { autor: { select: { nome: true } } },
-        orderBy: [
-          { fixado: 'desc' },
-          { criadoEm: 'desc' },
-        ],
+        select: COMUNICADO_SELECT,
+        orderBy: [{ fixado: 'desc' }, { criadoEm: 'desc' }],
       }),
       this.prisma.comunicado.count({ where }),
     ]);
@@ -107,67 +122,69 @@ export class ComunicadosService {
   async findOne(id: string) {
     const comunicado = await this.prisma.comunicado.findUnique({
       where: { id },
-      include: { autor: { select: { nome: true } } }
+      select: COMUNICADO_SELECT,
     });
 
     if (!comunicado) throw new NotFoundException('Comunicado não encontrado.');
     return comunicado;
   }
 
-  async update(id: string, updateComunicadoDto: UpdateComunicadoDto, auditUser?: AuditUserParams) {
+  async update(id: string, dto: UpdateComunicadoDto, auditUser: AuditUser) {
+    // Cláusula de guarda — garante 404 antes de qualquer mutação
     const comunicadoAntigo = await this.findOne(id);
 
     const comunicadoAtualizado = await this.prisma.comunicado.update({
       where: { id },
       data: {
-        titulo: updateComunicadoDto.titulo,
-        conteudo: updateComunicadoDto.conteudo,
-        categoria: updateComunicadoDto.categoria,
-        fixado: updateComunicadoDto.fixado,
-        imagemCapa: updateComunicadoDto.imagemCapa,
-      }
+        titulo: dto.titulo,
+        conteudo: dto.conteudo,
+        categoria: dto.categoria,
+        fixado: dto.fixado,
+        imagemCapa: dto.imagemCapa,
+      },
+      select: COMUNICADO_SELECT,
     });
 
-    if (comunicadoAntigo.imagemCapa &&
-        updateComunicadoDto.imagemCapa !== undefined &&
-        comunicadoAntigo.imagemCapa !== updateComunicadoDto.imagemCapa) {
-      try {
-        await this.uploadService.deleteFile(comunicadoAntigo.imagemCapa);
-      } catch (e: unknown) {
-        this.logger.warn(`Falha não obstrutiva do Cloudinary ao deletar imagem de capa antiga do comunicado: ${(e as Error).message}`);
-      }
+    // Remoção da imagem antiga é operação auxiliar — não bloqueia a resposta HTTP
+    const imagemSubstituida =
+      !!comunicadoAntigo.imagemCapa && dto.imagemCapa !== undefined && comunicadoAntigo.imagemCapa !== dto.imagemCapa;
+
+    if (imagemSubstituida) {
+      this.deleteImagemAsync(
+        comunicadoAntigo.imagemCapa!,
+        'Falha não-obstrutiva ao remover imagem antiga do Cloudinary',
+      );
     }
 
-    this.auditService.registrar({
+    void this.auditService.registrar({
       entidade: 'Comunicado',
       registroId: id,
       acao: AuditAcao.ATUALIZAR,
-      ...this.getAutorPadrao(auditUser),
-      oldValue: Object.fromEntries(Object.entries(comunicadoAntigo).filter(([k]) => k !== 'autor')), // Remove nested
+      ...ComunicadosService.auditFields(auditUser),
+      oldValue: omitAutor(comunicadoAntigo),
       newValue: comunicadoAtualizado,
     });
 
     return comunicadoAtualizado;
   }
 
-  async remove(id: string, auditUser?: AuditUserParams) {
+  async remove(id: string, auditUser: AuditUser) {
+    // Cláusula de guarda — garante 404 antes do delete
     const comunicado = await this.findOne(id);
+
     const result = await this.prisma.comunicado.delete({ where: { id } });
 
+    // Remoção do asset no Cloudinary é auxiliar — não bloqueia a resposta HTTP
     if (comunicado.imagemCapa) {
-      try {
-        await this.uploadService.deleteFile(comunicado.imagemCapa);
-      } catch (e: unknown) {
-        this.logger.warn(`Falha isolada do Cloudinary ao deletar capa do comunicado excluído: ${(e as Error).message}`);
-      }
+      this.deleteImagemAsync(comunicado.imagemCapa, 'Falha não-obstrutiva ao remover capa do Cloudinary');
     }
 
-    this.auditService.registrar({
+    void this.auditService.registrar({
       entidade: 'Comunicado',
       registroId: id,
       acao: AuditAcao.EXCLUIR,
-      ...this.getAutorPadrao(auditUser),
-      oldValue: Object.fromEntries(Object.entries(comunicado).filter(([k]) => k !== 'autor')),
+      ...ComunicadosService.auditFields(auditUser),
+      oldValue: omitAutor(comunicado),
     });
 
     return result;

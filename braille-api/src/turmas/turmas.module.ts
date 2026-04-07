@@ -9,4 +9,4 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
   controllers: [TurmasController],
   providers: [TurmasService, TurmasScheduler],
 })
-export class TurmasModule { }
+export class TurmasModule {}

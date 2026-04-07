@@ -18,7 +18,7 @@ import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { CertificadosService, AuditUserParams } from './certificados.service';
+import { CertificadosService } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
 import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
@@ -27,17 +27,8 @@ import { PdfService } from './pdf.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { getAuditUser } from '../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
-
-function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
-  const u = req.user as any;
-  if (!u) return {};
-  return {
-    autorId: u?.sub as string,
-    autorNome: (u?.nome || u?.email) as string,
-    autorRole: u?.role as string,
-  };
-}
 
 @ApiTags('Modelos de Certificados')
 @ApiBearerAuth()
@@ -52,34 +43,35 @@ export class CertificadosController {
   @Get('teste')
   @ApiOperation({ summary: 'Rota temporária de homologação geométrica do PDF' })
   async gerarPdfTeste(@Res({ passthrough: true }) res: Response) {
-    // Imagens de espaço reservado para testar geometria
-    const arteBaseDemo = 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg'; 
-    const assinaturaDemo = 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Fidel_Castro_Signature.png';
-    const textoDemo = 'CERTIFICAMOS QUE\n\nAluno de Teste do Sistema Braille\n\nConcluiu com êxito o curso de testes em 2026, possuindo carga horária de 120 horas e comprovando proficiência.';
-    const hashUnico = 'BR-123456-XY';
-
     const buffer = await this.pdfService.construirPdfBase(
       {
-        arteBaseUrl: arteBaseDemo,
-        assinaturaUrl: assinaturaDemo,
-        tipo: 'ACADEMICO',
-      } as any,
-      textoDemo,
-      hashUnico
+        arteBaseUrl: 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
+        assinaturaUrl: 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
+        assinaturaUrl2: null,
+        layoutConfig: null,
+        nomeAssinante: 'Assinante Demo',
+        cargoAssinante: 'Cargo Demo',
+        nomeAssinante2: null,
+        cargoAssinante2: null,
+      },
+      'CERTIFICAMOS QUE\n\nAluno de Teste do Sistema Braille\n\nConcluiu com êxito o curso de testes.',
+      'BR-TEST-01',
     );
-
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline; filename="teste_homologacao.pdf"',
     });
-
     return new StreamableFile(buffer);
   }
 
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
   @ApiOperation({ summary: 'Emite o PDF de diploma para um Aluno Matriculado numa Turma Concluída.' })
-  async gerarAcademico(@Req() req: AuthenticatedRequest, @Body() dto: EmitirAcademicoDto, @Res({ passthrough: true }) res: Response) {
+  async gerarAcademico(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: EmitirAcademicoDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const buffer = await this.certificadosService.emitirAcademico(dto, getAuditUser(req));
     res.set({
       'Content-Type': 'application/pdf',
@@ -90,8 +82,12 @@ export class CertificadosController {
 
   @Post('emitir-honraria')
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Emite o PDF de Amigo do Braille dinamicamente para terceiros.' })
-  async gerarHonraria(@Req() req: AuthenticatedRequest, @Body() dto: EmitirHonrariaDto, @Res({ passthrough: true }) res: Response) {
+  @ApiOperation({ summary: 'Emite o PDF de Amigo do Braille para terceiros.' })
+  async gerarHonraria(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: EmitirHonrariaDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const buffer = await this.certificadosService.emitirHonraria(dto, getAuditUser(req));
     res.set({
       'Content-Type': 'application/pdf',
@@ -176,12 +172,19 @@ export class CertificadosController {
     const assinaturaFile = files?.assinatura?.[0];
     const assinatura2File = files?.assinatura2?.[0];
 
-    return this.certificadosService.update(id, updateDto, arteBaseFile, assinaturaFile, assinatura2File, getAuditUser(req));
+    return this.certificadosService.update(
+      id,
+      updateDto,
+      arteBaseFile,
+      assinaturaFile,
+      assinatura2File,
+      getAuditUser(req),
+    );
   }
 
   @Delete(':id')
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Deleta um modelo e remove os arquivos do nuvem' })
+  @ApiOperation({ summary: 'Deleta um modelo e remove os arquivos do Cloudinary' })
   remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.certificadosService.remove(id, getAuditUser(req));
   }

@@ -1,36 +1,51 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Patch, Get, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Patch,
+  Get,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse as SwaggerResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { AuthGuard } from './auth.guard';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { ApiTags, ApiOperation, ApiResponse as SwaggerResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthGuard } from './auth.guard';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
 import { AtualizarFotoDto } from './dto/atualizar-foto.dto';
 import { AtualizarPerfilDto } from './dto/atualizar-perfil.dto';
 import { ApiResponse } from '../common/dto/api-response.dto';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
+/**
+ * AuthController — rotas públicas e semi-públicas de autenticação.
+ * Controller magro: extração de userId centralizada em `resolverUserId()`.
+ */
 @ApiTags('Auth (Login)')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Fazer login no sistema' })
   @SwaggerResponse({ status: 200, description: 'Login com sucesso e retorna o Token JWT' })
   @SwaggerResponse({ status: 401, description: 'Credenciais inválidas' })
-  async login(@Body() loginDto: LoginDto) {
+  login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Renovar Token Expirado (Refresh Silencioso)' })
-  @SwaggerResponse({ status: 201, description: 'Sessão validada e o Novo Token de 15m Emitido' })
-  @SwaggerResponse({ status: 401, description: 'Refresh Token Inválido ou Sessão Encerrada pelo T.I.' })
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
-    return this.authService.refreshToken(refreshTokenDto.userId, refreshTokenDto.refreshToken);
+  @SwaggerResponse({ status: 201, description: 'Sessão validada e Novo Token de 15m Emitido' })
+  @SwaggerResponse({ status: 401, description: 'Refresh Token Inválido ou Sessão Encerrada' })
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshToken(dto.userId, dto.refreshToken);
   }
 
   @ApiBearerAuth()
@@ -38,38 +53,45 @@ export class AuthController {
   @Get('me')
   @ApiOperation({ summary: 'Retorna os dados do usuário logado (nome, role, fotoPerfil, etc.)' })
   @SwaggerResponse({ status: 200, description: 'Retorna os dados cadastrais em ApiResponse' })
-  async getMe(@Req() req: AuthenticatedRequest): Promise<ApiResponse<any>> {
-    const userId = req.user?.sub as string;
-    return this.authService.getMe(userId);
+  getMe(@Req() req: AuthenticatedRequest): Promise<ApiResponse<unknown>> {
+    return this.authService.getMe(this.resolverUserId(req));
   }
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Patch('trocar-senha')
   @ApiOperation({ summary: 'Trocar a própria senha (requer senha atual)' })
-  @SwaggerResponse({ status: 200, description: 'Retorna mensagem de sucesso' })
-  async trocarSenha(@Req() req: AuthenticatedRequest, @Body() trocarSenhaDto: TrocarSenhaDto): Promise<ApiResponse<any>> {
-    const userId = req.user?.sub as string;
-    return this.authService.trocarSenha(userId, trocarSenhaDto);
+  @SwaggerResponse({ status: 200, description: 'Senha alterada com sucesso' })
+  trocarSenha(@Req() req: AuthenticatedRequest, @Body() dto: TrocarSenhaDto): Promise<ApiResponse<null>> {
+    return this.authService.trocarSenha(this.resolverUserId(req), dto);
   }
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Patch('foto-perfil')
   @ApiOperation({ summary: 'Atualizar a foto de perfil do usuário logado' })
-  @SwaggerResponse({ status: 200, description: 'Retorna foto url atualizada' })
-  async atualizarFotoPerfil(@Req() req: AuthenticatedRequest, @Body() dto: AtualizarFotoDto): Promise<ApiResponse<any>> {
-    const userId = req.user?.sub as string;
-    return this.authService.atualizarFotoPerfil(userId, dto.fotoPerfil);
+  @SwaggerResponse({ status: 200, description: 'Foto URL atualizada com sucesso' })
+  atualizarFotoPerfil(@Req() req: AuthenticatedRequest, @Body() dto: AtualizarFotoDto): Promise<ApiResponse<unknown>> {
+    return this.authService.atualizarFotoPerfil(this.resolverUserId(req), dto.fotoPerfil);
   }
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Patch('perfil')
   @ApiOperation({ summary: 'Atualizar nome e e-mail do perfil do usuário logado' })
-  @SwaggerResponse({ status: 200, description: 'Retorna novos dados atualizados' })
-  async atualizarPerfil(@Req() req: AuthenticatedRequest, @Body() dto: AtualizarPerfilDto): Promise<ApiResponse<any>> {
-    const userId = req.user?.sub as string;
-    return this.authService.atualizarPerfil(userId, dto);
+  @SwaggerResponse({ status: 200, description: 'Dados do perfil atualizados com sucesso' })
+  atualizarPerfil(@Req() req: AuthenticatedRequest, @Body() dto: AtualizarPerfilDto): Promise<ApiResponse<unknown>> {
+    return this.authService.atualizarPerfil(this.resolverUserId(req), dto);
+  }
+
+  /**
+   * Extrai o userId do token JWT de forma segura e tipada.
+   * Centralizado para eliminar `req.user?.sub as string` repetido × 4.
+   * O AuthGuard garante que `req.user.sub` existe ao chegar aqui.
+   */
+  private resolverUserId(req: AuthenticatedRequest): string {
+    const userId = req.user?.sub;
+    if (!userId) throw new UnauthorizedException('Sessão inválida.');
+    return userId;
   }
 }

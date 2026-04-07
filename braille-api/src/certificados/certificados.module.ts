@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { CertificadosService } from './certificados.service';
 import { CertificadosController } from './certificados.controller';
 import { CertificadosPublicoController } from './certificados-publico.controller';
@@ -9,7 +10,9 @@ import { ImageProcessingService } from './image-processing.service';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
-  imports: [UploadModule, AuditLogModule],
+  // ConfigModule importado localmente para garantir ConfigService no PdfService
+  // sem depender de isGlobal no AppModule.
+  imports: [UploadModule, AuditLogModule, ConfigModule],
   controllers: [CertificadosController, CertificadosPublicoController],
   providers: [CertificadosService, PrismaService, PdfService, ImageProcessingService],
   exports: [PdfService],

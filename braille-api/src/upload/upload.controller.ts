@@ -1,51 +1,51 @@
-import { Controller, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Query, BadRequestException, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Delete,
+  UseInterceptors,
+  UploadedFile,
+  UseGuards,
+  Query,
+  BadRequestException,
+  Req,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadService } from './upload.service';
 import { ApiTags, ApiBearerAuth, ApiConsumes, ApiBody, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { Role } from '@prisma/client';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
-
-export interface AuditUserParams {
-  sub: string;
-  nome: string;
-  role: string;
-  ip?: string;
-  userAgent?: string;
-}
-
-export function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
-  return {
-    sub: req.user?.sub ?? '',
-    // @ts-ignore
-    nome: req.user?.nome || req.user?.email || 'Desconhecido',
-    role: req.user?.role ?? 'USER',
-    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
-    userAgent: req.headers['user-agent'],
-  };
-}
+import { getAuditUser } from '../common/helpers/audit.helper';
 
 @ApiTags('Uploads de Arquivos')
 @ApiBearerAuth()
 @UseGuards(AuthGuard) // 🔒 Só quem está logado pode fazer upload
 @Controller('upload')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) { }
+  constructor(private readonly uploadService: UploadService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file', {
-    storage: memoryStorage(), // Mantém o arquivo na memória RAM para enviar ao Cloudinary
-    limits: { fileSize: 5 * 1024 * 1024 }, // Limite restrito para 5MB por arquivo
-    fileFilter: (_req, file, callback) => {
-      // Whitelist explícita de tipos de arquivos
-      const allowedMimetypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-      if (allowedMimetypes.includes(file.mimetype) || /\.(jpg|jpeg|png|webp|pdf)$/i.exec(file.originalname)) {
-        callback(null, true);
-      } else {
-        callback(new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens (JPG/PNG) ou PDF.'), false);
-      }
-    },
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(), // Mantém o arquivo na memória RAM para enviar ao Cloudinary
+      limits: { fileSize: 5 * 1024 * 1024 }, // Limite restrito para 5MB por arquivo
+      fileFilter: (_req, file, callback) => {
+        // Whitelist explícita de tipos de arquivos
+        const allowedMimetypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (allowedMimetypes.includes(file.mimetype) || /\.(jpg|jpeg|png|webp|pdf)$/i.exec(file.originalname)) {
+          callback(null, true);
+        } else {
+          callback(
+            new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens (JPG/PNG) ou PDF.'),
+            false,
+          );
+        }
+      },
+    }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -66,26 +66,31 @@ export class UploadController {
   }
 
   @Delete()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.SECRETARIA)
   async deleteFile(@Query('url') url: string, @Req() req: AuthenticatedRequest) {
     return this.uploadService.deleteFile(url, getAuditUser(req));
   }
 
   // ─── Upload de PDF (Termo LGPD / Atestado Médico) ──────────────────────────
   @Post('pdf')
-  @UseInterceptors(FileInterceptor('file', {
-    storage: memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
-    fileFilter: (_req, file, cb) => {
-      if (file.mimetype === 'application/pdf') cb(null, true);
-      else cb(new BadRequestException('Apenas arquivos PDF são aceitos.'), false);
-    },
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+      fileFilter: (_req, file, cb) => {
+        if (file.mimetype === 'application/pdf') cb(null, true);
+        else cb(new BadRequestException('Apenas arquivos PDF são aceitos.'), false);
+      },
+    }),
+  )
   @ApiOperation({ summary: 'Upload de PDF (Termo LGPD ou Atestado Médico)' })
   @ApiQuery({
     name: 'tipo',
     enum: ['lgpd', 'atestado', 'laudo'],
     required: true,
-    description: 'Tipo do documento: "lgpd" grava em braille_lgpd/, "atestado" em braille_atestados/ e "laudo" em braille_laudos/',
+    description:
+      'Tipo do documento: "lgpd" grava em braille_lgpd/, "atestado" em braille_atestados/ e "laudo" em braille_laudos/',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -103,7 +108,7 @@ export class UploadController {
     if (tipo !== 'lgpd' && tipo !== 'atestado' && tipo !== 'laudo') {
       throw new BadRequestException('O parâmetro "tipo" deve ser "lgpd", "atestado" ou "laudo".');
     }
-    
+
     let folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos';
     if (tipo === 'lgpd') {
       folder = 'braille_lgpd';
@@ -112,7 +117,7 @@ export class UploadController {
     } else {
       folder = 'braille_atestados';
     }
-    
+
     return this.uploadService.uploadPdf(file, folder, getAuditUser(req));
   }
 }
