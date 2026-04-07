@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, IsDateString, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsDateString, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class QueryFrequenciaDto {
@@ -14,6 +14,7 @@ export class QueryFrequenciaDto {
     @Type(() => Number)
     @IsInt()
     @Min(1)
+    @Max(100)
     @IsOptional()
     limit?: number = 20;
 

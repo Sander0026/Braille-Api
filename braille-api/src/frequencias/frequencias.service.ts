@@ -1,19 +1,12 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Logger, InternalServerErrorException } from '@nestjs/common';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
-import { Role, AuditAcao } from '@prisma/client';
+import { Role, AuditAcao, Prisma } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
-
-export interface AuditUserParams {
-  sub: string;
-  nome: string;
-  role: string;
-  ip?: string;
-  userAgent?: string;
-}
+import { AuditUser } from '../common/interfaces/audit-user.interface';
 
 @Injectable()
 export class FrequenciasService {
@@ -23,17 +16,6 @@ export class FrequenciasService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
   ) { }
-
-  private getAutorPadrao(auditUser?: AuditUserParams) {
-    if (!auditUser) return {};
-    return {
-      autorId: auditUser.sub,
-      autorNome: auditUser.nome,
-      autorRole: auditUser.role as Role,
-      ip: auditUser.ip,
-      userAgent: auditUser.userAgent,
-    };
-  }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -79,7 +61,7 @@ export class FrequenciasService {
 
   // ─── CRUD Principal ────────────────────────────────────────────────────────
 
-  async create(dto: CreateFrequenciaDto, auditUser?: AuditUserParams) {
+  async create(dto: CreateFrequenciaDto, auditUser?: AuditUser) {
     const dataConvertida = new Date(dto.dataAula);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
 
@@ -105,7 +87,7 @@ export class FrequenciasService {
   // ─── Lote Absoluto (Fase 23) ──────────────────────────────────────────────────
   async salvarLote(
     dto: CreateFrequenciaLoteDto,
-    auditUser?: AuditUserParams,
+    auditUser?: AuditUser,
   ) {
     const dataConvertida = new Date(dto.dataAula);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
@@ -114,7 +96,13 @@ export class FrequenciasService {
     this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
     await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
 
-    const autorContext = this.getAutorPadrao(auditUser);
+    const autorContext = auditUser ? {
+      autorId: auditUser.sub,
+      autorNome: auditUser.nome,
+      autorRole: auditUser.role,
+      ip: auditUser.ip,
+      userAgent: auditUser.userAgent,
+    } : {};
 
     // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
     try {
@@ -218,9 +206,10 @@ export class FrequenciasService {
       return { sucesso: true, processados: dto.alunos.length, mensagem: 'Operação de lote efetivada com integridade atômica.' };
 
     } catch (error: any) {
-      console.error('🔥 Erro Crítico Prisma Transação (Lote):', error);
-      throw new BadRequestException(
-        `Falha ao processar o Lote de Chamadas. O servidor do banco de dados abortou a transação. Motivo técnico: ${error.message || 'Desconhecido'}`
+      this.logger.error('Erro Crítico Prisma Transação (Lote):', error);
+      // Data Leak Prevention: não repassa "error.message" técnico nativo do PGD.
+      throw new InternalServerErrorException(
+        'Falha ao processar o Lote de Chamadas. O banco de dados abortou a transação.'
       );
     }
   }
@@ -229,7 +218,7 @@ export class FrequenciasService {
     const { page = 1, limit = 20, turmaId, alunoId, dataAula, professorId } = query;
     const skip = (page - 1) * limit;
 
-    const whereCondicao: any = {};
+    const whereCondicao: Prisma.FrequenciaWhereInput = {};
     if (turmaId) whereCondicao.turmaId = turmaId;
     if (alunoId) whereCondicao.alunoId = alunoId;
     if (dataAula) whereCondicao.dataAula = new Date(dataAula);
@@ -259,7 +248,7 @@ export class FrequenciasService {
     const { page = 1, limit = 20, turmaId, professorId } = query;
     const skip = (page - 1) * limit;
 
-    const whereCondicao: any = {};
+    const whereCondicao: Prisma.FrequenciaWhereInput = {};
     if (turmaId) whereCondicao.turmaId = turmaId;
     if (professorId) whereCondicao.turma = { professorId };
 
@@ -271,37 +260,66 @@ export class FrequenciasService {
     });
 
     const total = grouped.length;
+    if (total === 0) {
+      return { data: [], meta: { total: 0, page, lastPage: 0 } };
+    }
+
     const paginatedGroup = grouped.slice(skip, skip + Number(limit));
 
-    const enrichedData = await Promise.all(
-      paginatedGroup.map(async (group) => {
-        const turma = await this.prisma.turma.findUnique({
-          where: { id: group.turmaId },
-          select: { nome: true },
-        });
+    // Despacho O(1) de Dicionários Memory Tree (Encerrou falha de N+1)
+    const turmasIds = [...new Set(paginatedGroup.map((g) => g.turmaId))];
+    const turmasDb = await this.prisma.turma.findMany({
+      where: { id: { in: turmasIds } },
+      select: { id: true, nome: true },
+    });
+    const mapaTurmas = new Map(turmasDb.map((t) => [t.id, t.nome]));
 
-        const presentesCount = await this.prisma.frequencia.count({
-          where: { dataAula: group.dataAula, turmaId: group.turmaId, presente: true },
-        });
+    // Datas Min e Max para restringir a busca de presentes/diários
+    const maxDate = paginatedGroup[0].dataAula;
+    const minDate = paginatedGroup.at(-1)?.dataAula;
 
-        // Verifica se o diário está fechado para este turmaId+dataAula
-        const diarioFechado = await this.prisma.frequencia.findFirst({
-          where: { turmaId: group.turmaId, dataAula: group.dataAula, fechado: true },
-          select: { fechado: true, fechadoEm: true },
-        });
+    const [presentesGroup, diariosFechadosGroup] = await Promise.all([
+      this.prisma.frequencia.groupBy({
+        by: ['dataAula', 'turmaId'],
+        where: {
+          turmaId: { in: turmasIds },
+          dataAula: { gte: minDate, lte: maxDate },
+          presente: true,
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.frequencia.findMany({
+        where: {
+          turmaId: { in: turmasIds },
+          dataAula: { gte: minDate, lte: maxDate },
+          fechado: true,
+        },
+        distinct: ['turmaId', 'dataAula'],
+        select: { turmaId: true, dataAula: true, fechadoEm: true },
+      }),
+    ]);
 
-        return {
-          dataAula: group.dataAula,
-          turmaId: group.turmaId,
-          turmaNome: turma?.nome || 'Desconhecido',
-          totalAlunos: group._count._all,
-          presentes: presentesCount,
-          faltas: group._count._all - presentesCount,
-          diarioFechado: !!diarioFechado?.fechado,
-          fechadoEm: diarioFechado?.fechadoEm ?? null,
-        };
-      })
-    );
+    // Cache key maker de datas exatas
+    const cKey = (tId: string, dt: Date) => `${tId}_${dt.toISOString()}`;
+
+    const mapPresentes = new Map(presentesGroup.map((g) => [cKey(g.turmaId, g.dataAula), g._count._all]));
+    const mapFechados = new Map(diariosFechadosGroup.map((f) => [cKey(f.turmaId, f.dataAula), !!f.fechadoEm]));
+
+    const enrichedData = paginatedGroup.map((group) => {
+      const keyHash = cKey(group.turmaId, group.dataAula);
+      const presentes = mapPresentes.get(keyHash) || 0;
+      const isFechado = mapFechados.get(keyHash) || false;
+
+      return {
+        dataAula: group.dataAula,
+        turmaId: group.turmaId,
+        turmaNome: mapaTurmas.get(group.turmaId) || 'Desconhecido',
+        totalAlunos: group._count._all,
+        presentes,
+        faltas: group._count._all - presentes,
+        diarioFechado: isFechado,
+      };
+    });
 
     return {
       data: enrichedData,
@@ -343,7 +361,7 @@ export class FrequenciasService {
     return frequencia;
   }
 
-  async update(id: string, dto: UpdateFrequenciaDto, auditUser?: AuditUserParams) {
+  async update(id: string, dto: UpdateFrequenciaDto, auditUser?: AuditUser) {
     const frequencia = await this.findOne(id);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
 
@@ -359,7 +377,7 @@ export class FrequenciasService {
     return this.prisma.frequencia.update({ where: { id }, data: dadosParaAtualizar });
   }
 
-  async remove(id: string, auditUser?: AuditUserParams) {
+  async remove(id: string, auditUser?: AuditUser) {
     const frequencia = await this.findOne(id);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
     this.validarDataHoje(frequencia.dataAula, requesterRole === Role.ADMIN);
@@ -377,7 +395,7 @@ export class FrequenciasService {
   async fecharDiario(
     turmaId: string,
     dataAula: string,
-    auditUser?: AuditUserParams,
+    auditUser?: AuditUser,
   ) {
     const data = new Date(dataAula);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
@@ -420,7 +438,7 @@ export class FrequenciasService {
   /**
    * ADMIN reabre o diário para retificação. Volta fechado = false.
    */
-  async reabrirDiario(turmaId: string, dataAula: string, auditUser?: AuditUserParams) {
+  async reabrirDiario(turmaId: string, dataAula: string, auditUser?: AuditUser) {
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
     if (requesterRole !== Role.ADMIN) {
       throw new ForbiddenException('Somente administradores podem reabrir um diário fechado.');
