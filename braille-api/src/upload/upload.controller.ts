@@ -4,26 +4,11 @@ import { memoryStorage } from 'multer';
 import { UploadService } from './upload.service';
 import { ApiTags, ApiBearerAuth, ApiConsumes, ApiBody, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { Role } from '@prisma/client';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
-
-export interface AuditUserParams {
-  sub: string;
-  nome: string;
-  role: string;
-  ip?: string;
-  userAgent?: string;
-}
-
-export function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
-  return {
-    sub: req.user?.sub ?? '',
-    // @ts-ignore
-    nome: req.user?.nome || req.user?.email || 'Desconhecido',
-    role: req.user?.role ?? 'USER',
-    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
-    userAgent: req.headers['user-agent'],
-  };
-}
+import { getAuditUser } from '../common/helpers/audit.helper';
 
 @ApiTags('Uploads de Arquivos')
 @ApiBearerAuth()
@@ -66,6 +51,8 @@ export class UploadController {
   }
 
   @Delete()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.SECRETARIA)
   async deleteFile(@Query('url') url: string, @Req() req: AuthenticatedRequest) {
     return this.uploadService.deleteFile(url, getAuditUser(req));
   }

@@ -3,7 +3,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import * as streamifier from 'streamifier';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { AuditUserParams } from './upload.controller';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { AuditAcao, Role } from '@prisma/client';
 
 @Injectable()
@@ -22,7 +22,7 @@ export class UploadService {
     });
   }
 
-  uploadImage(file: Express.Multer.File, auditUser?: AuditUserParams): Promise<{ url: string }> {
+  uploadImage(file: Express.Multer.File, auditUser?: AuditUser): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
       // Validação extra de segurança: aceitar imagens e PDFs (Laudos)
       const allowedMimes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'application/pdf'];
@@ -53,7 +53,7 @@ export class UploadService {
               ip: auditUser.ip,
               userAgent: auditUser.userAgent,
               newValue: { url: result.secure_url, folder: 'braille_instituicao' },
-            });
+            }).catch(e => this.logger.warn(`Failure auditing Cloudinary Upload: ${e.message}`));
           }
 
           resolve({ url: result.secure_url }); // Agora o TS sabe que o result existe 100%!
@@ -68,7 +68,7 @@ export class UploadService {
   uploadPdf(
     file: Express.Multer.File,
     folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos',
-    auditUser?: AuditUserParams,
+    auditUser?: AuditUser,
   ): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
       if (file.mimetype !== 'application/pdf') {
@@ -97,7 +97,7 @@ export class UploadService {
               ip: auditUser.ip,
               userAgent: auditUser.userAgent,
               newValue: { url: result.secure_url, folder },
-            });
+            }).catch(e => this.logger.warn(`Failure auditing Cloudinary Pdf Upload: ${e.message}`));
           }
 
           resolve({ url: result.secure_url });
@@ -138,7 +138,7 @@ export class UploadService {
     });
   }
 
-  async deleteFile(fileUrl: string, auditUser?: AuditUserParams): Promise<{ success: boolean; message: string }> {
+  async deleteFile(fileUrl: string, auditUser?: AuditUser): Promise<{ success: boolean; message: string }> {
     if (!fileUrl) {
       throw new BadRequestException('A URL do arquivo é obrigatória.');
     }
@@ -178,7 +178,7 @@ export class UploadService {
           ip: auditUser.ip,
           userAgent: auditUser.userAgent,
           oldValue: { url: fileUrl },
-        });
+        }).catch(e => this.logger.warn(`Failure auditing Cloudinary Delete: ${e.message}`));
       }
 
       return { success: true, message: 'Arquivo excluído com sucesso.' };
