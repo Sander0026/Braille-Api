@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UploadController } from './upload.controller';
 import { UploadService } from './upload.service';
-import { Role } from '@prisma/client';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 
