@@ -29,7 +29,7 @@ export class PrismaService
       { emit: 'event', level: 'error' },
       { emit: 'event', level: 'warn'  },
       { emit: 'event', level: 'info'  },
-      ...(isProd ? [] : [{ emit: 'event', level: 'query' } as Prisma.LogDefinition]),
+      // Logs de 'query' foram desabilitados para manter o console limpo.
     ];
 
     super({ log: logConfig });
@@ -49,15 +49,6 @@ export class PrismaService
     this.$on('info', (event) => {
       this.logger.log(`[Prisma Engine] ${event.message}`);
     });
-
-    // Ativado apenas em dev — queries contêm parâmetros em texto plano.
-    if (!isProd) {
-      this.$on('query', (event) => {
-        this.logger.debug(
-          `[Prisma Query] ${event.query} | Params: ${event.params} | ${event.duration}ms`,
-        );
-      });
-    }
   }
 
   async onModuleInit(): Promise<void> {
