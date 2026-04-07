@@ -43,13 +43,14 @@ const ACAO_MAP: Record<string, (path: string) => AuditAcao | null> = {
  * Centraliza o vocabulário de entidades — adicionar novos módulos aqui.
  */
 const ENTIDADE_MAP: Record<string, string> = {
-  turmas:                'Turma',
-  frequencias:           'Frequencia',
-  beneficiaries:         'Aluno',
-  usuarios:              'User',
-  auth:                  'Auth',
-  'audit-log':           'AuditLog',
-  comunicados:           'Comunicado',
+  turmas:                 'Turma',
+  frequencias:            'Frequencia',
+  beneficiaries:          'Aluno',
+  usuarios:               'User',
+  auth:                   'Auth',
+  'audit-log':            'AuditLog',
+  comunicados:            'Comunicado',
+  contatos:               'Contato',               // instrumentado manualmente no ContatosService
   // Módulos adicionados na refatoração de 2026-04
   'modelos-certificados': 'ModeloCertificado',
   certificados:           'CertificadoEmitido',
@@ -76,6 +77,7 @@ const PATHS_EXCLUIDOS = [
   '/beneficiaries',
   '/users',
   '/comunicados',
+  '/contatos',               // instrumentado manualmente no ContatosService (marcarComoLida + remove)
   '/site-config',
   '/apoiadores',             // instrumentado manualmente no ApoiadoresService
   '/modelos-certificados',   // instrumentado manualmente no CertificadosService
