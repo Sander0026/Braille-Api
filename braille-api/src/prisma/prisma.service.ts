@@ -21,7 +21,6 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
-    const isProd = process.env['NODE_ENV'] === 'production';
 
     // Logs de `query` carregam parâmetros potencialmente sensíveis (CPF, hashes de senha).
     // Ativados apenas em desenvolvimento para análise de performance e debug.
