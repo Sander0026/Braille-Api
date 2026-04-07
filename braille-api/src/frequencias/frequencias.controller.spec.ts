@@ -3,7 +3,6 @@ import { FrequenciasController } from './frequencias.controller';
 import { FrequenciasService } from './frequencias.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 const mockService = {
   create: jest.fn().mockResolvedValue({ id: 'f1' }),
