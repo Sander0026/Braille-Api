@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { AuditAcao, Role } from '@prisma/client';
-import { AuditUserParams } from './site-config.controller';
+import { AuditAcao } from '@prisma/client';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
 
 // Valores padrão usados como fallback quando nao ha registro no banco
 export const SITE_CONFIG_DEFAULTS: Record<string, string> = {
@@ -65,6 +65,8 @@ export const SECAO_DEFAULTS: Record<string, Record<string, string>> = {
 
 @Injectable()
 export class SiteConfigService {
+    private readonly logger = new Logger(SiteConfigService.name);
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly auditService: AuditLogService,
@@ -78,18 +80,21 @@ export class SiteConfigService {
         return result;
     }
 
-    async updateMany(dados: Record<string, string>, auditUser: AuditUserParams): Promise<void> {
+    async updateMany(dados: Record<string, string>, auditUser: AuditUser): Promise<void> {
         const oldState = await this.getAll();
         const chaves = Object.keys(dados);
 
-        // Apaga as chaves que serão sobrescritas e recria — muito mais rápido
-        // do que N upserts sequenciais dentro de uma transaction
-        await this.prisma.$transaction([
-            this.prisma.siteConfig.deleteMany({ where: { chave: { in: chaves } } }),
-            this.prisma.siteConfig.createMany({
-                data: Object.entries(dados).map(([chave, valor]) => ({ chave, valor })),
-            }),
-        ]);
+        try {
+            await this.prisma.$transaction([
+                this.prisma.siteConfig.deleteMany({ where: { chave: { in: chaves } } }),
+                this.prisma.siteConfig.createMany({
+                    data: Object.entries(dados).map(([chave, valor]) => ({ chave, valor })),
+                }),
+            ]);
+        } catch (error: any) {
+            this.logger.error(`[Data Leak Guard] Falha catastrófica ao atualizar SiteConfig no BD: ${error.message}`, error.stack);
+            throw new InternalServerErrorException('Não foi possível atualizar as configurações gerais do site. Contate o suporte.');
+        }
 
         const newState = await this.getAll();
 
@@ -99,12 +104,12 @@ export class SiteConfigService {
             acao: AuditAcao.ATUALIZAR,
             autorId: auditUser.sub,
             autorNome: auditUser.nome,
-            autorRole: auditUser.role as Role,
+            autorRole: auditUser.role,
             ip: auditUser.ip,
             userAgent: auditUser.userAgent,
             oldValue: oldState,
             newValue: newState,
-        });
+        }).catch(e => this.logger.warn(`Falha na auditoria ao atualizar configs: ${e.message}`));
     }
 
     // ── Conteúdo das seções ─────────────────────────────────
@@ -129,17 +134,20 @@ export class SiteConfigService {
         return secoes[secao] ?? {};
     }
 
-    async updateSecao(secao: string, dados: Record<string, string>, auditUser: AuditUserParams): Promise<void> {
+    async updateSecao(secao: string, dados: Record<string, string>, auditUser: AuditUser): Promise<void> {
         const oldState = await this.getSecao(secao);
 
-        // deleteMany + createMany: 2 operações vs N upserts sequenciais
-        // Reduz o tempo de resposta de ~1-2s para ~50-100ms
-        await this.prisma.$transaction([
-            this.prisma.conteudoSecao.deleteMany({ where: { secao } }),
-            this.prisma.conteudoSecao.createMany({
-                data: Object.entries(dados).map(([chave, valor]) => ({ secao, chave, valor })),
-            }),
-        ]);
+        try {
+            await this.prisma.$transaction([
+                this.prisma.conteudoSecao.deleteMany({ where: { secao } }),
+                this.prisma.conteudoSecao.createMany({
+                    data: Object.entries(dados).map(([chave, valor]) => ({ secao, chave, valor })),
+                }),
+            ]);
+        } catch (error: any) {
+            this.logger.error(`[Data Leak Guard] Falha na transação ao atualizar Seção ${secao}: ${error.message}`, error.stack);
+            throw new InternalServerErrorException(`Falha ao injetar a seção ${secao} no banco de dados. Transação abortada.`);
+        }
 
         const newState = await this.getSecao(secao);
 
@@ -149,11 +157,11 @@ export class SiteConfigService {
             acao: AuditAcao.ATUALIZAR,
             autorId: auditUser.sub,
             autorNome: auditUser.nome,
-            autorRole: auditUser.role as Role,
+            autorRole: auditUser.role,
             ip: auditUser.ip,
             userAgent: auditUser.userAgent,
             oldValue: oldState,
             newValue: newState,
-        });
+        }).catch(e => this.logger.warn(`Falha na auditoria da seção ${secao}: ${e.message}`));
     }
 }
