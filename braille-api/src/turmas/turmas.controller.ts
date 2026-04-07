@@ -4,36 +4,18 @@ import { TurmasService } from './turmas.service';
 import { CreateTurmaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
-import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { QueryTurmaDto } from './dto/query-turma.dto';
 import { IsEnum } from 'class-validator';
-import { TurmaStatus } from '@prisma/client';
+import { TurmaStatus, Role } from '@prisma/client';
+import { getAuditUser } from '../common/helpers/audit.helper';
+import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 class MudarStatusDto {
   @IsEnum(TurmaStatus)
   status: TurmaStatus;
-}
-
-export interface AuditUserParams {
-  sub: string;
-  nome: string;
-  role: string;
-  ip?: string;
-  userAgent?: string;
-}
-
-export function getAuditUser(req: AuthenticatedRequest): AuditUserParams {
-  return {
-    sub: req.user?.sub ?? '',
-    // @ts-ignore
-    nome: req.user?.nome || req.user?.email || 'Desconhecido',
-    role: req.user?.role ?? 'USER',
-    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress,
-    userAgent: req.headers['user-agent'],
-  };
 }
 
 @ApiTags('Turmas e Oficinas')
@@ -51,6 +33,7 @@ export class TurmasController {
   }
 
   @Get()
+  @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
   @ApiOperation({ summary: 'Listar turmas. Use statusAtivo=false para arquivadas.' })
@@ -59,6 +42,7 @@ export class TurmasController {
   }
 
   @Get('professores-ativos')
+  @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
   @ApiOperation({ summary: 'Listar apenas professores vinculados a pelo menos uma turma ativa.' })
@@ -67,12 +51,14 @@ export class TurmasController {
   }
 
   @Get(':id/alunos-disponiveis')
+  @Roles(Role.ADMIN, Role.SECRETARIA)
   @ApiOperation({ summary: 'Lista alunos sem conflito de horário para esta turma' })
   findAlunosDisponiveis(@Param('id') id: string, @Query('nome') nome?: string) {
     return this.turmasService.findAlunosDisponiveis(id, nome);
   }
 
   @Get(':id')
+  @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
   @ApiOperation({ summary: 'Buscar uma turma específica e ver seus alunos' })
@@ -134,11 +120,15 @@ export class TurmasController {
   }
 
   @Patch(':id/cancelar')
+  @Roles(Role.ADMIN, Role.SECRETARIA)
+  @ApiOperation({ summary: 'Mudar status da turma inteiro para Cancelada de forma atalho' })
   cancelar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.turmasService.cancelar(id, getAuditUser(req));
   }
 
   @Patch(':id/concluir')
+  @Roles(Role.ADMIN, Role.SECRETARIA)
+  @ApiOperation({ summary: 'Mudar status da turma inteiro para Concluida de forma atalho' })
   concluir(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.turmasService.concluir(id, getAuditUser(req));
   }
