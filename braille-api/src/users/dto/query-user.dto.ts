@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class QueryUserDto {
     @ApiPropertyOptional({ default: 1 })
@@ -24,7 +24,7 @@ export class QueryUserDto {
     nome?: string;
 
     @ApiPropertyOptional({ description: 'Listar apenas usuários inativos' })
-    @Type(() => Boolean)
+    @Transform(({ value }: { value: any }) => value === 'true' || value === true)
     @IsOptional()
     inativos?: boolean = false;
 

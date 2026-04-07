@@ -18,12 +18,4 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
     @IsOptional()
     fotoPerfil?: string;
 
-    @ApiPropertyOptional() @IsString() @IsOptional() telefone?: string;
-    @ApiPropertyOptional() @IsString() @IsOptional() cep?: string;
-    @ApiPropertyOptional() @IsString() @IsOptional() rua?: string;
-    @ApiPropertyOptional() @IsString() @IsOptional() numero?: string;
-    @ApiPropertyOptional() @IsString() @IsOptional() complemento?: string;
-    @ApiPropertyOptional() @IsString() @IsOptional() bairro?: string;
-    @ApiPropertyOptional() @IsString() @IsOptional() cidade?: string;
-    @ApiPropertyOptional() @IsString() @IsOptional() uf?: string;
 }
