@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, BadRequestException, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+  BadRequestException,
+  Req,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -16,11 +28,13 @@ import { getAuditUser } from '../common/helpers/audit.helper';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   @Post()
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Cadastrar novo funcionário. Username, senha padrão e matrícula são gerados automaticamente.' })
+  @ApiOperation({
+    summary: 'Cadastrar novo funcionário. Username, senha padrão e matrícula são gerados automaticamente.',
+  })
   create(@Body() createUserDto: CreateUserDto, @Req() req: AuthenticatedRequest) {
     return this.usersService.create(createUserDto, getAuditUser(req));
   }
