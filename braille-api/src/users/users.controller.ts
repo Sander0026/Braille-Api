@@ -8,7 +8,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { QueryUserDto } from './dto/query-user.dto';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
-import { getAuditUser } from '../upload/upload.controller';
+import { getAuditUser } from '../common/helpers/audit.helper';
 
 @ApiTags('Usuários do Sistema (Staff)')
 @ApiBearerAuth()

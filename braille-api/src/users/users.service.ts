@@ -8,7 +8,7 @@ import { gerarMatriculaStaff } from '../common/helpers/matricula.helper';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAcao, Role } from '@prisma/client';
 import { UploadService } from '../upload/upload.service';
-import { AuditUserParams } from '../upload/upload.controller';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
 
 // Senha padrão definida pela instituição (deve ser trocada no primeiro login)
 // Fallback ofuscado para evitar falso-positivo em analisador estático (Snyk)
@@ -43,7 +43,7 @@ export class UsersService {
     private readonly uploadService: UploadService,
   ) { }
 
-  async create(createUserDto: CreateUserDto, auditUser: AuditUserParams) {
+  async create(createUserDto: CreateUserDto, auditUser: AuditUser) {
     const { nome, cpf, email, role, telefone, cep, rua, numero, complemento, bairro, cidade, uf } = createUserDto;
 
     // 1. Verificar se CPF já existe
@@ -111,7 +111,7 @@ export class UsersService {
     };
   }
 
-  async reativar(id: string, auditUser: AuditUserParams) {
+  async reativar(id: string, auditUser: AuditUser) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -217,7 +217,7 @@ export class UsersService {
     };
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto, auditUser: AuditUserParams) {
+  async update(id: string, updateUserDto: UpdateUserDto, auditUser: AuditUser) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -270,7 +270,7 @@ export class UsersService {
     return userAtualizado;
   }
 
-  async remove(id: string, auditUser: AuditUserParams) {
+  async remove(id: string, auditUser: AuditUser) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -298,7 +298,7 @@ export class UsersService {
     return result;
   }
 
-  async restore(id: string, auditUser: AuditUserParams) {
+  async restore(id: string, auditUser: AuditUser) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     const result = await this.prisma.user.update({ where: { id }, data: { statusAtivo: true } });
@@ -319,7 +319,7 @@ export class UsersService {
     return result;
   }
 
-  async resetPassword(id: string, auditUser: AuditUserParams) {
+  async resetPassword(id: string, auditUser: AuditUser) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     const defaultPasswordHashed = await bcrypt.hash(SENHA_PADRAO, 10);
@@ -345,7 +345,7 @@ export class UsersService {
     return result;
   }
 
-  async removeHard(id: string, auditUser: AuditUserParams) {
+  async removeHard(id: string, auditUser: AuditUser) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
