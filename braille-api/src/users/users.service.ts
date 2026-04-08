@@ -432,6 +432,13 @@ export class UsersService {
     try {
       const user = await this.prisma.user.findUnique({ where: { id } });
       if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+      // SECDEVOPS: Prevenção de Privilege Escalation e Self-Lock
+      const autorId = auditUser.sub;
+      if (autorId && autorId === id) {
+        throw new BadRequestException('Por razões de segurança, não é seguro forçar o reset da senha root da sua própria conta logada.');
+      }
+
       const defaultPasswordHashed = await bcrypt.hash(SENHA_PADRAO, 10);
       const result = await this.prisma.user.update({
         where: { id },
