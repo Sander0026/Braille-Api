@@ -115,14 +115,17 @@ export class TurmasService {
     const { page = 1, limit = 10, nome, professorId } = query;
     const skip = (page - 1) * limit;
 
-    const whereCondicao: any = {
-      excluido: query.excluido ?? false,
-    };
+    const whereCondicao: any = {};
+    if (query.excluido !== 'all') {
+      whereCondicao.excluido = query.excluido ?? false;
+    }
 
-    if (query.statusAtivo !== undefined) {
-      whereCondicao.statusAtivo = query.statusAtivo;
-    } else {
-      whereCondicao.statusAtivo = true;
+    if (query.statusAtivo !== 'all') {
+      if (query.statusAtivo !== undefined) {
+        whereCondicao.statusAtivo = query.statusAtivo;
+      } else {
+        whereCondicao.statusAtivo = true;
+      }
     }
 
     if (nome) whereCondicao.nome = { contains: nome, mode: 'insensitive' };

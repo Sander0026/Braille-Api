@@ -24,17 +24,15 @@ export class QueryTurmaDto {
   @IsOptional()
   nome?: string;
 
-  @ApiPropertyOptional({ description: 'Filtrar por status ativo (true=ativas, false=arquivadas)' })
-  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : undefined))
-  @IsBoolean()
+  @ApiPropertyOptional({ description: 'Filtrar por status ativo (true=ativas, false=arquivadas, all=ambas)' })
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value === 'all' ? 'all' : undefined))
   @IsOptional()
-  statusAtivo?: boolean;
+  statusAtivo?: boolean | 'all';
 
-  @ApiPropertyOptional({ description: 'Incluir turmas excluídas (ocultas). Default: false' })
-  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : undefined))
-  @IsBoolean()
+  @ApiPropertyOptional({ description: 'Incluir turmas excluídas (ocultas). Default: false. Use "all" para ambos.' })
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value === 'all' ? 'all' : undefined))
   @IsOptional()
-  excluido?: boolean;
+  excluido?: boolean | 'all';
 
   @ApiPropertyOptional({ description: 'Filtrar as turmas pelo professor responsável' })
   @IsUUID()
