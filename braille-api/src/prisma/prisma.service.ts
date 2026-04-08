@@ -37,6 +37,10 @@ export class PrismaService
     // Garante que erros emitidos DURANTE a conexão também sejam capturados.
 
     this.$on('error', (event) => {
+      // Ignora erro benigno de Idle Timeout Connection droppado pelo PgBouncer/Neon
+      if (event.message.includes('kind: Closed, cause: None')) {
+        return;
+      }
       // Não expõe `event.target` para o cliente — apenas ao log interno.
       this.logger.error(`[Prisma Engine] ${event.message}`);
     });
