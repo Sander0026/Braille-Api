@@ -73,7 +73,7 @@ export class ApoiadoresController {
       take: take ? Number(take) : undefined,
       tipo,
       search,
-      ativo: ativo === undefined ? undefined : ativo !== 'false',
+      ativo: ativo === undefined || ativo === 'all' ? undefined : ativo !== 'false',
     });
   }
 

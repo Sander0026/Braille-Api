@@ -99,9 +99,45 @@ export class CreateApoiadorDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(300)
+  @MaxLength(10)
   @Transform(sanitizeString)
-  endereco?: string;
+  cep?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  @Transform(sanitizeString)
+  rua?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  @Transform(sanitizeString)
+  numero?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  @Transform(sanitizeString)
+  complemento?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  @Transform(sanitizeString)
+  bairro?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  @Transform(sanitizeString)
+  cidade?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  @Transform(sanitizeString)
+  uf?: string;
 
   @IsOptional()
   @IsString()

@@ -468,7 +468,15 @@ model Apoiador {
   contatoPessoa          String?
   telefone               String?
   email                  String?
-  endereco               String?
+  
+  // Endereço Estruturado (Padronizado com CEP)
+  cep                    String?
+  rua                    String?
+  numero                 String?
+  complemento            String?
+  bairro                 String?
+  cidade                 String?
+  uf                     String?
   
   // CRM e Segmentação
   atividadeEspecialidade String?     // Ex: "Jornalista TV Gazeta", "Advogado"

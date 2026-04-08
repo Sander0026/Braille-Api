@@ -33,7 +33,13 @@ const LIST_SELECT = {
   contatoPessoa: true,
   telefone: true,
   email: true,
-  endereco: true,
+  cep: true,
+  rua: true,
+  numero: true,
+  complemento: true,
+  bairro: true,
+  cidade: true,
+  uf: true,
   atividadeEspecialidade: true,
   logoUrl: true,
   ativo: true,
@@ -88,8 +94,8 @@ export class ApoiadoresService {
     const { skip, take, tipo, search, ativo } = params;
 
     const where: Prisma.ApoiadorWhereInput = {
-      // Por padrão lista apenas ativos; ativo=false lista inativos; ativo=undefined lista todos
-      ativo: ativo ?? true,
+      // Por padrão lista todos se undefined; ativo=false lista inativos; ativo=true ativos
+      ...(ativo !== undefined && { ativo }),
       ...(tipo && { tipo }),
       ...(search && {
         OR: [
