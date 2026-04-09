@@ -285,12 +285,17 @@ export class CertificadosService {
     });
 
     if (!turma) throw new NotFoundException('Turma não encontrada.');
-    if (turma.status !== 'CONCLUIDA')
-      throw new BadRequestException('A turma precisa estar CONCLUIDA para emitir certificados.');
-    if (!turma.modeloCertificadoId || !turma.modeloCertificado)
-      throw new BadRequestException('A Turma não possui um Modelo de Certificado configurado.');
+
     if (turma.matriculasOficina.length === 0)
       throw new BadRequestException('O Aluno não cursa ou não está matriculado nesta turma.');
+
+    const matricula = turma.matriculasOficina[0];
+    if (turma.status !== 'CONCLUIDA' && matricula.status !== 'CONCLUIDA') {
+      throw new BadRequestException('A turma ou a matrícula precisa estar CONCLUIDA para emitir certificados.');
+    }
+
+    if (!turma.modeloCertificadoId || !turma.modeloCertificado)
+      throw new BadRequestException('A Turma não possui um Modelo de Certificado configurado.');
 
     await this.verificarFrequencia(dto.turmaId, dto.alunoId);
 
