@@ -46,7 +46,17 @@ export class UploadService {
       const uploadStream = cloudinary.uploader.upload_stream(
         uploadOptions,
         (error, result) => {
-          if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
+          if (error) {
+            // Detecta o erro de tamanho do plano gratuito do Cloudinary
+            if (error.message?.includes('File size too large') || error.message?.includes('Maximum is')) {
+              return reject(
+                new BadRequestException(
+                  'Arquivo muito grande. O tamanho máximo permitido é 10 MB. Comprima o arquivo e tente novamente.',
+                ),
+              );
+            }
+            return reject(new Error(error.message || 'Erro no Cloudinary'));
+          }
 
           if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar imagem.'));
 
@@ -109,7 +119,16 @@ export class UploadService {
       const uploadStream = cloudinary.uploader.upload_stream(
         uploadOptions,
         (error, result) => {
-          if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
+          if (error) {
+            if (error.message?.includes('File size too large') || error.message?.includes('Maximum is')) {
+              return reject(
+                new BadRequestException(
+                  'Arquivo muito grande. O tamanho máximo permitido é 10 MB. Comprima o arquivo e tente novamente.',
+                ),
+              );
+            }
+            return reject(new Error(error.message || 'Erro no Cloudinary'));
+          }
           if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar arquivo.'));
 
           if (auditUser) {

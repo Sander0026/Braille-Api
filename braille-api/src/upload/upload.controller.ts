@@ -31,7 +31,7 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(), // Mantém o arquivo em memória para stream direto ao Cloudinary
-      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — limite de segurança; Cloudinary comprime automaticamente
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — limite máximo do plano gratuito do Cloudinary
       fileFilter: (_req, file, callback) => {
         // Aceita imagens e PDFs (laudos, LGPD, atestados)
         const isImage = file.mimetype.startsWith('image/');
@@ -78,7 +78,7 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — Cloudinary comprime automaticamente
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — limite máximo do plano gratuito do Cloudinary
       fileFilter: (_req, file, cb) => {
         // Aceita PDF e imagens (laudos podem ser fotos ou documentos escaneados)
         const isImage = file.mimetype.startsWith('image/');
