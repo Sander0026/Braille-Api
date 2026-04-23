@@ -5,35 +5,30 @@
   - A unique constraint covering the columns `[cpf]` on the table `Aluno` will be added. If there are existing duplicate values, this will fail.
   - A unique constraint covering the columns `[rg]` on the table `Aluno` will be added. If there are existing duplicate values, this will fail.
 
+  Note: CorRaca enum and LGPD columns were already created in migration 20260318122137_add_lgpd_atestado.
+  This migration only handles the cpfRg -> cpf/rg split.
 */
--- CreateEnum
-CREATE TYPE "CorRaca" AS ENUM ('BRANCA', 'PRETA', 'PARDA', 'AMARELA', 'INDIGENA', 'NAO_DECLARADO');
 
 -- DropIndex
-DROP INDEX "Aluno_cpfRg_idx";
+DROP INDEX IF EXISTS "Aluno_cpfRg_idx";
 
 -- DropIndex
-DROP INDEX "Aluno_cpfRg_key";
+DROP INDEX IF EXISTS "Aluno_cpfRg_key";
 
--- AlterTable
-ALTER TABLE "Aluno" DROP COLUMN "cpfRg",
-ADD COLUMN     "atestadoEmitidoEm" TIMESTAMP(3),
-ADD COLUMN     "atestadoUrl" TEXT,
-ADD COLUMN     "corRaca" "CorRaca",
-ADD COLUMN     "cpf" TEXT,
-ADD COLUMN     "rg" TEXT,
-ADD COLUMN     "termoLgpdAceito" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "termoLgpdAceitoEm" TIMESTAMP(3),
-ADD COLUMN     "termoLgpdUrl" TEXT;
+-- AlterTable: drop cpfRg, add cpf and rg (LGPD columns already exist from 20260318122137)
+ALTER TABLE "Aluno"
+  DROP COLUMN IF EXISTS "cpfRg",
+  ADD COLUMN IF NOT EXISTS "cpf" TEXT,
+  ADD COLUMN IF NOT EXISTS "rg" TEXT;
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Aluno_cpf_key" ON "Aluno"("cpf");
+CREATE UNIQUE INDEX IF NOT EXISTS "Aluno_cpf_key" ON "Aluno"("cpf");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Aluno_rg_key" ON "Aluno"("rg");
+CREATE UNIQUE INDEX IF NOT EXISTS "Aluno_rg_key" ON "Aluno"("rg");
 
 -- CreateIndex
-CREATE INDEX "Aluno_cpf_idx" ON "Aluno"("cpf");
+CREATE INDEX IF NOT EXISTS "Aluno_cpf_idx" ON "Aluno"("cpf");
 
 -- CreateIndex
-CREATE INDEX "Aluno_rg_idx" ON "Aluno"("rg");
+CREATE INDEX IF NOT EXISTS "Aluno_rg_idx" ON "Aluno"("rg");
