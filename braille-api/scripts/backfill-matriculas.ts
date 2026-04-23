@@ -1,75 +1,62 @@
 /**
  * Script de Backfill de Matrículas
  *
- * Roda UMA ÚNICA VEZ para gerar matrículas para alunos e staff
- * que já existem no banco de dados. Após rodar, pode ser deletado.
+ * Roda UMA ÚNICA VEZ para gerar matrículas para Alunos e Staff
+ * que já existem no banco sem matrícula atribuída.
  *
- * Uso: npx ts-node -e "require('./scripts/backfill-matriculas')"
- *      OU: npx ts-node scripts/backfill-matriculas.ts
+ * Uso:
+ *   npx ts-node scripts/backfill-matriculas.ts
+ *
+ * Resultado esperado:
+ *   Alunos → formato YYYYNNNNN  (ex: 202600001)
+ *   Staff  → formato PYYYYNNNNN (ex: P202600001)
  */
 
 import { PrismaClient } from '@prisma/client';
+import { generateMatriculas } from './lib/matricula-generator.js';
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 const prisma = new PrismaClient();
 
-async function backfillAlunosMatriculas() {
-    const ano = new Date().getFullYear();
-    const prefix = `${ano}`;
+async function main(): Promise<void> {
+  const ano = new Date().getFullYear();
 
-    const alunosSemMatricula = await prisma.aluno.findMany({
-        where: { matricula: null },
-        orderBy: { criadoEm: 'asc' },
-        select: { id: true, nomeCompleto: true },
-    });
+  console.log('🚀 Iniciando backfill de matrículas...\n');
 
-    console.log(`🎓 Gerando matrículas para ${alunosSemMatricula.length} alunos...`);
-    let sequencial = 1;
+  // Alunos e Staff processados sequencialmente para evitar sobrecarga no banco.
+  // Se o banco tiver alta capacidade, podem ser paralelizados com Promise.all.
 
-    for (const aluno of alunosSemMatricula) {
-        let matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        while (await prisma.aluno.findUnique({ where: { matricula } })) {
-            sequencial++;
-            matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        }
-        await prisma.aluno.update({ where: { id: aluno.id }, data: { matricula } });
-        console.log(`  ✅ ${aluno.nomeCompleto} → ${matricula}`);
-        sequencial++;
-    }
+  const resultadoAlunos = await generateMatriculas(prisma, {
+    model: 'aluno',
+    prefix: `${ano}`,
+    padLength: 5,
+  });
+
+  console.log('');
+
+  const resultadoStaff = await generateMatriculas(prisma, {
+    model: 'user',
+    prefix: `P${ano}`,
+    padLength: 5,
+  });
+
+  // ── Relatório final ────────────────────────────────────────────────────────
+  console.log('\n══════════════════════════════════════════');
+  console.log('📊 RELATÓRIO FINAL — Backfill de Matrículas');
+  console.log('══════════════════════════════════════════');
+  console.log(`🎓 Alunos : ${resultadoAlunos.geradas} matriculado(s).`);
+  console.log(`👤 Staff  : ${resultadoStaff.geradas} matriculado(s).`);
+  console.log('══════════════════════════════════════════\n');
 }
 
-async function backfillStaffMatriculas() {
-    const ano = new Date().getFullYear();
-    const prefix = `P${ano}`;
-
-    const staffSemMatricula = await prisma.user.findMany({
-        where: { matricula: null },
-        orderBy: { criadoEm: 'asc' },
-        select: { id: true, nome: true },
-    });
-
-    console.log(`👤 Gerando matrículas para ${staffSemMatricula.length} funcionários...`);
-    let sequencial = 1;
-
-    for (const user of staffSemMatricula) {
-        let matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        while (await prisma.user.findUnique({ where: { matricula } })) {
-            sequencial++;
-            matricula = `${prefix}${String(sequencial).padStart(5, '0')}`;
-        }
-        await prisma.user.update({ where: { id: user.id }, data: { matricula } });
-        console.log(`  ✅ ${user.nome} → ${matricula}`);
-        sequencial++;
-    }
-}
-
-async function main() {
-    console.log('🚀 Iniciando backfill de matrículas...\n');
-    await backfillAlunosMatriculas();
-    console.log('');
-    await backfillStaffMatriculas();
-    console.log('\n✅ Backfill concluído!');
-}
+// ── Execução com tratamento de erros estruturado ──────────────────────────────
 
 main()
-    .catch(console.error)
-    .finally(() => prisma.$disconnect());
+  .catch((err: unknown) => {
+    // Não expõe stack trace sensível — registra a mensagem de erro e encerra com código de falha.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`\n❌ Backfill falhou: ${message}`);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

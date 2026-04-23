@@ -1,130 +1,160 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditAcao } from '@prisma/client';
-
-export interface AuditOptions {
-    entidade: string;
-    registroId?: string;
-    acao: AuditAcao;
-    autorId?: string;
-    autorNome?: string;
-    autorRole?: string;
-    ip?: string;
-    userAgent?: string;
-    oldValue?: object;
-    newValue?: object;
-}
-
-export interface QueryAuditDto {
-    page?: number;
-    limit?: number;
-    entidade?: string;
-    registroId?: string;
-    autorId?: string;
-    acao?: AuditAcao;
-    de?: string;   // ISO date start
-    ate?: string;  // ISO date end
-}
+import { AuditOptions } from './interfaces/audit-options.interface';
+import { QueryAuditDto } from './dto/query-audit.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
 @Injectable()
 export class AuditLogService {
-    constructor(private prisma: PrismaService) { }
+  private readonly logger = new Logger(AuditLogService.name);
 
-    /**
-     * Registra um evento de auditoria. Fire-and-forget — erros são silenciados
-     * para não interromper o fluxo principal da aplicação.
-     */
-    async registrar(opts: AuditOptions): Promise<void> {
-        // Serialização segura: descarta funções e objetos binários (ex: StreamableFile)
-        const safeJson = (val: any): any => {
-            if (val === undefined || val === null) return null;
-            try { return JSON.parse(JSON.stringify(val)); } catch { return null; }
-        };
-        try {
-            await this.prisma.auditLog.create({
-                data: {
-                    entidade: opts.entidade,
-                    registroId: opts.registroId,
-                    acao: opts.acao,
-                    autorId: opts.autorId,
-                    autorNome: opts.autorNome,
-                    autorRole: opts.autorRole,
-                    ip: opts.ip,
-                    userAgent: opts.userAgent,
-                    oldValue: safeJson(opts.oldValue),
-                    newValue: safeJson(opts.newValue),
-                },
-            });
-        } catch (err) {
-            // Falha de auditoria nunca deve derrubar a requisição
-            console.warn('[AuditLog] Falha ao registrar evento:', err);
-        }
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ── Registro ────────────────────────────────────────────────────────────────
+
+  /**
+   * Registra um evento de auditoria. Fire-and-forget — erros são silenciados
+   * para nunca interromper o fluxo principal da aplicação.
+   *
+   * `serializarSeguro` é estático e definido fora do método — não é recriado
+   * em cada chamada (performance: evita closure allocation por request).
+   */
+  async registrar(opts: AuditOptions): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entidade: opts.entidade,
+          registroId: opts.registroId,
+          acao: opts.acao,
+          autorId: opts.autorId,
+          autorNome: opts.autorNome,
+          autorRole: opts.autorRole,
+          ip: opts.ip,
+          userAgent: opts.userAgent,
+          oldValue: AuditLogService.serializarSeguro(opts.oldValue) ?? undefined,
+          newValue: AuditLogService.serializarSeguro(opts.newValue) ?? undefined,
+        },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : JSON.stringify(err);
+      this.logger.warn(`Falha ao registrar auditoria [${opts.entidade}/${opts.acao}]: ${msg}`);
     }
+  }
 
-    // ─── Consultas ───────────────────────────────────────────────────────────
+  // ── Consultas ────────────────────────────────────────────────────────────────
 
-    async findAll(query: QueryAuditDto) {
-        const page = Number(query.page) || 1;
-        const limit = Number(query.limit) || 20;
-        const { entidade, registroId, autorId, acao, de, ate } = query;
-        const skip = (page - 1) * limit;
+  /**
+   * Lista logs com paginação e filtros opcionais.
+   * `where` tipado como Prisma.AuditLogWhereInput — type-safe, sem `any`.
+   */
+  async findAll(query: QueryAuditDto): Promise<ApiResponse<unknown>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
 
+    const where: Prisma.AuditLogWhereInput = {
+      ...(query.entidade && { entidade: query.entidade }),
+      ...(query.registroId && { registroId: query.registroId }),
+      ...(query.autorId && { autorId: query.autorId }),
+      ...(query.acao && { acao: query.acao }),
+      ...((query.de || query.ate) && {
+        criadoEm: {
+          ...(query.de && { gte: new Date(query.de) }),
+          ...(query.ate && { lte: new Date(query.ate) }),
+        },
+      }),
+    };
 
-        const where: any = {};
-        if (entidade) where.entidade = entidade;
-        if (registroId) where.registroId = registroId;
-        if (autorId) where.autorId = autorId;
-        if (acao) where.acao = acao;
-        if (de || ate) {
-            where.criadoEm = {};
-            if (de) where.criadoEm.gte = new Date(de);
-            if (ate) where.criadoEm.lte = new Date(ate);
-        }
+    // Promise.all paralelo — findMany + count em simultâneo
+    const [logs, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { criadoEm: 'desc' },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
 
-        const [logs, total] = await Promise.all([
-            this.prisma.auditLog.findMany({
-                where,
-                skip,
-                take: limit,
-                orderBy: { criadoEm: 'desc' },
-            }),
-            this.prisma.auditLog.count({ where }),
-        ]);
+    return new ApiResponse(
+      true,
+      {
+        data: logs,
+        meta: { total, page, lastPage: Math.ceil(total / limit) },
+      },
+      'Logs recuperados com sucesso.',
+    );
+  }
 
-        return {
-            data: logs,
-            meta: { total, page, lastPage: Math.ceil(total / limit) },
-        };
+  /** Retorna o histórico de auditoria de um registro específico (máx. 50 entradas). */
+  async findByRegistro(entidade: string, registroId: string): Promise<ApiResponse<unknown>> {
+    const logs = await this.prisma.auditLog.findMany({
+      where: { entidade, registroId },
+      orderBy: { criadoEm: 'desc' },
+      take: 50,
+    });
+
+    return new ApiResponse(true, logs, `Histórico de ${entidade} carregado.`);
+  }
+
+  /**
+   * Estatísticas rápidas para o dashboard do painel de auditoria.
+   *
+   * Midnight calculado em Brasília (America/Sao_Paulo) — evita o bug de fuso
+   * onde setHours(0,0,0,0) em servidor UTC contava 3h a menos por dia.
+   */
+  async stats(): Promise<ApiResponse<unknown>> {
+    const inicioHoje = AuditLogService.midnightBrasilia();
+
+    const [total, hoje, porAcao] = await Promise.all([
+      this.prisma.auditLog.count(),
+      this.prisma.auditLog.count({ where: { criadoEm: { gte: inicioHoje } } }),
+      this.prisma.auditLog.groupBy({
+        by: ['acao'],
+        _count: { _all: true },
+        orderBy: { _count: { acao: 'desc' } },
+        take: 10,
+      }),
+    ]);
+
+    return new ApiResponse(
+      true,
+      {
+        totalLogs: total,
+        logsHoje: hoje,
+        topAcoes: porAcao.map((a) => ({ acao: a.acao, total: a._count._all })),
+      },
+      'Estatísticas de auditoria carregadas.',
+    );
+  }
+
+  // ── Helpers Estáticos ───────────────────────────────────────────────────────
+
+  /**
+   * Serializa um valor de forma segura para armazenamento em JSON no banco.
+   * Descarta funções, referências circulares e objetos binários (ex: StreamableFile).
+   *
+   * Estático e puro — definido fora de métodos de instância para evitar
+   * recriação de closure em cada chamada a registrar().
+   */
+  static serializarSeguro(val: unknown): Prisma.InputJsonValue | undefined {
+    if (val === undefined || val === null) return undefined;
+    try {
+      // structuredClone é mais rápido e nativo — descarta funções e referências circulares
+      return structuredClone(val) as Prisma.InputJsonValue;
+    } catch {
+      return undefined;
     }
+  }
 
-    /** Retorna os logs de um registro específico (ex: histórico de um Aluno). */
-    async findByRegistro(entidade: string, registroId: string) {
-        return this.prisma.auditLog.findMany({
-            where: { entidade, registroId },
-            orderBy: { criadoEm: 'desc' },
-            take: 50,
-        });
-    }
-
-    /** Estatísticas rápidas para o dashboard do painel de auditoria. */
-    async stats() {
-        const [total, hoje, porAcao] = await Promise.all([
-            this.prisma.auditLog.count(),
-            this.prisma.auditLog.count({
-                where: { criadoEm: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-            }),
-            this.prisma.auditLog.groupBy({
-                by: ['acao'],
-                _count: { _all: true },
-                orderBy: { _count: { acao: 'desc' } },
-                take: 10,
-            }),
-        ]);
-
-        return {
-            totalLogs: total,
-            logsHoje: hoje,
-            topAcoes: porAcao.map(a => ({ acao: a.acao, total: a._count._all })),
-        };
-    }
+  /**
+   * Calcula o início do dia de hoje no fuso horário de Brasília (America/Sao_Paulo).
+   * Corrige o bug de `setHours(0,0,0,0)` que usava o fuso local do servidor (UTC em produção).
+   */
+  private static midnightBrasilia(): Date {
+    // 'en-CA' retorna YYYY-MM-DD — formato ISO sem necessitar de parse extra
+    const dataBR = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    return new Date(`${dataBR}T00:00:00-03:00`);
+  }
 }

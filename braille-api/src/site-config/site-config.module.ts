@@ -5,9 +5,9 @@ import { SiteConfigController } from './site-config.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-    imports: [PrismaModule, AuditLogModule],
-    controllers: [SiteConfigController],
-    providers: [SiteConfigService],
-    exports: [SiteConfigService],
+  imports: [PrismaModule, AuditLogModule],
+  controllers: [SiteConfigController],
+  providers: [SiteConfigService],
+  exports: [SiteConfigService],
 })
-export class SiteConfigModule { }
+export class SiteConfigModule {}
