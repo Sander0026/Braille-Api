@@ -31,7 +31,7 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — imagens são comprimidas pelo sharp antes de ir ao Cloudinary
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — limite do plano gratuito do Cloudinary
       fileFilter: (_req, file, callback) => {
         const isImage = file.mimetype.startsWith('image/');
         const isPdf = file.mimetype === 'application/pdf';
@@ -77,7 +77,7 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB para imagens (sharp comprime); PDFs acima de 10 MB serão rejeitados pelo Cloudinary
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — limite do plano gratuito do Cloudinary
       fileFilter: (_req, file, cb) => {
         const isImage = file.mimetype.startsWith('image/');
         const isPdf = file.mimetype === 'application/pdf';
