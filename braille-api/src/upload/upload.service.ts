@@ -25,44 +25,47 @@ export class UploadService {
 
   /**
    * Comprime imagem progressivamente com sharp até ficar abaixo do limite do Cloudinary.
-   * Tenta qualidade 75 → 60 → 45 em WebP. Se ainda assim estiver grande, rejeita.
+   * Em caso de falha do sharp (formato não suportado, etc.), retorna o buffer original.
    */
   private async comprimirImagem(buffer: Buffer, mimetype: string): Promise<Buffer> {
-    const LIMITE_BYTES = 9.5 * 1024 * 1024; // 9.5 MB — margem de segurança abaixo dos 10 MB do Cloudinary
+    const LIMITE_BYTES = 9.5 * 1024 * 1024; // 9.5 MB — margem de segurança
 
-    if (buffer.length <= LIMITE_BYTES) return buffer; // Arquivo já está dentro do limite
+    if (buffer.length <= LIMITE_BYTES) return buffer; // Já está dentro do limite
 
-    this.logger.log(`Imagem grande (${(buffer.length / 1024 / 1024).toFixed(1)} MB), comprimindo com sharp...`);
+    this.logger.log(`Imagem grande (${(buffer.length / 1024 / 1024).toFixed(1)} MB), tentando comprimir com sharp...`);
 
-    const qualidades = [75, 60, 45, 30];
+    try {
+      const qualidades = [75, 60, 45, 30];
 
-    for (const quality of qualidades) {
-      const comprimido = await sharp(buffer)
-        .webp({ quality }) // WebP oferece até 35% menos peso que JPEG na mesma qualidade
+      for (const quality of qualidades) {
+        const comprimido = await sharp(buffer)
+          .webp({ quality })
+          .toBuffer();
+
+        this.logger.log(`  Sharp q=${quality}: ${(comprimido.length / 1024 / 1024).toFixed(1)} MB`);
+
+        if (comprimido.length <= LIMITE_BYTES) {
+          this.logger.log(`  Compressão bem-sucedida com qualidade ${quality}`);
+          return comprimido;
+        }
+      }
+
+      // Última tentativa: redimensionar para 2000px + qualidade 25
+      const ultimaTentativa = await sharp(buffer)
+        .resize({ width: 2000, withoutEnlargement: true })
+        .webp({ quality: 25 })
         .toBuffer();
 
-      this.logger.log(`  Sharp q=${quality}: ${(comprimido.length / 1024 / 1024).toFixed(1)} MB`);
+      this.logger.log(`  Redimensionado: ${(ultimaTentativa.length / 1024 / 1024).toFixed(1)} MB`);
 
-      if (comprimido.length <= LIMITE_BYTES) {
-        this.logger.log(`  Compressão bem-sucedida com qualidade ${quality}`);
-        return comprimido;
-      }
+      // Retorna o menor entre a última tentativa e o buffer original
+      return ultimaTentativa.length < buffer.length ? ultimaTentativa : buffer;
+
+    } catch (err: any) {
+      // Sharp falhou (formato não suportado, imagem corrompida etc.) — envia o original
+      this.logger.warn(`Sharp falhou (${err?.message}), enviando arquivo original ao Cloudinary`);
+      return buffer;
     }
-
-    // Última tentativa: redimensionar para 2000px de largura máxima + qualidade 30
-    const ultimaTentativa = await sharp(buffer)
-      .resize({ width: 2000, withoutEnlargement: true })
-      .webp({ quality: 30 })
-      .toBuffer();
-
-    if (ultimaTentativa.length <= LIMITE_BYTES) {
-      this.logger.log(`Comprimido com redimensionamento: ${(ultimaTentativa.length / 1024 / 1024).toFixed(1)} MB`);
-      return ultimaTentativa;
-    }
-
-    throw new BadRequestException(
-      'Imagem muito grande mesmo após compressão. Por favor, use uma imagem menor que 10 MB.',
-    );
   }
 
   async uploadImage(file: Express.Multer.File, auditUser?: AuditUser): Promise<{ url: string }> {
