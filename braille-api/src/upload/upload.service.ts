@@ -73,20 +73,36 @@ export class UploadService {
     auditUser?: AuditUser,
   ): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
-      if (file.mimetype !== 'application/pdf') {
-        return reject(new BadRequestException('Apenas arquivos PDF são permitidos neste endpoint.'));
+      const isImage = file.mimetype.startsWith('image/');
+      const isPdf = file.mimetype === 'application/pdf';
+
+      if (!isImage && !isPdf) {
+        return reject(new BadRequestException('Apenas arquivos PDF ou imagens são permitidos.'));
       }
 
+      // Imagens recebem compressão automática do Cloudinary; PDFs são armazenados como 'auto'
+      const uploadOptions = isImage
+        ? {
+            folder,
+            resource_type: 'image' as const,
+            transformation: [
+              { quality: 'auto', fetch_format: 'auto' }, // Cloudinary otimiza qualidade e formato
+            ],
+            use_filename: true,
+            unique_filename: true,
+          }
+        : {
+            folder,
+            resource_type: 'auto' as const,
+            use_filename: true,
+            unique_filename: true,
+          };
+
       const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder,
-          resource_type: 'auto',
-          use_filename: true,
-          unique_filename: true,
-        },
+        uploadOptions,
         (error, result) => {
           if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
-          if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar PDF.'));
+          if (!result) return reject(new BadRequestException('Erro desconhecido ao enviar arquivo.'));
 
           if (auditUser) {
             this.auditLogService
