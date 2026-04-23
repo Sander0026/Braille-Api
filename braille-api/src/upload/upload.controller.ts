@@ -31,7 +31,7 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(), // Mantém o arquivo na memória RAM para enviar ao Cloudinary
-      limits: { fileSize: 5 * 1024 * 1024 }, // Limite restrito para 5MB por arquivo
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB por arquivo
       fileFilter: (_req, file, callback) => {
         // Whitelist explícita de tipos de arquivos
         const allowedMimetypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -62,6 +62,9 @@ export class UploadController {
     if (!file) {
       throw new BadRequestException('Nenhum arquivo foi enviado. Selecione um arquivo e tente novamente.');
     }
+    if (file.size > 10 * 1024 * 1024) {
+      throw new BadRequestException('O arquivo excede o limite de 10 MB. Reduza o tamanho e tente novamente.');
+    }
     return this.uploadService.uploadImage(file, getAuditUser(req));
   }
 
@@ -77,7 +80,7 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+      limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB (laudos médicos podem ser maiores)
       fileFilter: (_req, file, cb) => {
         if (file.mimetype === 'application/pdf') cb(null, true);
         else cb(new BadRequestException('Apenas arquivos PDF são aceitos.'), false);
@@ -105,6 +108,9 @@ export class UploadController {
     @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo PDF foi enviado.');
+    if (file.size > 15 * 1024 * 1024) {
+      throw new BadRequestException('O PDF excede o limite de 15 MB. Comprima o arquivo e tente novamente.');
+    }
     if (tipo !== 'lgpd' && tipo !== 'atestado' && tipo !== 'laudo') {
       throw new BadRequestException('O parâmetro "tipo" deve ser "lgpd", "atestado" ou "laudo".');
     }
