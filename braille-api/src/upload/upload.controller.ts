@@ -30,16 +30,17 @@ export class UploadController {
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: memoryStorage(), // Mantém o arquivo na memória RAM para enviar ao Cloudinary
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB por arquivo
+      storage: memoryStorage(), // Mantém o arquivo em memória para stream direto ao Cloudinary
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — limite de segurança; Cloudinary comprime automaticamente
       fileFilter: (_req, file, callback) => {
-        // Whitelist explícita de tipos de arquivos
-        const allowedMimetypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-        if (allowedMimetypes.includes(file.mimetype) || /\.(jpg|jpeg|png|webp|pdf)$/i.exec(file.originalname)) {
+        // Aceita imagens e PDFs (laudos, LGPD, atestados)
+        const isImage = file.mimetype.startsWith('image/');
+        const isPdf = file.mimetype === 'application/pdf';
+        if (isImage || isPdf) {
           callback(null, true);
         } else {
           callback(
-            new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens (JPG/PNG) ou PDF.'),
+            new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens (JPG/PNG/WebP) ou PDF.'),
             false,
           );
         }
@@ -62,9 +63,6 @@ export class UploadController {
     if (!file) {
       throw new BadRequestException('Nenhum arquivo foi enviado. Selecione um arquivo e tente novamente.');
     }
-    if (file.size > 10 * 1024 * 1024) {
-      throw new BadRequestException('O arquivo excede o limite de 10 MB. Reduza o tamanho e tente novamente.');
-    }
     return this.uploadService.uploadImage(file, getAuditUser(req));
   }
 
@@ -80,26 +78,29 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB (laudos médicos podem ser maiores)
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — Cloudinary comprime automaticamente
       fileFilter: (_req, file, cb) => {
-        if (file.mimetype === 'application/pdf') cb(null, true);
-        else cb(new BadRequestException('Apenas arquivos PDF são aceitos.'), false);
+        // Aceita PDF e imagens (laudos podem ser fotos ou documentos escaneados)
+        const isImage = file.mimetype.startsWith('image/');
+        const isPdf = file.mimetype === 'application/pdf';
+        if (isPdf || isImage) cb(null, true);
+        else cb(new BadRequestException('Envie apenas arquivos PDF ou imagens (JPG/PNG/WebP).'), false);
       },
     }),
   )
-  @ApiOperation({ summary: 'Upload de PDF (Termo LGPD ou Atestado Médico)' })
+  @ApiOperation({ summary: 'Upload de PDF ou Imagem (Laudo Médico / Termo LGPD / Atestado)' })
   @ApiQuery({
     name: 'tipo',
     enum: ['lgpd', 'atestado', 'laudo'],
     required: true,
     description:
-      'Tipo do documento: "lgpd" grava em braille_lgpd/, "atestado" em braille_atestados/ e "laudo" em braille_laudos/',
+      'Tipo do documento: "lgpd" grava em braille_lgpd/, "atestado" em braille_atestados/ e "laudo" em braille_laudos/. Aceita PDF e imagens (JPG/PNG/WebP).',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { file: { type: 'string', format: 'binary', description: 'Arquivo PDF (≤ 10 MB)' } },
+      properties: { file: { type: 'string', format: 'binary', description: 'Arquivo PDF ou imagem (JPG/PNG/WebP) — sem limite rígido, Cloudinary otimiza automaticamente' } },
     },
   })
   async uploadPdf(
@@ -107,10 +108,7 @@ export class UploadController {
     @Query('tipo') tipo: 'lgpd' | 'atestado' | 'laudo',
     @Req() req: AuthenticatedRequest,
   ) {
-    if (!file) throw new BadRequestException('Nenhum arquivo PDF foi enviado.');
-    if (file.size > 15 * 1024 * 1024) {
-      throw new BadRequestException('O PDF excede o limite de 15 MB. Comprima o arquivo e tente novamente.');
-    }
+    if (!file) throw new BadRequestException('Nenhum arquivo foi enviado.');
     if (tipo !== 'lgpd' && tipo !== 'atestado' && tipo !== 'laudo') {
       throw new BadRequestException('O parâmetro "tipo" deve ser "lgpd", "atestado" ou "laudo".');
     }
