@@ -30,10 +30,9 @@ export class UploadController {
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: memoryStorage(), // Mantém o arquivo em memória para stream direto ao Cloudinary
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — limite máximo do plano gratuito do Cloudinary
+      storage: memoryStorage(),
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — imagens são comprimidas pelo sharp antes de ir ao Cloudinary
       fileFilter: (_req, file, callback) => {
-        // Aceita imagens e PDFs (laudos, LGPD, atestados)
         const isImage = file.mimetype.startsWith('image/');
         const isPdf = file.mimetype === 'application/pdf';
         if (isImage || isPdf) {
@@ -78,9 +77,8 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — limite máximo do plano gratuito do Cloudinary
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB para imagens (sharp comprime); PDFs acima de 10 MB serão rejeitados pelo Cloudinary
       fileFilter: (_req, file, cb) => {
-        // Aceita PDF e imagens (laudos podem ser fotos ou documentos escaneados)
         const isImage = file.mimetype.startsWith('image/');
         const isPdf = file.mimetype === 'application/pdf';
         if (isPdf || isImage) cb(null, true);
