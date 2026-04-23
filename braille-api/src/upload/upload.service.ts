@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { AuditAcao, Role } from '@prisma/client';
+import * as sharp from 'sharp';
 
 @Injectable()
 export class UploadService {
@@ -22,36 +23,83 @@ export class UploadService {
     });
   }
 
-  uploadImage(file: Express.Multer.File, auditUser?: AuditUser): Promise<{ url: string }> {
-    return new Promise((resolve, reject) => {
-      // Validação extra de segurança: aceitar imagens e PDFs (Laudos)
-      const allowedMimes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'application/pdf'];
-      if (!allowedMimes.includes(file.mimetype)) {
-        return reject(new BadRequestException('Apenas arquivos de imagem ou PDF são permitidos.'));
+  /**
+   * Comprime imagem progressivamente com sharp até ficar abaixo do limite do Cloudinary.
+   * Tenta qualidade 75 → 60 → 45 em WebP. Se ainda assim estiver grande, rejeita.
+   */
+  private async comprimirImagem(buffer: Buffer, mimetype: string): Promise<Buffer> {
+    const LIMITE_BYTES = 9.5 * 1024 * 1024; // 9.5 MB — margem de segurança abaixo dos 10 MB do Cloudinary
+
+    if (buffer.length <= LIMITE_BYTES) return buffer; // Arquivo já está dentro do limite
+
+    this.logger.log(`Imagem grande (${(buffer.length / 1024 / 1024).toFixed(1)} MB), comprimindo com sharp...`);
+
+    const qualidades = [75, 60, 45, 30];
+
+    for (const quality of qualidades) {
+      const comprimido = await sharp(buffer)
+        .webp({ quality }) // WebP oferece até 35% menos peso que JPEG na mesma qualidade
+        .toBuffer();
+
+      this.logger.log(`  Sharp q=${quality}: ${(comprimido.length / 1024 / 1024).toFixed(1)} MB`);
+
+      if (comprimido.length <= LIMITE_BYTES) {
+        this.logger.log(`  Compressão bem-sucedida com qualidade ${quality}`);
+        return comprimido;
       }
+    }
 
-      const isPdf = file.mimetype === 'application/pdf';
+    // Última tentativa: redimensionar para 2000px de largura máxima + qualidade 30
+    const ultimaTentativa = await sharp(buffer)
+      .resize({ width: 2000, withoutEnlargement: true })
+      .webp({ quality: 30 })
+      .toBuffer();
 
-      // PDFs não suportam transformações de qualidade/formato do Cloudinary
-      const uploadOptions = isPdf
-        ? { folder: 'braille_instituicao', resource_type: 'auto' as const }
-        : {
-            folder: 'braille_instituicao',
-            resource_type: 'image' as const,
-            transformation: [
-              { fetch_format: 'auto', quality: 'auto' }, // Otimização Cloudinary LCP Permanente (UX/Performance)
-            ],
-          };
+    if (ultimaTentativa.length <= LIMITE_BYTES) {
+      this.logger.log(`Comprimido com redimensionamento: ${(ultimaTentativa.length / 1024 / 1024).toFixed(1)} MB`);
+      return ultimaTentativa;
+    }
 
+    throw new BadRequestException(
+      'Imagem muito grande mesmo após compressão. Por favor, use uma imagem menor que 10 MB.',
+    );
+  }
+
+  async uploadImage(file: Express.Multer.File, auditUser?: AuditUser): Promise<{ url: string }> {
+    // Validação: aceitar imagens e PDFs (Laudos)
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'application/pdf'];
+    if (!allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException('Apenas arquivos de imagem ou PDF são permitidos.');
+    }
+
+    const isPdf = file.mimetype === 'application/pdf';
+
+    // Comprime imagens grandes automaticamente antes de enviar ao Cloudinary
+    let buffer = file.buffer;
+    if (!isPdf) {
+      buffer = await this.comprimirImagem(file.buffer, file.mimetype);
+    }
+
+    // PDFs não suportam transformações de qualidade/formato do Cloudinary
+    const uploadOptions = isPdf
+      ? { folder: 'braille_instituicao', resource_type: 'auto' as const }
+      : {
+          folder: 'braille_instituicao',
+          resource_type: 'image' as const,
+          transformation: [
+            { fetch_format: 'auto', quality: 'auto' }, // Otimização extra do Cloudinary após compressão
+          ],
+        };
+
+    return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         uploadOptions,
         (error, result) => {
           if (error) {
-            // Detecta o erro de tamanho do plano gratuito do Cloudinary
             if (error.message?.includes('File size too large') || error.message?.includes('Maximum is')) {
               return reject(
                 new BadRequestException(
-                  'Arquivo muito grande. O tamanho máximo permitido é 10 MB. Comprima o arquivo e tente novamente.',
+                  'Arquivo muito grande. O tamanho máximo é 10 MB. Tente com uma imagem menor.',
                 ),
               );
             }
@@ -80,42 +128,44 @@ export class UploadService {
         },
       );
 
-      // Pega o arquivo da memória do servidor e joga para o Cloudinary
-      streamifier.createReadStream(file.buffer).pipe(uploadStream);
+      streamifier.createReadStream(buffer).pipe(uploadStream);
     });
   }
 
-  uploadPdf(
+  async uploadPdf(
     file: Express.Multer.File,
     folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos',
     auditUser?: AuditUser,
   ): Promise<{ url: string }> {
+    const isImage = file.mimetype.startsWith('image/');
+    const isPdf = file.mimetype === 'application/pdf';
+
+    if (!isImage && !isPdf) {
+      throw new BadRequestException('Apenas arquivos PDF ou imagens são permitidos.');
+    }
+
+    // Comprime imagens grandes automaticamente; PDFs não têm compressão automática
+    let buffer = file.buffer;
+    if (isImage) {
+      buffer = await this.comprimirImagem(file.buffer, file.mimetype);
+    }
+
+    const uploadOptions = isImage
+      ? {
+          folder,
+          resource_type: 'image' as const,
+          transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+          use_filename: true,
+          unique_filename: true,
+        }
+      : {
+          folder,
+          resource_type: 'auto' as const,
+          use_filename: true,
+          unique_filename: true,
+        };
+
     return new Promise((resolve, reject) => {
-      const isImage = file.mimetype.startsWith('image/');
-      const isPdf = file.mimetype === 'application/pdf';
-
-      if (!isImage && !isPdf) {
-        return reject(new BadRequestException('Apenas arquivos PDF ou imagens são permitidos.'));
-      }
-
-      // Imagens recebem compressão automática do Cloudinary; PDFs são armazenados como 'auto'
-      const uploadOptions = isImage
-        ? {
-            folder,
-            resource_type: 'image' as const,
-            transformation: [
-              { quality: 'auto', fetch_format: 'auto' }, // Cloudinary otimiza qualidade e formato
-            ],
-            use_filename: true,
-            unique_filename: true,
-          }
-        : {
-            folder,
-            resource_type: 'auto' as const,
-            use_filename: true,
-            unique_filename: true,
-          };
-
       const uploadStream = cloudinary.uploader.upload_stream(
         uploadOptions,
         (error, result) => {
@@ -123,7 +173,9 @@ export class UploadService {
             if (error.message?.includes('File size too large') || error.message?.includes('Maximum is')) {
               return reject(
                 new BadRequestException(
-                  'Arquivo muito grande. O tamanho máximo permitido é 10 MB. Comprima o arquivo e tente novamente.',
+                  isPdf
+                    ? 'PDF muito grande. O tamanho máximo é 10 MB. Comprima o PDF e tente novamente.'
+                    : 'Imagem muito grande. O tamanho máximo é 10 MB.',
                 ),
               );
             }
@@ -151,7 +203,7 @@ export class UploadService {
         },
       );
 
-      streamifier.createReadStream(file.buffer).pipe(uploadStream);
+      streamifier.createReadStream(buffer).pipe(uploadStream);
     });
   }
 
