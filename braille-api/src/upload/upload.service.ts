@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { AuditAcao, Role } from '@prisma/client';
-import * as sharp from 'sharp';
+import sharp from 'sharp';
 
 @Injectable()
 export class UploadService {
