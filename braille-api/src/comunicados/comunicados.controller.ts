@@ -13,7 +13,7 @@ import {
   Req,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ComunicadosService } from './comunicados.service';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
@@ -65,7 +65,8 @@ export class ComunicadosController {
 
   @Get()
   @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30) // 30 segundos — cache-manager v7 interpreta em segundos
+  @CacheKey('comunicados:lista')
+  @CacheTTL(60_000) // 1 minuto — cache-manager v7 usa milissegundos (antes estava 30ms por engano)
   @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
   findAll(@Query() query: QueryComunicadoDto) {
     return this.comunicadosService.findAll(query);
@@ -73,7 +74,7 @@ export class ComunicadosController {
 
   @Get(':id')
   @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30) // 30 segundos
+  @CacheTTL(60_000) // 1 minuto — URL do item serve como chave (ex: /api/comunicados/<uuid>)
   @ApiOperation({ summary: 'Obter um comunicado específico pelo ID (Rota Pública)' })
   findOne(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.comunicadosService.findOne(id);
