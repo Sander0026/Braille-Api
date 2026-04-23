@@ -30,7 +30,15 @@ async function bootstrap() {
     ],
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Cache-Control',
+      'Pragma',
+      'Expires',
+      'X-Requested-With',
+    ],
   });
 
   // 2. Ativar Validação Global Estrita
