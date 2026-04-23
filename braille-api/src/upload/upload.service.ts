@@ -30,13 +30,21 @@ export class UploadService {
         return reject(new BadRequestException('Apenas arquivos de imagem ou PDF são permitidos.'));
       }
 
+      const isPdf = file.mimetype === 'application/pdf';
+
+      // PDFs não suportam transformações de qualidade/formato do Cloudinary
+      const uploadOptions = isPdf
+        ? { folder: 'braille_instituicao', resource_type: 'auto' as const }
+        : {
+            folder: 'braille_instituicao',
+            resource_type: 'image' as const,
+            transformation: [
+              { fetch_format: 'auto', quality: 'auto' }, // Otimização Cloudinary LCP Permanente (UX/Performance)
+            ],
+          };
+
       const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'braille_instituicao',
-          transformation: [
-            { fetch_format: 'auto', quality: 'auto' }, // Otimização Cloudinary LCP Permanente (UX/Performance)
-          ],
-        },
+        uploadOptions,
         (error, result) => {
           if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));
 
@@ -58,7 +66,7 @@ export class UploadService {
               .catch((e) => this.logger.warn(`Failure auditing Cloudinary Upload: ${e.message}`));
           }
 
-          resolve({ url: result.secure_url }); // Agora o TS sabe que o result existe 100%!
+          resolve({ url: result.secure_url });
         },
       );
 
