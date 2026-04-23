@@ -22,4 +22,4 @@ import { UploadModule } from '../upload/upload.module';
   controllers: [AuthController],
   providers: [AuthService, PrismaService],
 })
-export class AuthModule { }
+export class AuthModule {}

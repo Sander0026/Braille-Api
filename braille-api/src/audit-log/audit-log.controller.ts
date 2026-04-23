@@ -1,45 +1,45 @@
 import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse as SwaggerResponse } from '@nestjs/swagger';
 import { AuditLogService } from './audit-log.service';
-import type { QueryAuditDto } from './audit-log.service';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
-
+import { QueryAuditDto } from './dto/query-audit.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { ApiResponse } from '../common/dto/api-response.dto';
 
+/**
+ * Módulo de auditoria — acesso restrito a ADMIN.
+ * Controller magro: apenas roteamento e delegação ao AuditLogService.
+ */
 @ApiTags('Auditoria (Logs do Sistema)')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('audit-log')
 export class AuditLogController {
-    constructor(private readonly auditLogService: AuditLogService) { }
+  constructor(private readonly auditLogService: AuditLogService) {}
 
-    @Get()
-    @ApiOperation({ summary: 'Listar logs de auditoria com filtros (somente ADMIN)' })
-    @ApiQuery({ name: 'page', required: false })
-    @ApiQuery({ name: 'limit', required: false })
-    @ApiQuery({ name: 'entidade', required: false, description: 'Ex: Aluno | User | Turma | Frequencia' })
-    @ApiQuery({ name: 'acao', required: false })
-    @ApiQuery({ name: 'autorId', required: false })
-    @ApiQuery({ name: 'de', required: false, description: 'Data início ISO' })
-    @ApiQuery({ name: 'ate', required: false, description: 'Data fim ISO' })
-    findAll(@Query() query: QueryAuditDto) {
-        return this.auditLogService.findAll(query);
-    }
+  @Get()
+  @ApiOperation({ summary: 'Listar logs de auditoria com paginação e filtros (somente ADMIN)' })
+  @SwaggerResponse({ status: 200, description: 'Lista de logs retornada com sucesso' })
+  findAll(@Query() query: QueryAuditDto): Promise<ApiResponse<unknown>> {
+    return this.auditLogService.findAll(query);
+  }
 
-    @Get('stats')
-    @ApiOperation({ summary: 'Estatísticas rápidas do log (total, hoje, top ações)' })
-    stats() {
-        return this.auditLogService.stats();
-    }
+  @Get('stats')
+  @ApiOperation({ summary: 'Estatísticas rápidas do log (total, hoje em Brasília, top ações)' })
+  @SwaggerResponse({ status: 200, description: 'Estatísticas de auditoria' })
+  stats(): Promise<ApiResponse<unknown>> {
+    return this.auditLogService.stats();
+  }
 
-    @Get(':entidade/:registroId')
-    @ApiOperation({ summary: 'Ver todo o histórico de auditoria de um registro específico' })
-    findByRegistro(
-        @Param('entidade') entidade: string,
-        @Param('registroId') registroId: string,
-    ) {
-        return this.auditLogService.findByRegistro(entidade, registroId);
-    }
+  @Get(':entidade/:registroId')
+  @ApiOperation({ summary: 'Ver o histórico de auditoria de um registro específico' })
+  @SwaggerResponse({ status: 200, description: 'Histórico localizado' })
+  findByRegistro(
+    @Param('entidade') entidade: string,
+    @Param('registroId') registroId: string,
+  ): Promise<ApiResponse<unknown>> {
+    return this.auditLogService.findByRegistro(entidade, registroId);
+  }
 }

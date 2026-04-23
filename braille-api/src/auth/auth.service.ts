@@ -1,57 +1,103 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'node:crypto';
 import { LoginDto } from './dto/login.dto';
+import { TrocarSenhaDto } from './dto/trocar-senha.dto';
+import { AtualizarPerfilDto } from './dto/atualizar-perfil.dto';
+import { ApiResponse } from '../common/dto/api-response.dto';
+
+// ── SELECT cirúrgico reutilizado — não trafega campos desnecessários ──────────
+
+/** Campos mínimos para construir o payload JWT (nunca inclui senha ou refreshToken). */
+const AUTH_SELECT = {
+  id: true,
+  nome: true,
+  role: true,
+  statusAtivo: true,
+  excluido: true,
+  precisaTrocarSenha: true,
+} as const;
+
+/** Campos do perfil público (equivalente ao que getMe retorna). */
+const PERFIL_SELECT = {
+  id: true,
+  nome: true,
+  username: true,
+  email: true,
+  role: true,
+  fotoPerfil: true,
+  statusAtivo: true,
+  criadoEm: true,
+} as const;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
+  /**
+   * Hash falso para normalizar o tempo de resposta do login (anti-timing-attack / CWE-208).
+   * Semente gerada aleatoriamente em cada startup — sem valor hardcoded (evita CWE-547).
+   * O hash é recriado 1× por instância de serviço (startup); não impacta performance em runtime.
+   */
+  private readonly dummyHash: string = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+
   constructor(
-    private jwtService: JwtService,
-    private prisma: PrismaService,
-    private uploadService: UploadService,
-  ) { }
+    private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly uploadService: UploadService,
+  ) {}
+
+  // ── Login ──────────────────────────────────────────────────────────────────
 
   async login(loginDto: LoginDto) {
-    // 1. Busca o usuário no banco pelo e-mail
+    // Select mínimo — nunca incluir refreshToken nem outros hashes desnecessários
     const user = await this.prisma.user.findUnique({
       where: { username: loginDto.username },
+      select: { ...AUTH_SELECT, senha: true },
     });
 
-    // 2. Se não achar o usuário, ou se a senha estiver errada, bloqueia!
-    if (!user) {
-      throw new UnauthorizedException('Nome de usuário ou senha incorretos');
+    /**
+     * TIMING ATTACK FIX (CWE-208):
+     * Se o user não existe, ainda executamos bcrypt.compare contra o dummyHash
+     * para garantir que a resposta demore ~100ms independentemente do resultado.
+     * Sem isso, a diferença de tempo (com/sem bcrypt) revela se o username existe.
+     */
+    const senhaParaComparar = user?.senha ?? this.dummyHash;
+    const isPasswordValid = await bcrypt.compare(loginDto.senha, senhaParaComparar);
+
+    // Mensagem genérica — não revela se o username existe ou não
+    if (!user || !isPasswordValid) {
+      throw new UnauthorizedException('Nome de usuário ou senha incorretos.');
     }
 
-    // 2b. Bloqueio para contas excluídas ou inativas ──────────────────────────
     if (user.excluido) {
       throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
     }
+
     if (!user.statusAtivo) {
       throw new UnauthorizedException('Esta conta está desativada. Procure o administrador do sistema.');
     }
 
-    const isPasswordValid = await bcrypt.compare(loginDto.senha, user.senha);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Nome de usuário ou senha incorretos');
-    }
-
-    // 3. Se deu tudo certo, monta o crachá (Payload do JWT de 15 min)
-    const payload = { sub: user.id, nome: user.nome, role: user.role, precisaTrocarSenha: user.precisaTrocarSenha };
+    const payload = {
+      sub: user.id,
+      nome: user.nome,
+      role: user.role,
+      precisaTrocarSenha: user.precisaTrocarSenha,
+    };
     const access_token = await this.jwtService.signAsync(payload);
 
-    // 4. Gera o "Visto Longo" Randomizado de (Refresh Token)
-    const randomRefreshString = require('crypto').randomBytes(40).toString('hex');
+    // Gera e armazena refresh token (string bruta → hash no banco)
+    const randomRefreshString = crypto.randomBytes(40).toString('hex');
     const hashedRefreshToken = await bcrypt.hash(randomRefreshString, 10);
 
-    // 5. Salva o Hash na Ficha do Servidor no Banco
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken: hashedRefreshToken }
+      data: { refreshToken: hashedRefreshToken },
     });
 
-    // 6. Retorna o Token Duplo para o Frontend (A String bruta vai via JSON)
     return {
       access_token,
       refresh_token: randomRefreshString,
@@ -59,128 +105,129 @@ export class AuthService {
         id: user.id,
         nome: user.nome,
         role: user.role,
-        precisaTrocarSenha: user.precisaTrocarSenha
-      }
+        precisaTrocarSenha: user.precisaTrocarSenha,
+      },
     };
   }
 
+  // ── Refresh Token ──────────────────────────────────────────────────────────
+
   async refreshToken(userId: string, rawRefreshToken: string) {
-    // 1. Pede os dados no Banco
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // Select mínimo — exclui senha e outros campos pesados
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { ...AUTH_SELECT, refreshToken: true },
+    });
 
     if (!user || !user.refreshToken) {
       throw new UnauthorizedException('Sua sessão expirou ou foi revogada administrativamente.');
     }
 
-    // Bloqueia renovação de token para contas inativas/excluídas
     if (user.excluido || !user.statusAtivo) {
       throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
     }
 
-    // 2. Compara a Chave Mestra Limpa que veio do Angular com a Hasheada na Tabela
     const isRefreshValid = await bcrypt.compare(rawRefreshToken, user.refreshToken);
-
     if (!isRefreshValid) {
-      throw new UnauthorizedException('Refresh Token Inválido. Faça o login novamente.');
+      throw new UnauthorizedException('Refresh Token inválido. Faça o login novamente.');
     }
 
-    // 3. Retorna Passaporte Novo (15min)
-    const payload = { sub: user.id, nome: user.nome, role: user.role, precisaTrocarSenha: user.precisaTrocarSenha };
+    const payload = {
+      sub: user.id,
+      nome: user.nome,
+      role: user.role,
+      precisaTrocarSenha: user.precisaTrocarSenha,
+    };
     const access_token = await this.jwtService.signAsync(payload);
 
     return { access_token };
   }
 
-  async trocarSenha(userId: string, trocarSenhaDto: any) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  // ── Trocar Senha ───────────────────────────────────────────────────────────
 
-    if (!user) {
-      throw new NotFoundException('Usuário não encontrado.');
-    }
+  async trocarSenha(userId: string, dto: TrocarSenhaDto): Promise<ApiResponse<null>> {
+    // Select mínimo — só precisamos da senha atual para comparar
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, senha: true },
+    });
 
-    // 1. Verifica se a senha atual bate com a do banco de dados
-    const senhaValida = await bcrypt.compare(trocarSenhaDto.senhaAtual, user.senha);
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    const senhaValida = await bcrypt.compare(dto.senhaAtual, user.senha);
     if (!senhaValida) {
       throw new BadRequestException('A senha atual está incorreta. Não foi possível alterar.');
     }
 
-    // 2. Criptografa a NOVA senha
-    const novaSenhaHashed = await bcrypt.hash(trocarSenhaDto.novaSenha, 10);
+    const novaSenhaHashed = await bcrypt.hash(dto.novaSenha, 10);
 
-    // 3. Salva no banco de dados desativando a flag de exigência
     await this.prisma.user.update({
       where: { id: userId },
-      data: {
-        senha: novaSenhaHashed,
-        precisaTrocarSenha: false // Se tinha block, remove!
-      },
+      data: { senha: novaSenhaHashed, precisaTrocarSenha: false },
     });
 
-    return { message: 'Sua senha foi alterada com sucesso!' };
+    return new ApiResponse(true, null, 'Sua senha foi alterada com sucesso!');
   }
 
-  async getMe(userId: string) {
+  // ── Perfil ─────────────────────────────────────────────────────────────────
+
+  async getMe(userId: string): Promise<ApiResponse<unknown>> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        nome: true,
-        username: true,
-        email: true,
-        role: true,
-        fotoPerfil: true,
-        statusAtivo: true,
-        criadoEm: true,
-      },
+      select: PERFIL_SELECT,
     });
 
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return user;
+    return new ApiResponse(true, user, 'Perfil carregado com sucesso.');
   }
 
-  async atualizarFotoPerfil(userId: string, fotoPerfil: string | null) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async atualizarFotoPerfil(userId: string, fotoPerfil: string | null | undefined): Promise<ApiResponse<unknown>> {
+    // Select cirúrgico — só precisamos do fotoPerfil atual para deletar do Cloudinary
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fotoPerfil: true },
+    });
+
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     if (fotoPerfil !== undefined && user.fotoPerfil && fotoPerfil !== user.fotoPerfil) {
       try {
         await this.uploadService.deleteFile(user.fotoPerfil);
-      } catch (e: any) {
-        console.warn('Foto de perfil antiga não removida do Cloudinary:', e.message);
+      } catch (e: unknown) {
+        const erroMsg = e instanceof Error ? e.message : 'Erro genérico';
+        this.logger.warn(`Foto de perfil antiga não removida do Cloudinary: ${erroMsg}`);
       }
     }
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { fotoPerfil },
+      data: { fotoPerfil: fotoPerfil ?? null },
     });
 
-    return { message: 'Foto de perfil atualizada com sucesso!', fotoPerfil };
+    return new ApiResponse(true, { fotoPerfil }, 'Foto de perfil atualizada com sucesso!');
   }
 
-  async atualizarPerfil(userId: string, dto: { nome?: string; email?: string }) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('Usuário não encontrado.');
-
-    // Verifica se o e-mail já está em uso por outro usuário
-    if (dto.email && dto.email !== user.email) {
-      const emailEmUso = await this.prisma.user.findUnique({ where: { email: dto.email } });
-      if (emailEmUso) throw new Error('Este e-mail já está em uso por outro usuário.');
+  async atualizarPerfil(userId: string, dto: AtualizarPerfilDto): Promise<ApiResponse<unknown>> {
+    // Cláusula de guarda: verifica conflito de e-mail antes de atualizar
+    if (dto.email) {
+      const emailEmUso = await this.prisma.user.findFirst({
+        where: { email: dto.email, NOT: { id: userId } },
+        select: { id: true },
+      });
+      if (emailEmUso) {
+        throw new BadRequestException('Este e-mail já está em uso por outro usuário.');
+      }
     }
 
     const atualizado = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        ...(dto.nome && { nome: dto.nome }),
+        ...(dto.nome !== undefined && { nome: dto.nome }),
         ...(dto.email !== undefined && { email: dto.email }),
       },
-      select: {
-        id: true, nome: true, username: true,
-        email: true, role: true, fotoPerfil: true,
-        statusAtivo: true, criadoEm: true,
-      },
+      select: PERFIL_SELECT,
     });
 
-    return atualizado;
+    return new ApiResponse(true, atualizado, 'Perfil atualizado com sucesso.');
   }
 }

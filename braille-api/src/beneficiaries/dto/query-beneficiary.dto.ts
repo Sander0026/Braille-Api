@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, Max, IsEnum, IsDateString, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsEnum, IsDateString, IsBoolean, MaxLength } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade, CorRaca } from '@prisma/client';
 
@@ -8,6 +8,7 @@ export class QueryBeneficiaryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(10000)
   @IsOptional()
   page?: number = 1;
 
@@ -19,15 +20,17 @@ export class QueryBeneficiaryDto {
   @IsOptional()
   limit?: number = 10;
 
-  @ApiPropertyOptional({ description: 'Busca por nome ou matrícula do aluno (texto livre)' })
+  @ApiPropertyOptional({ description: 'Busca por nome ou matrícula (texto livre)' })
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   busca?: string;
 
   /** @deprecated use busca */
-  @ApiPropertyOptional({ description: 'Filtrar por nome do aluno (legado — use busca)' })
+  @ApiPropertyOptional({ description: 'Filtrar por nome (legado — use busca)' })
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   nome?: string;
 
   @ApiPropertyOptional({ description: 'Filtrar por alunos inativos (lixeira)' })
@@ -35,7 +38,6 @@ export class QueryBeneficiaryDto {
   @Type(() => Boolean)
   inativos?: boolean;
 
-  // ── Filtros de Deficiência ──────────────────────────────────────
   @ApiPropertyOptional({ enum: TipoDeficiencia })
   @IsOptional()
   @IsEnum(TipoDeficiencia)
@@ -53,55 +55,24 @@ export class QueryBeneficiaryDto {
 
   @ApiPropertyOptional({ description: 'Filtrar por alunos que precisam de acompanhante' })
   @IsOptional()
-  @Transform(({ value }) => value === 'true' ? true : value === 'false' ? false : undefined)
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : undefined))
   @IsBoolean()
   precisaAcompanhante?: boolean;
 
-  // ── Filtros de Dados Pessoais ───────────────────────────────────
-  @ApiPropertyOptional({ description: 'Filtrar por gênero' })
-  @IsString()
-  @IsOptional()
-  genero?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(60) genero?: string;
+  @ApiPropertyOptional({ enum: CorRaca }) @IsOptional() @IsEnum(CorRaca) corRaca?: CorRaca;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(60) estadoCivil?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(100) cidade?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(2) uf?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(150) escolaridade?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() @MaxLength(100) rendaFamiliar?: string;
 
-  @ApiPropertyOptional({ enum: CorRaca, description: 'Filtrar por cor/raça' })
-  @IsOptional()
-  @IsEnum(CorRaca)
-  corRaca?: CorRaca;
-
-  @ApiPropertyOptional({ description: 'Filtrar por estado civil' })
-  @IsString()
-  @IsOptional()
-  estadoCivil?: string;
-
-  // ── Filtros de Localização ──────────────────────────────────────
-  @ApiPropertyOptional({ description: 'Filtrar por cidade' })
-  @IsString()
-  @IsOptional()
-  cidade?: string;
-
-  @ApiPropertyOptional({ description: 'Filtrar por estado (UF)' })
-  @IsString()
-  @IsOptional()
-  uf?: string;
-
-  // ── Filtros Socioeconômicos ─────────────────────────────────────
-  @ApiPropertyOptional({ description: 'Filtrar por escolaridade' })
-  @IsString()
-  @IsOptional()
-  escolaridade?: string;
-
-  @ApiPropertyOptional({ description: 'Filtrar por faixa de renda familiar' })
-  @IsString()
-  @IsOptional()
-  rendaFamiliar?: string;
-
-  // ── Filtro por Data de Cadastro ─────────────────────────────────
-  @ApiPropertyOptional({ description: 'Data de cadastro inicial (ISO 8601, ex: 2025-01-01)' })
+  @ApiPropertyOptional({ description: 'Data de cadastro inicial (ISO 8601)' })
   @IsOptional()
   @IsDateString()
   dataCadastroInicio?: string;
 
-  @ApiPropertyOptional({ description: 'Data de cadastro final (ISO 8601, ex: 2025-12-31)' })
+  @ApiPropertyOptional({ description: 'Data de cadastro final (ISO 8601)' })
   @IsOptional()
   @IsDateString()
   dataCadastroFim?: string;
