@@ -54,12 +54,32 @@ export class PrismaService
     });
   }
 
+  // ── Keep-alive ──────────────────────────────────────────────────────────────
+  // O Neon (Serverless PostgreSQL) dropa conexões ociosas após ~5 minutos.
+  // Sem isso, cada 1ª query após inatividade paga o custo de reconexão TLS (~800ms).
+  // Estratégia: dispara um "SELECT 1" a cada 4min para manter a conexão aquecida.
+  private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+
   async onModuleInit(): Promise<void> {
     await this.$connect();
     this.logger.log('Conexão com o banco de dados estabelecida.');
+
+    this.keepAliveInterval = setInterval(async () => {
+      try {
+        await this.$queryRaw`SELECT 1`;
+        this.logger.debug('[Keep-alive] Heartbeat enviado ao Neon.');
+      } catch (err) {
+        // Não propaga o erro — o Prisma vai reconectar automaticamente na próxima query real
+        this.logger.warn(`[Keep-alive] Heartbeat falhou (reconexão será feita na próxima query): ${err}`);
+      }
+    }, 4 * 60 * 1000); // 4 minutos — antes do timeout de 5min do Neon
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
     await this.$disconnect();
     this.logger.log('Conexão com o banco de dados encerrada.');
   }
