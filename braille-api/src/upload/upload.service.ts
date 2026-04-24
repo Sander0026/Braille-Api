@@ -156,7 +156,8 @@ export class UploadService {
         {
           folder,
           resource_type: 'raw',
-          public_id: fileName.replace(/\.pdf$/i, ''),
+          // O Cloudinary requer a extensão para arquivos raw, caso contrário serve como octet-stream (forçando download)
+          public_id: fileName.replace(/\.pdf$/i, '') + '.pdf',
           use_filename: false,
           unique_filename: false,
           overwrite: true,
