@@ -275,7 +275,7 @@ export class CertificadosService {
 
   // ── Emissão de Certificados ────────────────────────────────────────────────
 
-  async emitirAcademico(dto: EmitirAcademicoDto, auditUser?: AuditUser) {
+  async emitirAcademico(dto: EmitirAcademicoDto, auditUser?: AuditUser): Promise<{ pdfUrl: string; codigoValidacao: string }> {
     const turma = await this.prisma.turma.findUnique({
       where: { id: dto.turmaId },
       include: {
@@ -299,6 +299,17 @@ export class CertificadosService {
 
     await this.verificarFrequencia(dto.turmaId, dto.alunoId);
 
+    // CACHE CHECK: certificado já emitido com PDF salvo?
+    const certExistente = await this.prisma.certificadoEmitido.findFirst({
+      where: { alunoId: dto.alunoId, turmaId: dto.turmaId },
+      select: { id: true, pdfUrl: true, codigoValidacao: true },
+    });
+    if (certExistente?.pdfUrl) {
+      // CACHE HIT — sem gerar PDF, sem I/O pesado
+      this.logger.log(`[CertificadoEmitido] CACHE HIT para aluno=${dto.alunoId} turma=${dto.turmaId}`);
+      return { pdfUrl: certExistente.pdfUrl, codigoValidacao: certExistente.codigoValidacao };
+    }
+
     // Select cirúrgico — sem CPF, RG, laudos ou outros dados sensíveis desnecessários
     const aluno = await this.prisma.aluno.findUnique({
       where: { id: dto.alunoId },
@@ -318,25 +329,52 @@ export class CertificadosService {
       DATA_FIM: dataFim,
     });
 
-    const hashUnique = randomBytes(4).toString('hex').toUpperCase();
-    const certificadoEmitido = await this.prisma.certificadoEmitido.create({
-      data: { codigoValidacao: hashUnique, alunoId: aluno.id, turmaId: turma.id, modeloId: turma.modeloCertificado.id },
-    });
-
-    this.auditService.registrar({
-      ...this.toAuditMeta(auditUser),
-      entidade: 'CertificadoEmitido',
-      registroId: certificadoEmitido.id,
-      acao: AuditAcao.CRIAR,
-      newValue: certificadoEmitido,
-    });
-
-    return this.pdfService.construirPdfBase(
+    // Usa codigoValidacao existente (se já havia registro sem URL) ou gera novo
+    const hashUnique = certExistente?.codigoValidacao ?? randomBytes(4).toString('hex').toUpperCase();
+    const pdfBuffer = await this.pdfService.construirPdfBase(
       turma.modeloCertificado as ModeloPdf,
       textoPronto,
       hashUnique,
       aluno.nomeCompleto,
     );
+
+    // Public ID determinístico — overwrite automático, sem arquivos órfãos
+    const publicId = `cert-acad-${dto.alunoId}-${dto.turmaId}`;
+    let pdfUrl: string;
+    try {
+      const uploaded = await this.uploadService.uploadPdfBuffer(pdfBuffer, publicId);
+      pdfUrl = uploaded.url;
+    } catch (uploadErr: unknown) {
+      const msg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+      this.logger.error(`[CertificadoEmitido] Falha no upload Cloudinary: ${msg}`);
+      throw new BadRequestException('Falha ao armazenar o certificado. Tente novamente.');
+    }
+
+    let codigoFinal: string;
+    if (certExistente) {
+      // Registro existia mas sem URL — apenas atualiza pdfUrl
+      await this.prisma.certificadoEmitido.update({
+        where: { id: certExistente.id },
+        data: { pdfUrl },
+      });
+      codigoFinal = certExistente.codigoValidacao;
+    } else {
+      // Cria o registro pela primeira vez
+      const certificadoEmitido = await this.prisma.certificadoEmitido.create({
+        data: { codigoValidacao: hashUnique, alunoId: aluno.id, turmaId: turma.id, modeloId: turma.modeloCertificado.id, pdfUrl },
+      });
+      codigoFinal = certificadoEmitido.codigoValidacao;
+
+      this.auditService.registrar({
+        ...this.toAuditMeta(auditUser),
+        entidade: 'CertificadoEmitido',
+        registroId: certificadoEmitido.id,
+        acao: AuditAcao.CRIAR,
+        newValue: certificadoEmitido,
+      });
+    }
+
+    return { pdfUrl, codigoValidacao: codigoFinal };
   }
 
   async emitirHonraria(dto: EmitirHonrariaDto, auditUser?: AuditUser) {
@@ -365,6 +403,57 @@ export class CertificadosService {
     });
 
     return this.pdfService.construirPdfBase(modelo as ModeloPdf, textoPronto, hashUnique);
+  }
+
+  /**
+   * Regenera (somente os que já têm URL salva) os certificados acadêmicos de um aluno.
+   * Chamado em background quando nomeCompleto é alterado — nunca bloqueia o PATCH do aluno.
+   * Public ID determinístico garante overwrite no Cloudinary sem arquivos órfãos.
+   */
+  async regenerarCertificadosAluno(alunoId: string): Promise<void> {
+    const [aluno, certs] = await Promise.all([
+      this.prisma.aluno.findUnique({ where: { id: alunoId }, select: { id: true, nomeCompleto: true } }),
+      this.prisma.certificadoEmitido.findMany({
+        where: { alunoId, pdfUrl: { not: null } },
+        include: { turma: { include: { modeloCertificado: true } } },
+      }),
+    ]);
+
+    if (!aluno || certs.length === 0) return;
+
+    for (const cert of certs) {
+      const turma = cert.turma;
+      if (!turma || !turma.modeloCertificado) continue;
+      
+      const modeloCert = turma.modeloCertificado;
+      try {
+        const textoPronto = this.substituirTags(modeloCert.textoTemplate, {
+          ALUNO: aluno.nomeCompleto,
+          TURMA: turma.nome,
+          CARGA_HORARIA: turma.cargaHoraria ?? 'Não informada',
+          DATA_INICIO: turma.dataInicio ? turma.dataInicio.toLocaleDateString('pt-BR') : 'Data Indefinida',
+          DATA_FIM: turma.dataFim ? turma.dataFim.toLocaleDateString('pt-BR') : 'Data Indefinida',
+        });
+
+        const pdfBuffer = await this.pdfService.construirPdfBase(
+          modeloCert as ModeloPdf,
+          textoPronto,
+          cert.codigoValidacao,
+          aluno.nomeCompleto,
+        );
+
+        const { url } = await this.uploadService.uploadPdfBuffer(
+          pdfBuffer,
+          `cert-acad-${alunoId}-${cert.turmaId}`,  // overwrite determinístico
+        );
+
+        await this.prisma.certificadoEmitido.update({ where: { id: cert.id }, data: { pdfUrl: url } });
+        this.logger.log(`[regenerar] Cert ${cert.id} atualizado para aluno ${alunoId}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`[regenerar] Falha no cert ${cert.id}: ${msg}`);
+      }
+    }
   }
 
   async validarPublico(codigo: string) {

@@ -15,6 +15,6 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
   imports: [UploadModule, AuditLogModule, ConfigModule],
   controllers: [CertificadosController, CertificadosPublicoController],
   providers: [CertificadosService, PrismaService, PdfService, ImageProcessingService],
-  exports: [PdfService],
+  exports: [PdfService, CertificadosService],
 })
 export class CertificadosModule {}
