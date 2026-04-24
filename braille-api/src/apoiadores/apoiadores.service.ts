@@ -239,7 +239,7 @@ export class ApoiadoresService {
           modeloId: dto.modeloCertificadoId,
           acaoId: acao.id,
           motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
-          dataEmissao: dto.dataEvento,
+          dataEvento: dto.dataEvento,   // data do evento da ação
         },
         auditUser,
       );
@@ -281,7 +281,7 @@ export class ApoiadoresService {
           modeloId: dto.modeloCertificadoId,
           acaoId,
           motivoPersonalizado: dto.motivoPersonalizado ?? dto.descricaoAcao,
-          dataEmissao: dto.dataEvento,
+          dataEvento: dto.dataEvento,   // data do evento da ação
         },
         auditUser,
       );
@@ -343,14 +343,18 @@ export class ApoiadoresService {
     }
 
     const codigoValidacao = crypto.randomBytes(6).toString('hex').toUpperCase();
-    const dataEmissaoStr = dto.dataEmissao ?? new Date().toISOString();
     const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
-    const dataEmissaoFormatada = formatarDataBR(dataEmissaoStr);
+
+    // DATA_EMISSAO é sempre a data atual (quando o certificado é de fato emitido)
+    const dataEmissaoAuto = new Date();
+    // DATA_EVENTO é a data em que o evento/ação ocorreu (informada pelo usuário)
+    const dataEventoStr = dto.dataEvento ?? dataEmissaoAuto.toISOString();
 
     const textoFormatado = preencherTemplateTexto(modelo.textoTemplate ?? '', {
       nomeDestinatario,
-      motivo: dto.motivoPersonalizado ?? '',
-      dataEmissao: dataEmissaoFormatada,
+      nomeEvento: dto.motivoPersonalizado ?? '',
+      dataEvento:  formatarDataBR(dataEventoStr),
+      dataEmissao: dataEmissaoAuto.toLocaleDateString('pt-BR'), // DD/MM/AAAA auto
     });
 
     const pdfBuffer = await this.pdfService.construirPdfBase(modelo, textoFormatado, codigoValidacao, nomeDestinatario);
@@ -373,7 +377,7 @@ export class ApoiadoresService {
         apoiadorId: apoiador.id,
         acaoId: dto.acaoId ?? null,
         motivoPersonalizado: dto.motivoPersonalizado ?? null,
-        dataEmissao: new Date(dataEmissaoStr),
+        dataEmissao: dataEmissaoAuto,   // data real de emissão (hoje)
         pdfUrl,
       },
     });
@@ -429,7 +433,7 @@ export class ApoiadoresService {
               tipo: true,
             },
           },
-          acao: { select: { descricaoAcao: true } },
+          acao: { select: { descricaoAcao: true, dataEvento: true } },
         },
       }),
     ]);
@@ -444,13 +448,21 @@ export class ApoiadoresService {
       return { type: 'redirect', url: this.validarUrlRedirect(cert.pdfUrl) };
     }
 
+    // CACHE HIT: PDF já gerado e salvo no Cloudinary — redirect instantâneo sem regerar
+    if (cert.pdfUrl) {
+      return { type: 'redirect', url: this.validarUrlRedirect(cert.pdfUrl) };
+    }
+
     const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
-    const motivo = cert.motivoPersonalizado || cert.acao?.descricaoAcao || '';
+    const nomeEvento = cert.motivoPersonalizado || cert.acao?.descricaoAcao || '';
+    // dataEvento: prefere a data real do evento (da Acao); fallback para dataEmissao (registros legados)
+    const dataEvento = cert.acao?.dataEvento ?? cert.dataEmissao;
     const dataEmissaoStr = cert.dataEmissao?.toISOString() ?? new Date().toISOString();
 
     const textoFormatado = preencherTemplateTexto(cert.modelo.textoTemplate ?? '', {
       nomeDestinatario,
-      motivo,
+      nomeEvento,
+      dataEvento:  formatarDataBR(dataEvento?.toISOString() ?? dataEmissaoStr),
       dataEmissao: formatarDataBR(dataEmissaoStr),
     });
 
@@ -460,6 +472,21 @@ export class ApoiadoresService {
       cert.codigoValidacao,
       nomeDestinatario,
     );
+
+    // Armazena no Cloudinary para que o próximo acesso seja instantâneo (cache miss → hit)
+    try {
+      const { url } = await this.uploadService.uploadPdfBuffer(
+        buffer,
+        `cert-apoiador-${cert.id}`,
+      );
+      await this.prisma.certificadoEmitido.update({
+        where: { id: cert.id },
+        data: { pdfUrl: url },
+      });
+    } catch (cacheErr: unknown) {
+      const msg = cacheErr instanceof Error ? cacheErr.message : JSON.stringify(cacheErr);
+      this.logger.warn(`[CertificadoEmitido] Falha ao cachear PDF ${cert.id}: ${msg}`);
+    }
 
     return { type: 'buffer', buffer };
   }
