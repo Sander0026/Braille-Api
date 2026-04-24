@@ -66,18 +66,13 @@ export class CertificadosController {
 
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
-  @ApiOperation({ summary: 'Emite o PDF de diploma para um Aluno Matriculado numa Turma Concluída.' })
+  @ApiOperation({ summary: 'Emite (ou recupera do cache) o certificado acadêmico. Retorna { pdfUrl, codigoValidacao }.' })
   async gerarAcademico(
     @Req() req: AuthenticatedRequest,
     @Body() dto: EmitirAcademicoDto,
-    @Res({ passthrough: true }) res: Response,
   ) {
-    const buffer = await this.certificadosService.emitirAcademico(dto, getAuditUser(req));
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="certificado_academico.pdf"',
-    });
-    return new StreamableFile(buffer);
+    // Retorna JSON — pdfUrl aponta para Cloudinary (cache); frontend abre diretamente no viewer
+    return this.certificadosService.emitirAcademico(dto, getAuditUser(req));
   }
 
   @Post('emitir-honraria')
