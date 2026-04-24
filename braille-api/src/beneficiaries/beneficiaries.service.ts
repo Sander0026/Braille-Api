@@ -8,6 +8,7 @@ import { gerarMatriculaAluno } from '../common/helpers/matricula.helper';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { UploadService } from '../upload/upload.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { CertificadosService } from '../certificados/certificados.service';
 import * as ExcelJS from 'exceljs';
 
 // ── Selects Cirúrgicos — fonte única de verdade ────────────────────────────
@@ -65,8 +66,8 @@ const ALUNO_DETALHE_INCLUDE = {
 /** Select mínimo para verificar existência antes de mutações */
 const ALUNO_EXISTENCIA_SELECT = { id: true } as const;
 
-/** Select para update: precisa de fotoPerfil e termoLgpdUrl para cleanup Cloudinary */
-const ALUNO_MUTATION_SELECT = { id: true, fotoPerfil: true, termoLgpdUrl: true } as const;
+/** Select para update: fotoPerfil e termoLgpdUrl para cleanup Cloudinary; nomeCompleto para detectar mudança de cache */
+const ALUNO_MUTATION_SELECT = { id: true, fotoPerfil: true, termoLgpdUrl: true, nomeCompleto: true } as const;
 
 @Injectable()
 export class BeneficiariesService {
@@ -76,6 +77,7 @@ export class BeneficiariesService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
     private readonly uploadService: UploadService,
+    private readonly certificadosService: CertificadosService,
   ) {}
 
   // ── Helpers Privados ───────────────────────────────────────────────────────
@@ -483,6 +485,16 @@ export class BeneficiariesService {
       oldValue: dadosAtuais,
       newValue: alunoAtualizado,
     });
+
+    // Fase 3 — Invalidação de cache: se o nome mudou, regenera PDFs em background
+    if (dto.nomeCompleto && dto.nomeCompleto !== dadosAtuais.nomeCompleto) {
+      setImmediate(() => {
+        this.certificadosService.regenerarCertificadosAluno(id).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`[InvalidarCache] Falha ao regenerar certs do aluno ${id}: ${msg}`);
+        });
+      });
+    }
 
     return alunoAtualizado;
   }
