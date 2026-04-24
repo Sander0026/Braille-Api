@@ -126,25 +126,36 @@ export function formatarDataBR(isoStr: string): string {
 /** Variáveis disponíveis para substituição num template de certificado. */
 export interface TemplateVars {
   nomeDestinatario: string;
-  motivo: string;
-  dataEmissao: string; // já formatado em DD/MM/AAAA
+  /** Nome do evento/ação (ex: "Doações de roupas") — tag {{NOME_EVENTO}} ou {{MOTIVO}} */
+  nomeEvento: string;
+  /** Data em que o EVENTO ocorreu (DD/MM/AAAA) — tag {{DATA}} ou {{DATA_EVENTO}} */
+  dataEvento: string;
+  /** Data em que o CERTIFICADO foi emitido (DD/MM/AAAA) — tag {{DATA_EMISSAO}} (auto-gerada) */
+  dataEmissao: string;
 }
 
 /**
  * Preenche as tags de template `{{TAG}}` com os valores fornecidos.
  *
- * Suporta múltiplas variações de nome por compatibilidade com templates legados.
- * Centraliza a lógica — elimina as 18 linhas de replaceAll duplicadas no service.
+ * Tags de destinatário: {{ALUNO}}, {{NOME}}, {{APOIADOR}}, {{PARCEIRO}}, {{NOME_APOIADOR}}
+ * Tags de evento:       {{NOME_EVENTO}}, {{MOTIVO}} (alias legado)
+ * Tags de data:         {{DATA_EVENTO}}, {{DATA}} (data do evento)
+ *                       {{DATA_EMISSAO}} (data de emissão do certificado — automática)
  */
 export function preencherTemplateTexto(template: string, vars: TemplateVars): string {
   return template
-    .replaceAll('{{ALUNO}}', vars.nomeDestinatario)
-    .replaceAll('{{NOME}}', vars.nomeDestinatario)
-    .replaceAll('{{APOIADOR}}', vars.nomeDestinatario)
-    .replaceAll('{{PARCEIRO}}', vars.nomeDestinatario)
+    // ── Destinatário ──────────────────────────────────────────────────
+    .replaceAll('{{ALUNO}}',         vars.nomeDestinatario)
+    .replaceAll('{{NOME}}',          vars.nomeDestinatario)
+    .replaceAll('{{APOIADOR}}',      vars.nomeDestinatario)
+    .replaceAll('{{PARCEIRO}}',      vars.nomeDestinatario)
     .replaceAll('{{NOME_APOIADOR}}', vars.nomeDestinatario)
-    .replaceAll('{{MOTIVO}}', vars.motivo)
-    .replaceAll('{{DATA_EMISSAO}}', vars.dataEmissao)
-    .replaceAll('{{DATA_EVENTO}}', vars.dataEmissao)
-    .replaceAll('{{DATA}}', vars.dataEmissao);
+    // ── Nome do Evento ────────────────────────────────────────────────
+    .replaceAll('{{NOME_EVENTO}}',   vars.nomeEvento)   // Tag semântica recomendada
+    .replaceAll('{{MOTIVO}}',        vars.nomeEvento)   // Alias legado (compatibilidade)
+    // ── Data do Evento ───────────────────────────────────────────────
+    .replaceAll('{{DATA_EVENTO}}',   vars.dataEvento)   // Tag semântica recomendada
+    .replaceAll('{{DATA}}',          vars.dataEvento)   // Alias legado (compatibilidade)
+    // ── Data de Emissão do Certificado (automática) ──────────────────
+    .replaceAll('{{DATA_EMISSAO}}',  vars.dataEmissao);
 }
