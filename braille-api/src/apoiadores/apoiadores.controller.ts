@@ -194,27 +194,10 @@ export class ApoiadoresController {
     return this.apoiadoresService.getCertificados(id);
   }
 
-  /**
-   * Entrega PDF: redirect ou buffer conforme resultado do Service.
-   * SSRF prevention já foi feita no ApoiadoresService.validarUrlRedirect().
-   * Controller não valida URL — recebe apenas URL já certificada como segura.
-   */
   @Get(':id/certificados/:certId/pdf')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  async getPdfCertificado(@Param('id') id: string, @Param('certId') certId: string, @Res() res: Response) {
-    const result = await this.apoiadoresService.gerarPdfCertificado(id, certId);
-
-    if (result.type === 'redirect') {
-      res.redirect(301, result.url); // URL validada pelo Service (CWE-918 safe)
-      return;
-    }
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="certificado-${certId}.pdf"`,
-      'Content-Length': result.buffer.length,
-    });
-    res.end(result.buffer);
+  async getPdfCertificado(@Param('id') id: string, @Param('certId') certId: string) {
+    return this.apoiadoresService.gerarPdfCertificado(id, certId);
   }
 }
