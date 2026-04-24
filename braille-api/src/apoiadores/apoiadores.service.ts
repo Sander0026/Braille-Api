@@ -53,7 +53,7 @@ const REDIRECT_ALLOWLIST = new Set(['res.cloudinary.com', 'api.cloudinary.com'])
 
 // ── Tipo de retorno do gerarPdf ────────────────────────────────────────────────
 
-export type PdfResult = { type: 'buffer'; buffer: Buffer } | { type: 'redirect'; url: string };
+
 
 // ── Service ────────────────────────────────────────────────────────────────────
 
@@ -411,7 +411,7 @@ export class ApoiadoresService {
    * Inclui SSRF prevention (OWASP A10 / CWE-918): valida o host da URL
    * antes de retornar ao Controller — Controller nunca recebe URL não validada.
    */
-  async gerarPdfCertificado(apoiadorId: string, certId: string): Promise<PdfResult> {
+  async gerarPdfCertificado(apoiadorId: string, certId: string): Promise<{ pdfUrl: string; codigoValidacao: string }> {
     const [apoiador, cert] = await Promise.all([
       this.findOne(apoiadorId),
       this.prisma.certificadoEmitido.findFirst({
@@ -445,12 +445,12 @@ export class ApoiadoresService {
       if (!cert.pdfUrl) {
         throw new NotFoundException('Modelo do certificado foi excluído e não há PDF salvo.');
       }
-      return { type: 'redirect', url: this.validarUrlRedirect(cert.pdfUrl) };
+      return { pdfUrl: this.validarUrlRedirect(cert.pdfUrl), codigoValidacao: cert.codigoValidacao };
     }
 
     // CACHE HIT: PDF já gerado e salvo no Cloudinary — redirect instantâneo sem regerar
     if (cert.pdfUrl) {
-      return { type: 'redirect', url: this.validarUrlRedirect(cert.pdfUrl) };
+      return { pdfUrl: this.validarUrlRedirect(cert.pdfUrl), codigoValidacao: cert.codigoValidacao };
     }
 
     const nomeDestinatario = apoiador.nomeFantasia || apoiador.nomeRazaoSocial || 'Apoiador';
@@ -474,11 +474,13 @@ export class ApoiadoresService {
     );
 
     // Armazena no Cloudinary para que o próximo acesso seja instantâneo (cache miss → hit)
+    let finalUrl: string;
     try {
       const { url } = await this.uploadService.uploadPdfBuffer(
         buffer,
         `cert-apoiador-${cert.id}`,
       );
+      finalUrl = url;
       await this.prisma.certificadoEmitido.update({
         where: { id: cert.id },
         data: { pdfUrl: url },
@@ -486,9 +488,10 @@ export class ApoiadoresService {
     } catch (cacheErr: unknown) {
       const msg = cacheErr instanceof Error ? cacheErr.message : JSON.stringify(cacheErr);
       this.logger.warn(`[CertificadoEmitido] Falha ao cachear PDF ${cert.id}: ${msg}`);
+      throw new BadRequestException('Falha ao armazenar o certificado. Tente novamente.');
     }
 
-    return { type: 'buffer', buffer };
+    return { pdfUrl: finalUrl, codigoValidacao: cert.codigoValidacao };
   }
 
   // ── Helpers Privados ────────────────────────────────────────────────────────
