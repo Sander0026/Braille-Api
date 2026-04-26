@@ -1,5 +1,6 @@
 import { Injectable, ConflictException, InternalServerErrorException, NotFoundException, Logger } from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
+import type { Response } from 'express';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -332,20 +333,20 @@ export class BeneficiariesService {
 
   // ── Exportar Excel ─────────────────────────────────────────────────────────
 
-  async exportToXlsx(query: QueryBeneficiaryDto): Promise<Buffer> {
+  async exportToXlsxStream(query: QueryBeneficiaryDto, res: Response): Promise<void> {
     const where = this.buildWhere(query);
-    const alunos = await this.prisma.aluno.findMany({
-      where,
-      orderBy: { nomeCompleto: 'asc' },
-      select: ALUNO_EXPORT_SELECT,
-    });
 
-    const workbook = new ExcelJS.Workbook();
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+      stream: res,
+      useStyles: true,
+      useSharedStrings: true,
+    });
+    
     workbook.creator = 'Instituto Louis Braille';
-    workbook.created = new Date();
 
     const sheet = workbook.addWorksheet('Alunos', {
       pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      views: [{ state: 'frozen', ySplit: 1 }]
     });
 
     const headers = [
@@ -393,53 +394,78 @@ export class BeneficiariesService {
       cell.border = { bottom: { style: 'medium', color: { argb: 'FF2563EB' } } };
     });
     headerRow.height = 22;
+    headerRow.commit();
 
-    const fmtData = (d: Date) => (d ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '');
+    const fmtData = (d: Date | null | undefined) => (d ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '');
     const fmtEnum = (v: string | null | undefined) => v?.replaceAll('_', ' ') ?? '';
 
-    alunos.forEach((a, idx) => {
-      const row = sheet.addRow({
-        nome: a.nomeCompleto,
-        mat: a.matricula ?? '',
-        cpf: a.cpf ?? '',
-        rg: a.rg ?? '',
-        nasc: fmtData(a.dataNascimento),
-        genero: a.genero ?? '',
-        estCiv: a.estadoCivil ?? '',
-        tel: a.telefoneContato ?? '',
-        email: a.email ?? '',
-        cep: a.cep ?? '',
-        rua: a.rua ?? '',
-        num: a.numero ?? '',
-        bairro: a.bairro ?? '',
-        cidade: a.cidade ?? '',
-        uf: a.uf ?? '',
-        tipoDef: fmtEnum(a.tipoDeficiencia),
-        causa: fmtEnum(a.causaDeficiencia),
-        pref: fmtEnum(a.prefAcessibilidade),
-        acomp: a.precisaAcompanhante ? 'Sim' : 'Não',
-        tec: a.tecAssistivas ?? '',
-        corRaca: fmtEnum(a.corRaca),
-        esc: a.escolaridade ?? '',
-        prof: a.profissao ?? '',
-        renda: a.rendaFamiliar ?? '',
-        benef: a.beneficiosGov ?? '',
-        status: a.statusAtivo ? 'Ativo' : 'Inativo',
-        criado: fmtData(a.criadoEm),
+    let skip = 0;
+    const take = 1000;
+    let hasMore = true;
+    let rowIndex = 0;
+
+    while (hasMore) {
+      const alunos = await this.prisma.aluno.findMany({
+        where,
+        orderBy: { nomeCompleto: 'asc' },
+        select: ALUNO_EXPORT_SELECT,
+        skip,
+        take,
       });
 
-      // Zebra (linhas ímpares)
-      if (idx % 2 === 1) {
-        row.eachCell((cell) => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F6FF' } };
-        });
+      if (alunos.length === 0) {
+        hasMore = false;
+        break;
       }
-    });
 
-    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+      for (const a of alunos) {
+        const rowData = {
+          nome: a.nomeCompleto,
+          mat: a.matricula ?? '',
+          cpf: a.cpf ?? '',
+          rg: a.rg ?? '',
+          nasc: fmtData(a.dataNascimento),
+          genero: a.genero ?? '',
+          estCiv: a.estadoCivil ?? '',
+          tel: a.telefoneContato ?? '',
+          email: a.email ?? '',
+          cep: a.cep ?? '',
+          rua: a.rua ?? '',
+          num: a.numero ?? '',
+          bairro: a.bairro ?? '',
+          cidade: a.cidade ?? '',
+          uf: a.uf ?? '',
+          tipoDef: fmtEnum(a.tipoDeficiencia),
+          causa: fmtEnum(a.causaDeficiencia),
+          pref: fmtEnum(a.prefAcessibilidade),
+          acomp: a.precisaAcompanhante ? 'Sim' : 'Não',
+          tec: a.tecAssistivas ?? '',
+          corRaca: fmtEnum(a.corRaca),
+          esc: a.escolaridade ?? '',
+          prof: a.profissao ?? '',
+          renda: a.rendaFamiliar ?? '',
+          benef: a.beneficiosGov ?? '',
+          status: a.statusAtivo ? 'Ativo' : 'Inativo',
+          criado: fmtData(a.criadoEm),
+        };
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+        const row = sheet.addRow(rowData);
+        
+        // Zebra (linhas ímpares = rowIndex mod 2 === 0 porque o cabeçalho é a linha 1)
+        if (rowIndex % 2 === 0) {
+          row.eachCell((cell) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F6FF' } };
+          });
+        }
+        
+        row.commit();
+        rowIndex++;
+      }
+
+      skip += take;
+    }
+
+    await workbook.commit();
   }
 
   // ── Detalhe (Endpoint público — mantém include completo para o Frontend) ──
