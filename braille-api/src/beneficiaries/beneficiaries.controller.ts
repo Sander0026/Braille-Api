@@ -91,17 +91,17 @@ export class BeneficiariesController {
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Exportar lista de alunos filtrada como planilha Excel (.xlsx)' })
   async exportXlsx(@Query() query: QueryBeneficiaryDto, @Res() res: Response) {
-    const buffer = await this.beneficiariesService.exportToXlsx(query);
     const date = new Date().toISOString().slice(0, 10);
     // Sanitiza status para prevenir header injection (OWASP A3)
     const status = query.inativos ? 'Inativos' : 'Ativos';
     const filename = `Alunos_${status}_${date}.xlsx`.replaceAll(/[^\w._-]/g, '_');
+    
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Length': buffer.length,
     });
-    res.end(buffer);
+    
+    await this.beneficiariesService.exportToXlsxStream(query, res);
   }
 
   @Get(':id')
