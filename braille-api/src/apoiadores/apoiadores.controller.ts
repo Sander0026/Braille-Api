@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { ApoiadoresService } from './apoiadores.service';
 import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
@@ -31,6 +32,7 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 // ── Constante de Roles ─────────────────────────────────────────────────────────
 /** Roles com acesso à gestão de apoiadores — evita repetição em cada rota. */
 const GESTAO_ROLES = ['ADMIN', 'COMUNICACAO', 'SECRETARIA'] as const;
+const CLOUDINARY_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 // ── Controller ─────────────────────────────────────────────────────────────────
 
@@ -105,7 +107,24 @@ export class ApoiadoresController {
   @Patch(':id/logo')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(...GESTAO_ROLES)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: CLOUDINARY_MAX_FILE_SIZE },
+      fileFilter: (_req, file, callback) => {
+        const isImage = ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype);
+        if (isImage) {
+          callback(null, true);
+          return;
+        }
+
+        callback(
+          new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens JPG, PNG ou WebP.'),
+          false,
+        );
+      },
+    }),
+  )
   async uploadLogo(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
