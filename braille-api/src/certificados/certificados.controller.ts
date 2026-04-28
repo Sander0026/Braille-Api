@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { CertificadosService } from './certificados.service';
@@ -39,6 +40,29 @@ export class CertificadosController {
     private readonly certificadosService: CertificadosService,
     private readonly pdfService: PdfService,
   ) {}
+
+  private static readonly cloudinaryMaxFileSize = 10 * 1024 * 1024;
+
+  private static readonly imageUploadInterceptorOptions = {
+    storage: memoryStorage(),
+    limits: { fileSize: CertificadosController.cloudinaryMaxFileSize },
+    fileFilter: (
+      _req: unknown,
+      file: Express.Multer.File,
+      callback: (error: Error | null, acceptFile: boolean) => void,
+    ) => {
+      const isImage = ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype);
+      if (isImage) {
+        callback(null, true);
+        return;
+      }
+
+      callback(
+        new BadRequestException('Tipo de arquivo não suportado. Envie apenas imagens JPG, PNG ou WebP.'),
+        false,
+      );
+    },
+  };
 
   @Get('teste')
   @ApiOperation({ summary: 'Rota temporária de homologação geométrica do PDF' })
@@ -98,7 +122,7 @@ export class CertificadosController {
       { name: 'arteBase', maxCount: 1 },
       { name: 'assinatura', maxCount: 1 },
       { name: 'assinatura2', maxCount: 1 },
-    ]),
+    ], CertificadosController.imageUploadInterceptorOptions),
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Cria um novo modelo de certificado' })
@@ -148,7 +172,7 @@ export class CertificadosController {
       { name: 'arteBase', maxCount: 1 },
       { name: 'assinatura', maxCount: 1 },
       { name: 'assinatura2', maxCount: 1 },
-    ]),
+    ], CertificadosController.imageUploadInterceptorOptions),
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Atualiza um modelo de certificado (texto e/ou imagens)' })

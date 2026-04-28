@@ -73,6 +73,7 @@ const ALUNO_MUTATION_SELECT = { id: true, fotoPerfil: true, termoLgpdUrl: true, 
 @Injectable()
 export class BeneficiariesService {
   private readonly logger = new Logger(BeneficiariesService.name);
+  private static readonly MAX_CREATE_RETRIES = 3;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -92,6 +93,22 @@ export class BeneficiariesService {
       ip: au?.ip,
       userAgent: au?.userAgent,
     };
+  }
+
+  private normalizeUniqueDoc(value?: string | null): string | undefined {
+    const normalized = value?.trim();
+    return normalized ? normalized : undefined;
+  }
+
+  private getPrismaUniqueTargets(error: Prisma.PrismaClientKnownRequestError): string[] {
+    const target = error.meta?.target;
+    if (Array.isArray(target)) {
+      return target.filter((item): item is string => typeof item === 'string');
+    }
+    if (typeof target === 'string') {
+      return [target];
+    }
+    return [];
   }
 
   /**
@@ -192,9 +209,17 @@ export class BeneficiariesService {
   // ── Criar ──────────────────────────────────────────────────────────────────
 
   async create(dto: CreateBeneficiaryDto, auditUser?: AuditUser) {
+    const cpf = this.normalizeUniqueDoc(dto.cpf);
+    const rg = this.normalizeUniqueDoc(dto.rg);
+    const dtoNormalizado = {
+      ...dto,
+      ...(cpf ? { cpf } : {}),
+      ...(rg ? { rg } : {}),
+    };
+
     const orCondition: Prisma.AlunoWhereInput[] = [];
-    if (dto.cpf) orCondition.push({ cpf: dto.cpf });
-    if (dto.rg) orCondition.push({ rg: dto.rg });
+    if (cpf) orCondition.push({ cpf });
+    if (rg) orCondition.push({ rg });
 
     const alunoExistente =
       orCondition.length > 0
@@ -219,15 +244,47 @@ export class BeneficiariesService {
       };
     }
 
-    const matricula = await gerarMatriculaAluno(this.prisma);
-    const { dataNascimento, ...resto } = dto;
-    const alunoNovo = await this.prisma.aluno.create({
-      data: {
-        ...(resto as unknown as Prisma.AlunoCreateInput),
-        matricula,
-        dataNascimento: new Date(dataNascimento),
-      },
-    });
+    const { dataNascimento, ...resto } = dtoNormalizado;
+
+    let alunoNovo: Awaited<ReturnType<typeof this.prisma.aluno.create>> | null = null;
+
+    for (let tentativa = 1; tentativa <= BeneficiariesService.MAX_CREATE_RETRIES; tentativa++) {
+      const matricula = await gerarMatriculaAluno(this.prisma);
+
+      try {
+        alunoNovo = await this.prisma.aluno.create({
+          data: {
+            ...(resto as unknown as Prisma.AlunoCreateInput),
+            ...(cpf ? { cpf } : {}),
+            ...(rg ? { rg } : {}),
+            matricula,
+            dataNascimento: new Date(dataNascimento),
+          },
+        });
+        break;
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+          throw error;
+        }
+
+        const targets = this.getPrismaUniqueTargets(error);
+
+        if (targets.includes('matricula') && tentativa < BeneficiariesService.MAX_CREATE_RETRIES) {
+          this.logger.warn(`Colisão de matrícula ao criar aluno. Nova tentativa ${tentativa + 1}.`);
+          continue;
+        }
+
+        if (targets.includes('cpf') || targets.includes('rg')) {
+          throw new ConflictException('Já existe um aluno com o CPF ou RG informado.');
+        }
+
+        throw error;
+      }
+    }
+
+    if (!alunoNovo) {
+      throw new InternalServerErrorException('Não foi possível concluir o cadastro do aluno no momento.');
+    }
 
     this.auditService.registrar({
       ...this.toAuditMeta(auditUser),
