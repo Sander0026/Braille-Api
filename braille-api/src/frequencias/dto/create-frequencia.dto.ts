@@ -1,16 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsDateString, IsUUID } from 'class-validator';
+import { StatusFrequencia } from '@prisma/client';
+import { IsString, IsBoolean, IsOptional, IsDateString, IsUUID, IsEnum, ValidateIf } from 'class-validator';
 
 export class CreateFrequenciaDto {
   @ApiProperty({ description: 'Data da aula no formato ISO (YYYY-MM-DD)' })
   @IsDateString()
-  @IsNotEmpty()
   dataAula: string;
 
-  @ApiProperty({ description: 'Verdadeiro para Presente, Falso para Falta' })
+  @ApiPropertyOptional({
+    enum: StatusFrequencia,
+    description: 'Status oficial da frequência. Campo preferencial; substitui o legado presente.',
+  })
+  @IsEnum(StatusFrequencia)
+  @IsOptional()
+  status?: StatusFrequencia;
+
+  @ApiPropertyOptional({
+    description: 'LEGACY: verdadeiro para Presente, falso para Falta. Mantido temporariamente para compatibilidade com o frontend atual.',
+    deprecated: true,
+  })
+  @ValidateIf((dto: CreateFrequenciaDto) => dto.status === undefined)
   @IsBoolean()
-  @IsNotEmpty()
-  presente: boolean;
+  presente?: boolean;
 
   @ApiPropertyOptional({ description: 'Justificativa da falta ou observação' })
   @IsString()
@@ -19,11 +30,9 @@ export class CreateFrequenciaDto {
 
   @ApiProperty({ description: 'ID do aluno (Beneficiário)' })
   @IsUUID()
-  @IsNotEmpty()
   alunoId: string;
 
   @ApiProperty({ description: 'ID da Turma/Oficina' })
   @IsUUID()
-  @IsNotEmpty()
   turmaId: string;
 }
