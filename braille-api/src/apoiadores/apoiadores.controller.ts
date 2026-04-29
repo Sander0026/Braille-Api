@@ -199,9 +199,12 @@ export class ApoiadoresController {
   emitirCertificado(
     @Param('id') id: string,
     @Body() dto: EmitirCertificadoApoiadorDto,
+    @Query('incluirPdfBase64') incluirPdfBase64: string | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.apoiadoresService.emitirCertificado(id, dto, getAuditUser(req));
+    return this.apoiadoresService.emitirCertificado(id, dto, getAuditUser(req), {
+      incluirPdfBase64: incluirPdfBase64 === 'true',
+    });
   }
 
   @Get(':id/certificados')

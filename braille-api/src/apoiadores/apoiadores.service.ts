@@ -7,7 +7,7 @@ import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { formatarDataBR, preencherTemplateTexto } from '../common/helpers/data.helper';
 import { CreateApoiadorDto, UpdateApoiadorDto, CreateAcaoApoiadorDto, UpdateAcaoApoiadorDto } from './dto/apoiador.dto';
 import { EmitirCertificadoApoiadorDto } from './dto/emitir-certificado-apoiador.dto';
-import { Prisma, TipoApoiador, AuditAcao } from '@prisma/client';
+import { Prisma, TipoApoiador, AuditAcao, CertificadoEmitido } from '@prisma/client';
 import * as crypto from 'node:crypto';
 
 // ── Tipos Internos ─────────────────────────────────────────────────────────────
@@ -50,6 +50,18 @@ const LIST_SELECT = {
 
 /** Hosts autorizados para redirect de PDFs — SSRF prevention (OWASP A10 / CWE-918). */
 const REDIRECT_ALLOWLIST = new Set(['res.cloudinary.com', 'api.cloudinary.com']);
+
+export interface EmitirCertificadoOptions {
+  incluirPdfBase64?: boolean;
+  substituirCertificadosDaAcaoId?: string;
+}
+
+export interface EmitirCertificadoResponse {
+  certificado: CertificadoEmitido;
+  pdfUrl: string;
+  codigoValidacao: string;
+  pdfBase64?: string;
+}
 
 // ── Tipo de retorno do gerarPdf ────────────────────────────────────────────────
 
@@ -156,6 +168,29 @@ export class ApoiadoresService {
     return result;
   }
 
+  private async uploadCertificadoPdf(pdfBuffer: Buffer, fileName: string): Promise<string> {
+    try {
+      const uploaded = await this.uploadService.uploadPdfBuffer(pdfBuffer, fileName);
+      return uploaded.url;
+    } catch (uploadErr: unknown) {
+      const msg = uploadErr instanceof Error ? uploadErr.message : JSON.stringify(uploadErr);
+      this.logger.error(`[CertificadoEmitido] Falha no upload para o Cloudinary: ${msg}`);
+      throw new BadRequestException('Falha ao armazenar o certificado. Tente novamente.');
+    }
+  }
+
+  private async substituirCertificadosDaAcao(
+    acaoId: string,
+    criarCertificado: Prisma.PrismaPromise<CertificadoEmitido>,
+  ): Promise<CertificadoEmitido> {
+    const [, certificado] = await this.prisma.$transaction([
+      this.prisma.certificadoEmitido.deleteMany({ where: { acaoId } }),
+      criarCertificado,
+    ]);
+
+    return certificado;
+  }
+
   /**
    * Atualiza somente o campo logoUrl — chamado após upload bem-sucedido pelo Controller.
    * A verificação de existência já foi feita pelo Controller antes do upload.
@@ -203,7 +238,7 @@ export class ApoiadoresService {
     const apoiador = await this.findOne(id);
     const result = await this.prisma.apoiador.update({
       where: { id },
-      data: { ativo: true, exibirNoSite: true },
+      data: { ativo: true, exibirNoSite: false },
     });
 
     this.dispararAuditoria({
@@ -212,7 +247,7 @@ export class ApoiadoresService {
       acao: AuditAcao.RESTAURAR,
       auditUser,
       oldValue: { ativo: apoiador.ativo, exibirNoSite: apoiador.exibirNoSite },
-      newValue: { ativo: true, exibirNoSite: true },
+      newValue: { ativo: true, exibirNoSite: false },
     });
 
     return result;
@@ -272,9 +307,8 @@ export class ApoiadoresService {
       },
     });
 
-    // Reemissão de certificado: atômica — deleta existentes e recria num único fluxo
+    // Reemissao segura: so remove certificados antigos depois que o novo PDF foi armazenado.
     if (dto.modeloCertificadoId) {
-      await this.prisma.certificadoEmitido.deleteMany({ where: { acaoId } });
       await this.emitirCertificado(
         apoiadorId,
         {
@@ -284,6 +318,7 @@ export class ApoiadoresService {
           dataEvento: dto.dataEvento,   // data do evento da ação
         },
         auditUser,
+        { substituirCertificadosDaAcaoId: acaoId },
       );
     }
 
@@ -331,7 +366,12 @@ export class ApoiadoresService {
 
   // ── Certificados ────────────────────────────────────────────────────────────
 
-  async emitirCertificado(apoiadorId: string, dto: EmitirCertificadoApoiadorDto, auditUser?: AuditUser) {
+  async emitirCertificado(
+    apoiadorId: string,
+    dto: EmitirCertificadoApoiadorDto,
+    auditUser?: AuditUser,
+    options: EmitirCertificadoOptions = {},
+  ): Promise<EmitirCertificadoResponse> {
     // Promise.all paralelo: apoiador + modelo buscados numa só rodada de I/O
     const [apoiador, modelo] = await Promise.all([
       this.findOne(apoiadorId),
@@ -359,18 +399,10 @@ export class ApoiadoresService {
 
     const pdfBuffer = await this.pdfService.construirPdfBase(modelo, textoFormatado, codigoValidacao, nomeDestinatario);
 
-    // Upload opcional — falha não impede o registro do certificado
-    let pdfUrl: string | null = null;
-    try {
-      const fileName = `certificado-${codigoValidacao}.pdf`;
-      const uploaded = await this.uploadService.uploadPdfBuffer(pdfBuffer, fileName);
-      pdfUrl = uploaded.url;
-    } catch (uploadErr: unknown) {
-      const msg = uploadErr instanceof Error ? uploadErr.message : JSON.stringify(uploadErr);
-      this.logger.error(`[CertificadoEmitido] Falha no upload para o Cloudinary: ${msg}`);
-    }
+    // O registro so e criado depois que o PDF foi armazenado com sucesso.
+    const pdfUrl = await this.uploadCertificadoPdf(pdfBuffer, `certificado-${codigoValidacao}.pdf`);
 
-    const certificado = await this.prisma.certificadoEmitido.create({
+    const criarCertificado = this.prisma.certificadoEmitido.create({
       data: {
         codigoValidacao,
         modeloId: modelo.id,
@@ -382,6 +414,10 @@ export class ApoiadoresService {
       },
     });
 
+    const certificado = options.substituirCertificadosDaAcaoId
+      ? await this.substituirCertificadosDaAcao(options.substituirCertificadosDaAcaoId, criarCertificado)
+      : await criarCertificado;
+
     this.dispararAuditoria({
       entidade: 'CertificadoEmitido',
       registroId: certificado.id,
@@ -390,7 +426,12 @@ export class ApoiadoresService {
       newValue: certificado,
     });
 
-    return { certificado, pdfBase64: pdfBuffer.toString('base64') };
+    return {
+      certificado,
+      pdfUrl,
+      codigoValidacao,
+      ...(options.incluirPdfBase64 ? { pdfBase64: pdfBuffer.toString('base64') } : {}),
+    };
   }
 
   async getCertificados(apoiadorId: string) {
