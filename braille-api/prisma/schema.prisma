@@ -132,10 +132,10 @@ model User {
   precisaTrocarSenha   Boolean   @default(false)
   role                 Role      @default(PROFESSOR)
   fotoPerfil           String?
-  refreshToken         String? // Visto longo de 7 dias para rotacionar sessoes
+  refreshToken         String? // Token longo de 7 dias para rotacionar sessões
   refreshTokenExpiraEm DateTime?
 
-  // Contato e Endereço (opcionais)
+  // Contato e endereço opcionais
   telefone    String?
   cep         String?
   rua         String?
@@ -156,16 +156,16 @@ model User {
   @@index([role])
   @@index([refreshTokenExpiraEm])
   @@index([cpf])
-  @@index([email]) // acelera buscas caso existam muitos usuarios
+  @@index([email]) // Acelera buscas quando houver muitos usuários
 }
 
 model Aluno {
   id String @id @default(uuid())
 
-  // 0. Identificação Institucional
+  // 0. Identificação institucional
   matricula String? @unique // Ex: 20260001 (gerado automaticamente)
 
-  // 1. Dados Identificadores
+  // 1. Dados identificadores
   nomeCompleto   String
   dataNascimento DateTime
   fotoPerfil     String?
@@ -175,7 +175,7 @@ model Aluno {
   estadoCivil    String?
   corRaca        CorRaca?
 
-  // 2. Contato e Localização
+  // 2. Contato e localização
   cep               String?
   rua               String?
   numero            String?
@@ -188,7 +188,7 @@ model Aluno {
   email             String?
   contatoEmergencia String?
 
-  // 3. Perfil da Deficiência
+  // 3. Perfil da deficiência
   tipoDeficiencia  TipoDeficiencia?
   causaDeficiencia CausaDeficiencia?
   idadeOcorrencia  String?
@@ -196,29 +196,29 @@ model Aluno {
   laudoUrl         String? // URL da imagem do laudo no Cloudinary
   tecAssistivas    String? // Ex: Bengala, cão-guia, NVDA
 
-  // 3b. Documentos Legais e Compliance
-  termoLgpdAceito   Boolean   @default(false) // Aluno aceitou o Termo LGPD?
+  // 3b. Documentos legais e compliance
+  termoLgpdAceito   Boolean   @default(false) // Aluno aceitou o termo LGPD?
   termoLgpdAceitoEm DateTime? // Timestamp do aceite
-  termoLgpdUrl      String? // URL do PDF do Termo LGPD assinado (Cloudinary)
-  atestadoUrl       String? // URL do Atestado Médico em PDF (Cloudinary)
+  termoLgpdUrl      String? // URL do PDF do termo LGPD assinado no Cloudinary
+  atestadoUrl       String? // URL do atestado médico em PDF no Cloudinary
   atestadoEmitidoEm DateTime? // Data de emissão do atestado
 
-  // 4. Situação Socioeconômica
+  // 4. Situação socioeconômica
   escolaridade       String?
   profissao          String?
   rendaFamiliar      String?
   beneficiosGov      String? // Ex: BPC/LOAS
   composicaoFamiliar String?
 
-  // 5. Saúde e Autonomia
+  // 5. Saúde e autonomia
   precisaAcompanhante Boolean @default(false)
   acompOftalmologico  Boolean @default(false)
   outrasComorbidades  String?
 
-  // 6. Preferências de Acessibilidade
+  // 6. Preferências de acessibilidade
   prefAcessibilidade PreferenciaAcessibilidade?
 
-  // Controles do Sistema
+  // Controles do sistema
   statusAtivo  Boolean  @default(true)
   excluido     Boolean  @default(false)
   criadoEm     DateTime @default(now())
@@ -231,19 +231,19 @@ model Aluno {
   laudos               LaudoMedico[]
   certificadosEmitidos CertificadoEmitido[]
 
-  @@index([statusAtivo, excluido]) // listagem de alunos ativos/inativos
-  @@index([nomeCompleto]) // busca full-text por nome
-  @@index([matricula]) // busca por número de matrícula
-  @@index([cpf]) // O(log N) para buscas numéricas frequentes
+  @@index([statusAtivo, excluido]) // Listagem de alunos ativos/inativos
+  @@index([nomeCompleto]) // Busca por nome
+  @@index([matricula]) // Busca por número de matrícula
+  @@index([cpf]) // Busca numérica frequente
   @@index([rg])
-  @@index([email]) // otimiza recuperação de contatos
+  @@index([email]) // Otimiza recuperação de contatos
 }
 
 model Turma {
   id               String      @id @default(uuid())
   nome             String // Ex: Oficina de Braille, Oficina de Cerâmica
   descricao        String?
-  horario          String? // Ex: "Seg e Qua - 14h as 16h" (campo legado — Fase 3 refatorará)
+  horario          String? // Campo legado textual; a grade oficial fica em GradeHoraria
   capacidadeMaxima Int?
   statusAtivo      Boolean     @default(true)
   excluido         Boolean     @default(false)
@@ -258,12 +258,12 @@ model Turma {
   // Relacionamentos
   professorId         String
   professor           User               @relation("TurmaProfessorPrincipal", fields: [professorId], references: [id])
-  professorAuxiliarId String? // Substituto ou co-professor (opcional)
+  professorAuxiliarId String? // Substituto ou co-professor opcional
   matriculasOficina   MatriculaOficina[]
   frequencias         Frequencia[]
   gradeHoraria        GradeHoraria[] // Turnos estruturados da turma
 
-  // Certificados (opcional, só ativado quando o professor/admin decidir)
+  // Certificados opcionais, ativados quando professor/admin configurar modelo
   modeloCertificadoId  String?
   modeloCertificado    ModeloCertificado?   @relation(fields: [modeloCertificadoId], references: [id])
   certificadosEmitidos CertificadoEmitido[]
@@ -276,7 +276,7 @@ model MatriculaOficina {
   id               String          @id @default(uuid())
   status           MatriculaStatus @default(ATIVA)
   dataEntrada      DateTime        @default(now())
-  dataEncerramento DateTime? // Preenchida ao Concluir/Evadir/Cancelar
+  dataEncerramento DateTime? // Preenchida ao concluir, evadir ou cancelar
   observacao       String? // Motivo do cancelamento/evasão etc.
   criadoEm         DateTime        @default(now())
   atualizadoEm     DateTime        @updatedAt
@@ -287,21 +287,21 @@ model MatriculaOficina {
   turmaId String
   turma   Turma  @relation(fields: [turmaId], references: [id])
 
-  // RAÚNCO: sem @@unique aqui — a validação de duplicidade simultânea
-  // fica no NestJS ("aluno já tem matrícula ATIVA nessa turma?").
+  // ATENÇÃO: sem @@unique aqui. A validação de duplicidade simultânea
+  // fica no NestJS: "aluno já tem matrícula ATIVA nessa turma?".
   // Isso permite que o aluno volte à mesma turma após cancelamento/evasão.
   @@index([alunoId])
   @@index([turmaId, status])
 }
 
-// ── Grade Horária estruturada (Fase 3) ──────────────────────────
-// horaInicio e horaFim em MINUTOS desde meia-noite (ex: 840 = 14:00, 960 = 16:00)
-// Isso evita qualquer problema de timezone e torna a comparação de sobreposição trivial.
+// ── Grade Horária estruturada ─────────────────────────────────────
+// horaInicio e horaFim em minutos desde meia-noite (ex: 840 = 14:00, 960 = 16:00).
+// Isso evita problemas de timezone e torna a comparação de sobreposição simples.
 model GradeHoraria {
   id         String    @id @default(uuid())
   dia        DiaSemana
-  horaInicio Int // Ex: 840 = 14h00
-  horaFim    Int // Ex: 960 = 16h00
+  horaInicio Int // Ex: 840 = 14:00
+  horaFim    Int // Ex: 960 = 16:00
   criadoEm   DateTime  @default(now())
 
   turmaId String
@@ -315,25 +315,25 @@ model GradeHoraria {
   @@index([dia, horaInicio, horaFim])
 }
 
-// Tabela de Frequência (Chamada)
+// Tabela de Frequência (chamada)
 model Frequencia {
   id         String           @id @default(uuid())
-  // @db.Date: salva apenas 2026-03-11 (sem horas), garantindo que o
-  // @@unique funcione como "1 chamada por aluno por turma por dia",
+  // @db.Date salva apenas a data (ex: 2026-03-11), sem horário.
+  // Isso garante que o @@unique funcione como "1 chamada por aluno por turma por dia",
   // sem falsos negativos por milissegundos diferentes.
   dataAula   DateTime         @db.Date
-  // TODO(2026-04): `presente` é um campo LEGACY mantido apenas para compatibilidade com
-  // relatórios antigos. O campo `status` (enum StatusFrequencia) é o substituto definitivo.
-  // Remover em conjunto com a migração da Fase 6 (relatórios refatorados).
-  // NUNCA atualizar `presente` sem sincronizar `status` — risco de divergência silenciosa.
+  // TODO(2026-04): `presente` é um campo legado mantido apenas para compatibilidade
+  // temporária. O campo `status` (enum StatusFrequencia) é o substituto definitivo.
+  // Remover junto com a migração futura dos relatórios.
+  // Nunca atualizar `presente` sem sincronizar `status`.
   presente   Boolean          @default(false)
-  status     StatusFrequencia @default(FALTA) // substituto definitivo de `presente`
+  status     StatusFrequencia @default(FALTA) // Substituto definitivo de `presente`
   observacao String?
-  fechado    Boolean          @default(false) // true = diário encerrado, só ADMIN pode reabrir
-  fechadoEm  DateTime? // quando foi encerrado
+  fechado    Boolean          @default(false) // true = diário encerrado; só ADMIN pode reabrir
+  fechadoEm  DateTime? // Quando foi encerrado
   fechadoPor String? // userId de quem fechou
 
-  // Justificativa por Atestado (opcional)
+  // Justificativa por atestado opcional
   justificativaId String?
   justificativa   Atestado? @relation(fields: [justificativaId], references: [id])
 
@@ -344,25 +344,25 @@ model Frequencia {
   turma   Turma  @relation(fields: [turmaId], references: [id])
 
   @@unique([dataAula, alunoId, turmaId]) // 1 registro por aluno por turma por dia
-  @@index([alunoId]) // consultas de frequência por aluno
-  @@index([turmaId, dataAula]) // consultas de chamada por turma e data
-  @@index([justificativaId]) // busca de frequências por atestado
+  @@index([alunoId]) // Consultas de frequência por aluno
+  @@index([turmaId, dataAula]) // Consultas de chamada por turma e data
+  @@index([justificativaId]) // Busca de frequências por atestado
 }
 
-// ── Atestados / Justificativas de Falta ───────────────────────────
+// ── Atestados / justificativas de falta ───────────────────────────
 model Atestado {
   id              String   @id @default(uuid())
-  dataInicio      DateTime @db.Date // primeiro dia coberto
-  dataFim         DateTime @db.Date // último dia coberto
-  motivo          String // Ex: "Consulta Médica"
+  dataInicio      DateTime @db.Date // Primeiro dia coberto
+  dataFim         DateTime @db.Date // Último dia coberto
+  motivo          String // Ex: "Consulta médica"
   arquivoUrl      String? // URL PDF/imagem no Cloudinary
-  registradoPorId String // userId da Secretaria que cadastrou
+  registradoPorId String // userId da secretaria que cadastrou
   criadoEm        DateTime @default(now())
 
   // Relacionamentos
   alunoId     String
   aluno       Aluno        @relation(fields: [alunoId], references: [id])
-  frequencias Frequencia[] // faltas justificadas por este atestado
+  frequencias Frequencia[] // Faltas justificadas por este atestado
 
   @@index([alunoId])
   @@index([dataInicio, dataFim])
@@ -381,12 +381,12 @@ model Comunicado {
   autorId String
   autor   User   @relation(fields: [autorId], references: [id])
 
-  @@index([categoria]) // filtro por categoria
-  @@index([fixado, criadoEm]) // listagem com fixados primeiro
-  @@index([autorId]) // comunicados por autor
+  @@index([categoria]) // Filtro por categoria
+  @@index([fixado, criadoEm]) // Listagem com fixados primeiro
+  @@index([autorId]) // Comunicados por autor
 }
 
-// Tabela para o "Fale Conosco" do Site Público
+// Tabela para o "Fale Conosco" do site público
 model MensagemContato {
   id       String   @id @default(uuid())
   nome     String
@@ -398,7 +398,7 @@ model MensagemContato {
   criadoEm DateTime @default(now())
 }
 
-// ── Laudos Médicos (Histórico Múltiplo) ───────────────────────────
+// ── Laudos Médicos (histórico múltiplo) ───────────────────────────
 model LaudoMedico {
   id                String    @id @default(uuid())
   alunoId           String
@@ -407,7 +407,7 @@ model LaudoMedico {
   medicoResponsavel String?
   descricao         String?
   arquivoUrl        String
-  registradoPorId   String? // ID do criador (auditoria via auth token depois)
+  registradoPorId   String? // ID do criador para auditoria posterior
   criadoEm          DateTime  @default(now())
   excluidoEm        DateTime?
   excluidoPorId     String?
@@ -417,11 +417,11 @@ model LaudoMedico {
   @@index([excluidoEm])
 }
 
-// ══════════════════ CMS — Configurações do Site ══════════════════
+// ══════════════════ CMS — Configurações do site ══════════════════
 
-// Configurações gerais: cor primária, logo, nome, slogan, stats
+// Configurações gerais: cor primária, logo, nome, slogan, estatísticas etc.
 model SiteConfig {
-  chave        String   @id // "corPrimaria" | "logo" | "nomeInstituto" …
+  chave        String   @id // "corPrimaria" | "logo" | "nomeInstituto" etc.
   valor        String
   tipo         String   @default("texto") // "texto" | "cor" | "url" | "numero"
   descricao    String?
@@ -431,31 +431,31 @@ model SiteConfig {
 // Conteúdo editável das seções da home pública
 model ConteudoSecao {
   secao String // "hero" | "missao" | "valores" | "oficinas" | "depoimentos" | "cta"
-  chave String // "titulo" | "descricao" | "card_0_titulo" …
+  chave String // "titulo" | "descricao" | "card_0_titulo" etc.
   valor String @db.Text
 
   @@id([secao, chave])
 }
 
-// ───  Auditoria Central ─────────────────────────────────────────────
+// ─── Auditoria central ────────────────────────────────────────────
 
 /// Registro imutável de toda ação crítica no sistema.
 /// Nunca deve ser alterado ou deletado — apenas inserido.
 model AuditLog {
-  // NOTA: cuid() mantido intencionalmente (diferente dos demais modelos que usam uuid()).
+  // NOTA: cuid() mantido intencionalmente, diferente dos demais modelos que usam uuid().
   // A mudança para uuid() causaria drift de schema e reset destrutivo do banco.
-  // Padronização futura deve ser feita via migração de dados com script de conversão dedicado.
+  // Padronização futura deve ser feita via migração de dados com script dedicado.
   id         String    @id @default(cuid())
-  entidade   String // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" …
-  registroId String? // ID do registro afetado (null para LOGIN/LOGOUT)
+  entidade   String // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" etc.
+  registroId String? // ID do registro afetado; null para LOGIN/LOGOUT
   acao       AuditAcao
-  autorId    String? // ID do usuário que realizou a ação (null = sistema)
-  autorNome  String? // Snapshot do nome — preserva histórico mesmo se usuário for excluído
-  autorRole  String? // Snapshot do cargo (ADMIN | SECRETARIA | PROFESSOR …)
+  autorId    String? // ID do usuário que realizou a ação; null = sistema
+  autorNome  String? // Snapshot do nome, preserva histórico mesmo se usuário for excluído
+  autorRole  String? // Snapshot do cargo (ADMIN | SECRETARIA | PROFESSOR etc.)
   ip         String? // IP da requisição
   userAgent  String? // Browser/client da requisição
-  oldValue   Json? // Estado anterior do registro (para ATUALIZAR/EXCLUIR)
-  newValue   Json? // Estado novo do registro (para CRIAR/ATUALIZAR)
+  oldValue   Json? // Estado anterior do registro para ATUALIZAR/EXCLUIR
+  newValue   Json? // Estado novo do registro para CRIAR/ATUALIZAR
   criadoEm   DateTime  @default(now())
 
   @@index([entidade, registroId])
@@ -464,7 +464,7 @@ model AuditLog {
   @@index([acao])
 }
 
-// ─── Módulo Apoiadores ─────────────────────────────────────────────
+// ─── Módulo Apoiadores ────────────────────────────────────────────
 model Apoiador {
   id              String       @id @default(uuid())
   tipo            TipoApoiador
@@ -472,12 +472,12 @@ model Apoiador {
   nomeFantasia    String?
   cpfCnpj         String?
 
-  // Contato e Localização
+  // Contato e localização
   contatoPessoa String?
   telefone      String?
   email         String?
 
-  // Endereço Estruturado (Padronizado com CEP)
+  // Endereço estruturado e padronizado com CEP
   cep         String?
   rua         String?
   numero      String?
@@ -486,11 +486,11 @@ model Apoiador {
   cidade      String?
   uf          String?
 
-  // CRM e Segmentação
+  // CRM e segmentação
   atividadeEspecialidade String? // Ex: "Jornalista TV Gazeta", "Advogado"
   observacoes            String? @db.Text
 
-  // Imagem e Presença Pública
+  // Imagem e presença pública
   logoUrl      String?
   exibirNoSite Boolean @default(false)
 
@@ -535,7 +535,7 @@ model ModeloCertificado {
   layoutConfig    Json?
   tipo            TipoCertificado @default(ACADEMICO)
 
-  // Relacionamentos Ativos
+  // Relacionamentos ativos
   turmas               Turma[]
   certificadosEmitidos CertificadoEmitido[]
 
@@ -543,7 +543,7 @@ model ModeloCertificado {
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
-  @@index([tipo]) // filtro frequente: ACADEMICO vs HONRARIA
+  @@index([tipo]) // Filtro frequente: ACADEMICO vs HONRARIA
 }
 
 model CertificadoEmitido {
@@ -552,20 +552,20 @@ model CertificadoEmitido {
   dataEmissao     DateTime @default(now())
   pdfUrl          String? // Opcional se for salvar estaticamente no S3/Cloudinary
 
-  // Relacionamentos Diretos (Certificados Acadêmicos de Turmas)
+  // Relacionamentos diretos de certificados acadêmicos de turmas
   alunoId String? // Null se for honraria a apoiador
   aluno   Aluno?  @relation(fields: [alunoId], references: [id])
   turmaId String?
   turma   Turma?  @relation(fields: [turmaId], references: [id])
 
-  // Relacionamento para Apoiadores (Honraria "Amigo do Braille")
+  // Relacionamento para apoiadores: honraria "Amigo do Braille"
   apoiadorId          String?
   apoiador            Apoiador?     @relation(fields: [apoiadorId], references: [id])
   acaoId              String? // Ação/evento que motivou a honraria
   acao                AcaoApoiador? @relation(fields: [acaoId], references: [id])
   motivoPersonalizado String?       @db.Text // Texto livre para a tag {{MOTIVO}}
 
-  // Relação Estrutural
+  // Relação estrutural
   modeloId String
   modelo   ModeloCertificado @relation(fields: [modeloId], references: [id])
 
