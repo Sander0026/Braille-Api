@@ -8,11 +8,13 @@ import { Roles } from '../auth/roles.decorator';
 import { Role } from '@prisma/client';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @ApiTags('Laudos Médicos (Beneficiários)')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
+@SkipAudit()
 @Controller()
 export class LaudosController {
   constructor(private readonly laudosService: LaudosService) {}

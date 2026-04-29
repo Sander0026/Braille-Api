@@ -22,9 +22,11 @@ import { QueryComunicadoDto } from './dto/query-comunicado.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @ApiTags('Comunicados (Mural)')
+@SkipAudit()
 @Controller('comunicados')
 export class ComunicadosController {
   constructor(private readonly comunicadosService: ComunicadosService) {}

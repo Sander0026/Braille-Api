@@ -25,6 +25,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 const ALLOWED_MIME_TYPES = [
@@ -37,6 +38,7 @@ const ALLOWED_MIME_TYPES = [
 @ApiTags('Alunos (Beneficiários)')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
+@SkipAudit()
 @Controller('beneficiaries')
 export class BeneficiariesController {
   constructor(private readonly beneficiariesService: BeneficiariesService) {}

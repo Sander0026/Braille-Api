@@ -1,4 +1,5 @@
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -6,6 +7,7 @@ import { AuditAcao } from '@prisma/client';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
 import { resolverIp } from '../helpers/audit.helper';
+import { SKIP_AUDIT_KEY } from '../decorators/skip-audit.decorator';
 
 // ── Mapas de Heurística ───────────────────────────────────────────────────────
 
@@ -54,30 +56,10 @@ const ENTIDADE_MAP: Record<string, string> = {
 };
 
 /**
- * Paths excluídos da auditoria automática.
- *
- * Dois motivos para exclusão:
- *  A) Infraestrutura técnica sem relevância de negócio (docs, health).
- *  B) Módulos já instrumentados manualmente no Service (evita log duplicado).
- *
- * REGRA: se o Service chama `this.auditService.registrar()` diretamente,
- * o path DEVE estar nesta lista.
+ * Paths tecnicos sem relevancia de negocio para auditoria.
+ * Controllers ja instrumentados manualmente no service devem usar @SkipAudit().
  */
-const PATHS_EXCLUIDOS = [
-  '/api-docs',
-  '/health',
-  '/audit-log',
-  '/frequencias',
-  '/turmas',
-  '/beneficiaries',
-  '/users',
-  '/comunicados',
-  '/contatos', // instrumentado manualmente no ContatosService (marcarComoLida + remove)
-  '/site-config',
-  '/apoiadores', // instrumentado manualmente no ApoiadoresService
-  '/modelos-certificados', // instrumentado manualmente no CertificadosService
-  '/certificados', // instrumentado manualmente no CertificadosService
-] as const;
+const PATHS_EXCLUIDOS = ['/api-docs', '/health', '/audit-log'] as const;
 
 // ── Campos sensíveis a remover do payload antes de persistir ──────────────────
 const CAMPOS_SENSIVEIS = new Set([
@@ -107,9 +89,19 @@ const CAMPOS_SENSIVEIS = new Set([
  */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
-  constructor(private readonly auditLogService: AuditLogService) {}
+  constructor(
+    private readonly auditLogService: AuditLogService,
+    private readonly reflector: Reflector,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const deveIgnorarAuditoria = this.reflector.getAllAndOverride<boolean>(SKIP_AUDIT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (deveIgnorarAuditoria) return next.handle();
+
     const req = context.switchToHttp().getRequest<Request>();
     const method = req.method;
 

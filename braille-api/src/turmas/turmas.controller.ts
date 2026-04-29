@@ -23,6 +23,7 @@ import { QueryTurmaDto } from './dto/query-turma.dto';
 import { IsEnum } from 'class-validator';
 import { TurmaStatus, Role } from '@prisma/client';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 class MudarStatusDto {
@@ -33,6 +34,7 @@ class MudarStatusDto {
 @ApiTags('Turmas e Oficinas')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
+@SkipAudit()
 @Controller('turmas')
 export class TurmasController {
   constructor(private readonly turmasService: TurmasService) {}

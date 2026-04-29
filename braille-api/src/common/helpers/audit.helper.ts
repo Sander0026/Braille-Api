@@ -2,6 +2,14 @@ import { Role } from '@prisma/client';
 import { AuditUser } from '../interfaces/audit-user.interface';
 import { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
 
+export interface AuditMetadata {
+  autorId?: string;
+  autorNome?: string;
+  autorRole?: string;
+  ip?: string;
+  userAgent?: string;
+}
+
 /**
  * Extrai os dados de auditoria de uma requisição autenticada.
  *
@@ -24,6 +32,16 @@ export function getAuditUser(req: AuthenticatedRequest): AuditUser {
     role,
     ip: resolverIp(req),
     userAgent: req.headers['user-agent'],
+  };
+}
+
+export function toAuditMetadata(auditUser: AuditUser): AuditMetadata {
+  return {
+    autorId: auditUser.sub,
+    autorNome: auditUser.nome,
+    autorRole: auditUser.role,
+    ip: auditUser.ip,
+    userAgent: auditUser.userAgent,
   };
 }
 

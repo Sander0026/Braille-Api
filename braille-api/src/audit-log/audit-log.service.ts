@@ -133,19 +133,48 @@ export class AuditLogService {
 
   /**
    * Serializa um valor de forma segura para armazenamento em JSON no banco.
-   * Descarta funções, referências circulares e objetos binários (ex: StreamableFile).
+   * Preserva o snapshot possivel e marca valores problemáticos de forma descritiva.
    *
    * Estático e puro — definido fora de métodos de instância para evitar
    * recriação de closure em cada chamada a registrar().
    */
   static serializarSeguro(val: unknown): Prisma.InputJsonValue | undefined {
     if (val === undefined || val === null) return undefined;
-    try {
-      // structuredClone é mais rápido e nativo — descarta funções e referências circulares
-      return structuredClone(val) as Prisma.InputJsonValue;
-    } catch {
-      return undefined;
+    const normalizado = AuditLogService.normalizarParaJson(val, new WeakSet<object>());
+    return normalizado === undefined ? undefined : (normalizado as Prisma.InputJsonValue);
+  }
+
+  private static normalizarParaJson(valor: unknown, visitados: WeakSet<object>): unknown {
+    if (valor === undefined) return undefined;
+    if (valor === null) return null;
+
+    if (typeof valor === 'string' || typeof valor === 'boolean') return valor;
+    if (typeof valor === 'number') return Number.isFinite(valor) ? valor : String(valor);
+    if (typeof valor === 'bigint') return valor.toString();
+    if (typeof valor === 'function' || typeof valor === 'symbol') return '[nao serializavel]';
+
+    if (valor instanceof Date) return valor.toISOString();
+    if (ArrayBuffer.isView(valor)) return `[binario ${(valor as ArrayBufferView).byteLength} bytes]`;
+
+    if (Array.isArray(valor)) {
+      return valor.map((item) => AuditLogService.normalizarParaJson(item, visitados) ?? null);
     }
+
+    if (typeof valor === 'object') {
+      if (visitados.has(valor)) return '[referencia circular]';
+      visitados.add(valor);
+
+      const objeto: Record<string, unknown> = {};
+      for (const [chave, conteudo] of Object.entries(valor as Record<string, unknown>)) {
+        const normalizado = AuditLogService.normalizarParaJson(conteudo, visitados);
+        if (normalizado !== undefined) objeto[chave] = normalizado;
+      }
+
+      visitados.delete(valor);
+      return objeto;
+    }
+
+    return String(valor);
   }
 
   /**

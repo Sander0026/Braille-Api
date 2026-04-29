@@ -3,6 +3,7 @@ import { Prisma, AuditAcao } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { toAuditMetadata } from '../common/helpers/audit.helper';
 import { CreateContatoDto } from './dto/create-contato.dto';
 import { QueryContatoDto } from './dto/query-contato.dto';
 
@@ -72,7 +73,7 @@ export class ContatosService {
       entidade: 'Contato',
       registroId: id,
       acao: AuditAcao.MUDAR_STATUS,
-      ...auditUser,
+      ...toAuditMetadata(auditUser),
       oldValue: { lida: false },
       newValue: { lida: true },
     });
@@ -97,7 +98,7 @@ export class ContatosService {
       entidade: 'Contato',
       registroId: id,
       acao: AuditAcao.EXCLUIR,
-      ...auditUser,
+      ...toAuditMetadata(auditUser),
       oldValue: snapshot,
     });
 

@@ -154,7 +154,16 @@ describe('ContatosService', () => {
       const result = await service.marcarComoLida('uuid-test-001', AUDIT_USER);
 
       expect(prismaMock.mensagemContato.update).toHaveBeenCalledWith(expect.objectContaining({ data: { lida: true } }));
-      expect(auditMock.registrar).toHaveBeenCalledWith(expect.objectContaining({ acao: AuditAcao.MUDAR_STATUS }));
+      expect(auditMock.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          acao: AuditAcao.MUDAR_STATUS,
+          autorId: AUDIT_USER.sub,
+          autorNome: AUDIT_USER.nome,
+          autorRole: AUDIT_USER.role,
+          ip: AUDIT_USER.ip,
+          userAgent: AUDIT_USER.userAgent,
+        }),
+      );
       expect(result.lida).toBe(true);
     });
 
@@ -190,6 +199,9 @@ describe('ContatosService', () => {
       expect(auditMock.registrar).toHaveBeenCalledWith(
         expect.objectContaining({
           acao: AuditAcao.EXCLUIR,
+          autorId: AUDIT_USER.sub,
+          autorNome: AUDIT_USER.nome,
+          autorRole: AUDIT_USER.role,
           oldValue: MENSAGEM_FIXTURE,
         }),
       );

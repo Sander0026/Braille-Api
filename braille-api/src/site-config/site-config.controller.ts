@@ -9,6 +9,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '@prisma/client';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 // Chaves de cache centralizadas — usadas tanto nos @CacheKey quanto na invalidação
@@ -19,6 +20,7 @@ const CACHE_KEYS = {
 } as const;
 
 @ApiTags('CMS — Configurações do Site')
+@SkipAudit()
 @Controller('site-config')
 export class SiteConfigController {
   constructor(

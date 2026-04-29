@@ -29,11 +29,13 @@ import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @ApiTags('Modelos de Certificados')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
+@SkipAudit()
 @Controller('modelos-certificados')
 export class CertificadosController {
   constructor(

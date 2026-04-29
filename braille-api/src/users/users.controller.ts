@@ -22,10 +22,12 @@ import { Role } from '@prisma/client';
 import { QueryUserDto } from './dto/query-user.dto';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 
 @ApiTags('Usuários do Sistema (Staff)')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
+@SkipAudit()
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

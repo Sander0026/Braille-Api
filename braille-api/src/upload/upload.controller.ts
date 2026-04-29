@@ -19,10 +19,12 @@ import { Roles } from '../auth/roles.decorator';
 import { Role } from '@prisma/client';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 
 @ApiTags('Uploads de Arquivos')
 @ApiBearerAuth()
 @UseGuards(AuthGuard) // 🔒 Só quem está logado pode fazer upload
+@SkipAudit()
 @Controller('upload')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}

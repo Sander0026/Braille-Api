@@ -10,11 +10,13 @@ import { Role } from '@prisma/client';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
 import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @ApiTags('Frequências (Chamadas)')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
+@SkipAudit()
 @Controller('frequencias')
 export class FrequenciasController {
   constructor(private readonly frequenciasService: FrequenciasService) {}

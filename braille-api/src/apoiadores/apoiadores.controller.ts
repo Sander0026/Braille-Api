@@ -27,6 +27,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { getAuditUser } from '../common/helpers/audit.helper';
+import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 // ── Constante de Roles ─────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ const CLOUDINARY_MAX_FILE_SIZE = 10 * 1024 * 1024;
  *
  * Importa getAuditUser de common/helpers (única fonte de verdade — sem duplicação).
  */
+@SkipAudit()
 @Controller('apoiadores')
 export class ApoiadoresController {
   constructor(
