@@ -307,8 +307,12 @@ model GradeHoraria {
   turmaId String
   turma   Turma  @relation(fields: [turmaId], references: [id], onDelete: Cascade)
 
-  @@unique([turmaId, dia]) // Uma turma só pode ter 1 horário por dia
+  // Múltiplos horários no mesmo dia são permitidos para a mesma turma, desde que
+  // não haja sobreposição validada na camada de serviço. Horários iguais em turmas
+  // diferentes também são permitidos; o bloqueio ocorre somente para conflito do professor.
   @@index([turmaId])
+  @@index([turmaId, dia])
+  @@index([dia, horaInicio, horaFim])
 }
 
 // Tabela de Frequência (Chamada)
