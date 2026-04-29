@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { CreateAtestadoDto } from './dto/create-atestado.dto';
 import { UpdateAtestadoDto } from './dto/update-atestado.dto';
-import { StatusFrequencia, Aluno } from '@prisma/client';
+import { StatusFrequencia, Aluno, AuditAcao } from '@prisma/client';
 import { ApiResponse } from '../common/dto/api-response.dto';
 
 // ── Select de Frequência Vinculada ─────────────────────────────────────────────
@@ -25,9 +26,39 @@ export class AtestadosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly uploadService: UploadService,
+    private readonly auditService: AuditLogService,
   ) {}
 
   // ── Métodos Públicos ────────────────────────────────────────────────────────
+
+  private registrarAuditoria(params: {
+    entidade: string;
+    registroId: string;
+    acao: AuditAcao;
+    auditUser: AuditUser;
+    oldValue?: unknown;
+    newValue?: unknown;
+  }): void {
+    const { entidade, registroId, acao, auditUser, oldValue, newValue } = params;
+
+    this.auditService
+      .registrar({
+        entidade,
+        registroId,
+        acao,
+        autorId: auditUser.sub,
+        autorNome: auditUser.nome,
+        autorRole: auditUser.role,
+        ip: auditUser.ip,
+        userAgent: auditUser.userAgent,
+        oldValue,
+        newValue,
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : JSON.stringify(err);
+        this.logger.warn(`Falha na auditoria de atestado ${registroId}: ${msg}`);
+      });
+  }
 
   /**
    * Registra um novo atestado e justifica automaticamente as faltas do aluno
@@ -70,6 +101,14 @@ export class AtestadosService {
       });
 
       return [novoAtestado, resultado] as const;
+    });
+
+    this.registrarAuditoria({
+      entidade: 'Atestado',
+      registroId: atestado.id,
+      acao: AuditAcao.CRIAR,
+      auditUser,
+      newValue: { atestado, faltasJustificadas: frequenciasAtualizadas.count },
     });
 
     return new ApiResponse(
@@ -116,7 +155,7 @@ export class AtestadosService {
    * Datas (dataInicio/dataFim) não são alteráveis após criação.
    * Remove arquivo antigo do Cloudinary se a URL for substituída.
    */
-  async atualizar(id: string, dto: UpdateAtestadoDto): Promise<ApiResponse<unknown>> {
+  async atualizar(id: string, dto: UpdateAtestadoDto, auditUser: AuditUser): Promise<ApiResponse<unknown>> {
     const atestado = await this.prisma.atestado.findUnique({ where: { id } });
     if (!atestado) throw new NotFoundException('Atestado não encontrado.');
 
@@ -139,6 +178,15 @@ export class AtestadosService {
       include: { frequencias: { select: FREQUENCIA_SELECT } },
     });
 
+    this.registrarAuditoria({
+      entidade: 'Atestado',
+      registroId: id,
+      acao: AuditAcao.ATUALIZAR,
+      auditUser,
+      oldValue: atestado,
+      newValue: atestadoAtualizado,
+    });
+
     return new ApiResponse(true, atestadoAtualizado, 'Atestado atualizado com sucesso.');
   }
 
@@ -151,7 +199,7 @@ export class AtestadosService {
    * ACID: updateMany + delete executados em $transaction — se o delete falhar,
    * as frequências não são revertidas.
    */
-  async remover(id: string): Promise<ApiResponse<unknown>> {
+  async remover(id: string, auditUser: AuditUser): Promise<ApiResponse<unknown>> {
     const atestado = await this.prisma.atestado.findUnique({ where: { id } });
     if (!atestado) throw new NotFoundException('Atestado não encontrado.');
 
@@ -165,6 +213,15 @@ export class AtestadosService {
       await tx.atestado.delete({ where: { id } });
 
       return [resultado] as const;
+    });
+
+    this.registrarAuditoria({
+      entidade: 'Atestado',
+      registroId: id,
+      acao: AuditAcao.EXCLUIR,
+      auditUser,
+      oldValue: { atestado, faltasRevertidas: revertidas.count },
+      newValue: null,
     });
 
     return new ApiResponse(

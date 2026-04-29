@@ -75,8 +75,12 @@ export class AtestadosController {
 
   @Patch('atestados/:id')
   @ApiOperation({ summary: 'Atualizar dados básicos de um atestado (Motivo e Arquivo URL)' })
-  async atualizar(@Param('id') id: string, @Body() dto: UpdateAtestadoDto): Promise<ApiResponse<unknown>> {
-    return this.atestadosService.atualizar(id, dto);
+  async atualizar(
+    @Param('id') id: string,
+    @Body() dto: UpdateAtestadoDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ApiResponse<unknown>> {
+    return this.atestadosService.atualizar(id, dto, getAuditUser(req));
   }
 
   /**
@@ -88,7 +92,7 @@ export class AtestadosController {
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Remover atestado e reverter faltas justificadas (somente ADMIN e SECRETARIA)' })
-  async remover(@Param('id') id: string): Promise<ApiResponse<unknown>> {
-    return this.atestadosService.remover(id);
+  async remover(@Param('id') id: string, @Req() req: AuthenticatedRequest): Promise<ApiResponse<unknown>> {
+    return this.atestadosService.remover(id, getAuditUser(req));
   }
 }
