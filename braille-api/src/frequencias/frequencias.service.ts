@@ -12,7 +12,7 @@ import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
-import { Role, AuditAcao, Prisma } from '@prisma/client';
+import { Role, AuditAcao, Prisma, StatusFrequencia } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 
@@ -35,6 +35,15 @@ export class FrequenciasService {
       dataAula.getUTCMonth() === hoje.getUTCMonth() &&
       dataAula.getUTCDate() === hoje.getUTCDate()
     );
+  }
+
+  /**
+   * Converte o campo legado `presente` para o enum oficial `status`.
+   * Enquanto `presente` existir por compatibilidade, toda escrita deve manter
+   * os dois campos sincronizados para evitar divergência silenciosa em relatórios.
+   */
+  private statusFromPresente(presente: boolean): StatusFrequencia {
+    return presente ? StatusFrequencia.PRESENTE : StatusFrequencia.FALTA;
   }
 
   /**
@@ -84,7 +93,11 @@ export class FrequenciasService {
     }
 
     return this.prisma.frequencia.create({
-      data: { ...dto, dataAula: dataConvertida },
+      data: {
+        ...dto,
+        dataAula: dataConvertida,
+        status: this.statusFromPresente(dto.presente),
+      },
     });
   }
 
@@ -136,13 +149,17 @@ export class FrequenciasService {
               oldValue = existente;
 
               // Se já é FALTA_JUSTIFICADA, não sobrescreve o status (preserva o atestado)
-              if (existente.status === 'FALTA_JUSTIFICADA') {
+              if (existente.status === StatusFrequencia.FALTA_JUSTIFICADA) {
                 frequenciaFinal = existente; // não altera
                 acaoAudit = AuditAcao.ATUALIZAR;
               } else {
                 frequenciaFinal = await tx.frequencia.update({
                   where: { id: existente.id },
-                  data: { presente: aluno.presente },
+                  data: {
+                    presente: aluno.presente,
+                    status: this.statusFromPresente(aluno.presente),
+                    justificativaId: null,
+                  },
                 });
                 acaoAudit = AuditAcao.ATUALIZAR;
               }
@@ -153,6 +170,7 @@ export class FrequenciasService {
                   alunoId: aluno.alunoId,
                   dataAula: dataConvertida,
                   presente: aluno.presente,
+                  status: this.statusFromPresente(aluno.presente),
                 },
               });
               acaoAudit = AuditAcao.CRIAR;
@@ -162,7 +180,7 @@ export class FrequenciasService {
             // Se o aluno foi marcado como FALTA, verificar se existe atestado cobrindo esse dia.
             // Isso garante que faltas lançadas EM DATAS FUTURAS já cobertas por atestado sejam
             // automaticamente justificadas sem precisar reemitir o atestado.
-            if (!aluno.presente && frequenciaFinal.status !== 'FALTA_JUSTIFICADA') {
+            if (!aluno.presente && frequenciaFinal.status !== StatusFrequencia.FALTA_JUSTIFICADA) {
               const atestadoAtivo = await tx.atestado.findFirst({
                 where: {
                   alunoId: aluno.alunoId,
@@ -176,7 +194,8 @@ export class FrequenciasService {
                 frequenciaFinal = await tx.frequencia.update({
                   where: { id: frequenciaFinal.id },
                   data: {
-                    status: 'FALTA_JUSTIFICADA',
+                    presente: false,
+                    status: StatusFrequencia.FALTA_JUSTIFICADA,
                     justificativaId: atestadoAtivo.id,
                   },
                 });
@@ -295,7 +314,7 @@ export class FrequenciasService {
         where: {
           turmaId: { in: turmasIds },
           dataAula: { gte: minDate, lte: maxDate },
-          presente: true,
+          status: StatusFrequencia.PRESENTE,
         },
         _count: { _all: true },
       }),
@@ -346,11 +365,16 @@ export class FrequenciasService {
 
     const totais = data.reduce(
       (acc, curr) => {
-        if (curr.presente) acc.presentes++;
-        else acc.faltas++;
+        if (curr.status === StatusFrequencia.PRESENTE) {
+          acc.presentes++;
+        } else if (curr.status === StatusFrequencia.FALTA_JUSTIFICADA) {
+          acc.faltasJustificadas++;
+        } else {
+          acc.faltas++;
+        }
         return acc;
       },
-      { presentes: 0, faltas: 0 },
+      { presentes: 0, faltas: 0, faltasJustificadas: 0 },
     );
 
     return {
@@ -384,6 +408,10 @@ export class FrequenciasService {
 
     const dadosParaAtualizar: any = { ...dto };
     if (dto.dataAula) dadosParaAtualizar.dataAula = new Date(dto.dataAula);
+    if (typeof dto.presente === 'boolean') {
+      dadosParaAtualizar.status = this.statusFromPresente(dto.presente);
+      dadosParaAtualizar.justificativaId = null;
+    }
 
     return this.prisma.frequencia.update({ where: { id }, data: dadosParaAtualizar });
   }
