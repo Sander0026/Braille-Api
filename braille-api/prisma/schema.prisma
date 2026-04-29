@@ -403,9 +403,12 @@ model LaudoMedico {
   arquivoUrl        String
   registradoPorId   String?  // ID do criador (auditoria via auth token depois)
   criadoEm          DateTime @default(now())
+  excluidoEm        DateTime?
+  excluidoPorId     String?
 
   @@index([alunoId])
   @@index([dataEmissao])
+  @@index([excluidoEm])
 }
 
 // ══════════════════ CMS — Configurações do Site ══════════════════
