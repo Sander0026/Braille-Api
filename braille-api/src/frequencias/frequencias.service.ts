@@ -46,6 +46,20 @@ export class FrequenciasService {
     return presente ? StatusFrequencia.PRESENTE : StatusFrequencia.FALTA;
   }
 
+  /** Deriva o campo legado `presente` a partir do status oficial. */
+  private presenteFromStatus(status: StatusFrequencia): boolean {
+    return status === StatusFrequencia.PRESENTE;
+  }
+
+  /**
+   * Resolve o status oficial priorizando `status` e usando `presente` apenas como fallback legado.
+   */
+  private resolverStatus(status?: StatusFrequencia, presente?: boolean): StatusFrequencia {
+    if (status) return status;
+    if (typeof presente === 'boolean') return this.statusFromPresente(presente);
+    throw new BadRequestException('Informe o status da frequência ou o campo legado presente.');
+  }
+
   /**
    * Garante que a chamada pertence ao dia atual.
    * ADMIN pode ignorar a trava (bypass = true).
@@ -77,6 +91,7 @@ export class FrequenciasService {
   async create(dto: CreateFrequenciaDto, auditUser?: AuditUser) {
     const dataConvertida = new Date(dto.dataAula);
     const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+    const statusResolvido = this.resolverStatus(dto.status, dto.presente);
 
     // ADMIN pode lançar chamada retroativa; professor só no dia
     this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
@@ -94,9 +109,12 @@ export class FrequenciasService {
 
     return this.prisma.frequencia.create({
       data: {
-        ...dto,
         dataAula: dataConvertida,
-        status: this.statusFromPresente(dto.presente),
+        alunoId: dto.alunoId,
+        turmaId: dto.turmaId,
+        observacao: dto.observacao,
+        status: statusResolvido,
+        presente: this.presenteFromStatus(statusResolvido),
       },
     });
   }
@@ -141,6 +159,8 @@ export class FrequenciasService {
             let frequenciaFinal: any;
             let acaoAudit: AuditAcao;
             let oldValue: any = undefined;
+            const statusResolvido = this.resolverStatus(aluno.status, aluno.presente);
+            const presenteLegado = this.presenteFromStatus(statusResolvido);
 
             // Preferência para a busca no banco pré-carregada via turmaId + dataAula + alunoId
             const existente = mapaExistentes.get(aluno.alunoId);
@@ -156,8 +176,8 @@ export class FrequenciasService {
                 frequenciaFinal = await tx.frequencia.update({
                   where: { id: existente.id },
                   data: {
-                    presente: aluno.presente,
-                    status: this.statusFromPresente(aluno.presente),
+                    presente: presenteLegado,
+                    status: statusResolvido,
                     justificativaId: null,
                   },
                 });
@@ -169,8 +189,8 @@ export class FrequenciasService {
                   turmaId: dto.turmaId,
                   alunoId: aluno.alunoId,
                   dataAula: dataConvertida,
-                  presente: aluno.presente,
-                  status: this.statusFromPresente(aluno.presente),
+                  presente: presenteLegado,
+                  status: statusResolvido,
                 },
               });
               acaoAudit = AuditAcao.CRIAR;
@@ -180,7 +200,7 @@ export class FrequenciasService {
             // Se o aluno foi marcado como FALTA, verificar se existe atestado cobrindo esse dia.
             // Isso garante que faltas lançadas EM DATAS FUTURAS já cobertas por atestado sejam
             // automaticamente justificadas sem precisar reemitir o atestado.
-            if (!aluno.presente && frequenciaFinal.status !== StatusFrequencia.FALTA_JUSTIFICADA) {
+            if (statusResolvido === StatusFrequencia.FALTA && frequenciaFinal.status !== StatusFrequencia.FALTA_JUSTIFICADA) {
               const atestadoAtivo = await tx.atestado.findFirst({
                 where: {
                   alunoId: aluno.alunoId,
@@ -408,9 +428,11 @@ export class FrequenciasService {
 
     const dadosParaAtualizar: any = { ...dto };
     if (dto.dataAula) dadosParaAtualizar.dataAula = new Date(dto.dataAula);
-    if (typeof dto.presente === 'boolean') {
-      dadosParaAtualizar.status = this.statusFromPresente(dto.presente);
-      dadosParaAtualizar.justificativaId = null;
+    if (dto.status || typeof dto.presente === 'boolean') {
+      const statusResolvido = this.resolverStatus(dto.status, dto.presente);
+      dadosParaAtualizar.status = statusResolvido;
+      dadosParaAtualizar.presente = this.presenteFromStatus(statusResolvido);
+      dadosParaAtualizar.justificativaId = statusResolvido === StatusFrequencia.FALTA_JUSTIFICADA ? dadosParaAtualizar.justificativaId : null;
     }
 
     return this.prisma.frequencia.update({ where: { id }, data: dadosParaAtualizar });
