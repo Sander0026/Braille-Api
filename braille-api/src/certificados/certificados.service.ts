@@ -12,6 +12,11 @@ import { randomBytes } from 'node:crypto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 
+export interface HonrariaPdfResult {
+  pdfBuffer: Buffer;
+  codigoValidacao: string;
+}
+
 @Injectable()
 export class CertificadosService {
   private readonly logger = new Logger(CertificadosService.name);
@@ -235,16 +240,7 @@ export class CertificadosService {
   async remove(id: string, auditUser?: AuditUser) {
     const modelo = await this.findOne(id);
 
-    // Cleanup paralelo dos 3 arquivos no Cloudinary (soft fail)
-    await Promise.all([
-      modelo.arteBaseUrl ? this.trocarArquivo(modelo.arteBaseUrl, undefined, false, 'arteBase') : Promise.resolve(null),
-      modelo.assinaturaUrl
-        ? this.trocarArquivo(modelo.assinaturaUrl, undefined, true, 'assinatura')
-        : Promise.resolve(null),
-      modelo.assinaturaUrl2
-        ? this.trocarArquivo(modelo.assinaturaUrl2, undefined, true, 'assinatura2')
-        : Promise.resolve(null),
-    ]);
+    
 
     // Deleção direta — trocarArquivo sem novoFile apenas deleta; aqui chamamos o delete diretamente
     await Promise.allSettled([
@@ -377,7 +373,7 @@ export class CertificadosService {
     return { pdfUrl, codigoValidacao: codigoFinal };
   }
 
-  async emitirHonraria(dto: EmitirHonrariaDto, auditUser?: AuditUser) {
+  async emitirHonraria(dto: EmitirHonrariaDto, auditUser?: AuditUser): Promise<HonrariaPdfResult> {
     const modelo = await this.prisma.modeloCertificado.findUnique({ where: { id: dto.modeloId } });
 
     if (!modelo) throw new NotFoundException('Modelo de certificado não encontrado.');
@@ -402,7 +398,8 @@ export class CertificadosService {
       newValue: emissao,
     });
 
-    return this.pdfService.construirPdfBase(modelo as ModeloPdf, textoPronto, hashUnique);
+    const pdfBuffer = await this.pdfService.construirPdfBase(modelo as ModeloPdf, textoPronto, hashUnique);
+    return { pdfBuffer, codigoValidacao: hashUnique };
   }
 
   /**

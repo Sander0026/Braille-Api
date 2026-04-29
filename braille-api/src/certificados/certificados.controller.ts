@@ -109,12 +109,13 @@ export class CertificadosController {
     @Body() dto: EmitirHonrariaDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const buffer = await this.certificadosService.emitirHonraria(dto, getAuditUser(req));
+    const { pdfBuffer, codigoValidacao } = await this.certificadosService.emitirHonraria(dto, getAuditUser(req));
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline; filename="honorific_braille.pdf"',
+      'X-Codigo-Validacao': codigoValidacao,
     });
-    return new StreamableFile(buffer);
+    return new StreamableFile(pdfBuffer);
   }
 
   @Post()
