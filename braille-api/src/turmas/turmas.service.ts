@@ -24,11 +24,10 @@ const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
 
 // ─── Helpers de Colisão ──────────────────────────────────────────────────────
 
+type HorarioGrade = { dia: DiaSemana; horaInicio: number; horaFim: number };
+
 /** Retorna true se dois intervalos de minutos se sobrepõem. */
-function intervalosColidem(
-  a: { horaInicio: number; horaFim: number },
-  b: { horaInicio: number; horaFim: number },
-): boolean {
+function intervalosColidem(a: HorarioGrade, b: HorarioGrade): boolean {
   return a.horaInicio < b.horaFim && b.horaInicio < a.horaFim;
 }
 
@@ -57,6 +56,7 @@ export class TurmasService {
     if (!professor) throw new NotFoundException('Professor não encontrado.');
 
     if (gradeHoraria?.length) {
+      this.validarGradeHoraria(gradeHoraria);
       await this.validarColisaoProfessor(createTurmaDto.professorId, gradeHoraria);
     }
 
@@ -176,8 +176,9 @@ export class TurmasService {
     const professorId = dadosTurma.professorId ?? turma.professorId;
     const gradeConsiderada = gradeHoraria !== undefined ? gradeHoraria : (turma as any).gradeHoraria;
 
-    if (gradeHoraria?.length) {
-      await this.validarColisaoProfessor(professorId, gradeHoraria, id);
+    if (gradeConsiderada?.length) {
+      this.validarGradeHoraria(gradeConsiderada);
+      await this.validarColisaoProfessor(professorId, gradeConsiderada, id);
     }
 
     const start = dataInicio ? new Date(dataInicio) : turma.dataInicio;
@@ -512,16 +513,47 @@ export class TurmasService {
   // ══ VALIDAÇÕES PRIVADAS (Anti-Colisão) ══════════════════════════════════
 
   /**
+   * Valida a grade enviada para uma turma antes de gravar no banco.
+   * Permite múltiplos turnos no mesmo dia, mas bloqueia intervalos inválidos,
+   * duplicados ou sobrepostos dentro da própria turma.
+   */
+  private validarGradeHoraria(grade: HorarioGrade[]): void {
+    for (const horario of grade) {
+      if (!Number.isInteger(horario.horaInicio) || !Number.isInteger(horario.horaFim)) {
+        throw new BadRequestException('Horários da grade devem ser informados em minutos inteiros.');
+      }
+
+      if (horario.horaInicio < 0 || horario.horaFim > 1440 || horario.horaInicio >= horario.horaFim) {
+        throw new BadRequestException(
+          `Horário inválido em ${horario.dia}: ${minutosParaHora(horario.horaInicio)}–${minutosParaHora(
+            horario.horaFim,
+          )}. Use valores entre 00:00 e 24:00, com início menor que fim.`,
+        );
+      }
+    }
+
+    for (let i = 0; i < grade.length; i++) {
+      for (let j = i + 1; j < grade.length; j++) {
+        const atual = grade[i];
+        const comparado = grade[j];
+        if (atual.dia === comparado.dia && intervalosColidem(atual, comparado)) {
+          throw new BadRequestException(
+            `A grade da própria turma possui horários sobrepostos em ${atual.dia}: ` +
+              `${minutosParaHora(atual.horaInicio)}–${minutosParaHora(atual.horaFim)} conflita com ` +
+              `${minutosParaHora(comparado.horaInicio)}–${minutosParaHora(comparado.horaFim)}.`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
    * Verifica se o ALUNO já tem matrícula ativa em outra turma que ocorre no mesmo dia e horário.
    * @param alunoId         ID do aluno a matricular
    * @param novosHorarios   Grade da turma onde ele será matriculado
    * @param turmaIdExcluir  ID da própria turma (para ignorar caso de rematrícula)
    */
-  private async validarColisaoAluno(
-    alunoId: string,
-    novosHorarios: { dia: DiaSemana; horaInicio: number; horaFim: number }[],
-    turmaIdExcluir: string,
-  ) {
+  private async validarColisaoAluno(alunoId: string, novosHorarios: HorarioGrade[], turmaIdExcluir: string) {
     // Busca todas as turmas ativas do aluno com sua grade horária
     const matriculasAtivas = await this.prisma.matriculaOficina.findMany({
       where: {
@@ -554,7 +586,7 @@ export class TurmasService {
    */
   private async validarColisaoProfessor(
     professorId: string,
-    novosHorarios: { dia: DiaSemana; horaInicio: number; horaFim: number }[],
+    novosHorarios: HorarioGrade[],
     turmaIdExcluir?: string,
   ) {
     const turmasDoProfessor = await this.prisma.turma.findMany({
