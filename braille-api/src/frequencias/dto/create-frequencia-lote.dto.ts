@@ -1,26 +1,38 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { StatusFrequencia } from '@prisma/client';
 import {
   IsString,
-  IsNotEmpty,
   IsBoolean,
   IsOptional,
   IsDateString,
   IsUUID,
   IsArray,
   ValidateNested,
+  IsEnum,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class FrequenciaAlunoBadgeDto {
   @ApiProperty({ description: 'ID do Aluno' })
   @IsUUID()
-  @IsNotEmpty()
   alunoId: string;
 
-  @ApiProperty({ description: 'Status de Presença (true/false)' })
+  @ApiPropertyOptional({
+    enum: StatusFrequencia,
+    description: 'Status oficial da frequência. Campo preferencial; substitui o legado presente.',
+  })
+  @IsEnum(StatusFrequencia)
+  @IsOptional()
+  status?: StatusFrequencia;
+
+  @ApiPropertyOptional({
+    description: 'LEGACY: status booleano de presença. Mantido temporariamente para compatibilidade.',
+    deprecated: true,
+  })
+  @ValidateIf((dto: FrequenciaAlunoBadgeDto) => dto.status === undefined)
   @IsBoolean()
-  @IsNotEmpty()
-  presente: boolean;
+  presente?: boolean;
 
   @ApiPropertyOptional({ description: 'ID da Chamada Prévida Existente (Upsert)' })
   @IsUUID()
@@ -31,12 +43,10 @@ export class FrequenciaAlunoBadgeDto {
 export class CreateFrequenciaLoteDto {
   @ApiProperty({ description: 'Data da aula no formato ISO (YYYY-MM-DD)' })
   @IsDateString()
-  @IsNotEmpty()
   dataAula: string;
 
   @ApiProperty({ description: 'ID da Turma/Oficina' })
   @IsUUID()
-  @IsNotEmpty()
   turmaId: string;
 
   @ApiProperty({ description: 'Vetor contendo IDs dos alunos e status de presença individuais' })
