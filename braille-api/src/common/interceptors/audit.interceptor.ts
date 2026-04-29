@@ -21,6 +21,7 @@ const ACAO_MAP: Record<string, (path: string) => AuditAcao | null> = {
     if (path.includes('/diario/fechar')) return AuditAcao.FECHAR_DIARIO;
     if (path.includes('/diario/reabrir')) return AuditAcao.REABRIR_DIARIO;
     if (path.includes('/auth/login')) return AuditAcao.LOGIN;
+    if (path.includes('/auth/logout')) return AuditAcao.LOGOUT;
     return AuditAcao.CRIAR;
   },
   PATCH: (path) => {

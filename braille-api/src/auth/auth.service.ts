@@ -33,6 +33,9 @@ const PERFIL_SELECT = {
   criadoEm: true,
 } as const;
 
+const REFRESH_TOKEN_TTL_DIAS = 7;
+const REFRESH_TOKEN_TTL_MS = REFRESH_TOKEN_TTL_DIAS * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -92,10 +95,11 @@ export class AuthService {
     // Gera e armazena refresh token (string bruta → hash no banco)
     const randomRefreshString = crypto.randomBytes(40).toString('hex');
     const hashedRefreshToken = await bcrypt.hash(randomRefreshString, 10);
+    const refreshTokenExpiraEm = this.calcularExpiracaoRefreshToken();
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken: hashedRefreshToken },
+      data: { refreshToken: hashedRefreshToken, refreshTokenExpiraEm },
     });
 
     return {
@@ -116,11 +120,16 @@ export class AuthService {
     // Select mínimo — exclui senha e outros campos pesados
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { ...AUTH_SELECT, refreshToken: true },
+      select: { ...AUTH_SELECT, refreshToken: true, refreshTokenExpiraEm: true },
     });
 
     if (!user || !user.refreshToken) {
       throw new UnauthorizedException('Sua sessão expirou ou foi revogada administrativamente.');
+    }
+
+    if (!user.refreshTokenExpiraEm || user.refreshTokenExpiraEm.getTime() <= Date.now()) {
+      await this.revogarRefreshToken(user.id);
+      throw new UnauthorizedException('Sua sessao expirou. Faca o login novamente.');
     }
 
     if (user.excluido || !user.statusAtivo) {
@@ -144,6 +153,11 @@ export class AuthService {
   }
 
   // ── Trocar Senha ───────────────────────────────────────────────────────────
+
+  async logout(userId: string): Promise<ApiResponse<null>> {
+    await this.revogarRefreshToken(userId);
+    return new ApiResponse(true, null, 'Logout realizado com sucesso.');
+  }
 
   async trocarSenha(userId: string, dto: TrocarSenhaDto): Promise<ApiResponse<null>> {
     // Select mínimo — só precisamos da senha atual para comparar
@@ -229,5 +243,16 @@ export class AuthService {
     });
 
     return new ApiResponse(true, atualizado, 'Perfil atualizado com sucesso.');
+  }
+
+  private calcularExpiracaoRefreshToken(): Date {
+    return new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+  }
+
+  private async revogarRefreshToken(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshToken: null, refreshTokenExpiraEm: null },
+    });
   }
 }

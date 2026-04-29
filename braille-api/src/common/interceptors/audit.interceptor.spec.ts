@@ -60,4 +60,31 @@ describe('AuditInterceptor', () => {
       }),
     );
   });
+
+  it('deve classificar logout como acao LOGOUT na auditoria automatica', async () => {
+    const auditLogService = { registrar: jest.fn() } as unknown as AuditLogService;
+    const reflector = { getAllAndOverride: jest.fn().mockReturnValue(false) } as unknown as Reflector;
+    const interceptor = new AuditInterceptor(auditLogService, reflector);
+
+    await lastValueFrom(
+      interceptor.intercept(
+        criarContexto({
+          method: 'POST',
+          path: '/api/auth/logout',
+          headers: {},
+          socket: {},
+          user: { sub: 'user-1', nome: 'Admin', role: 'ADMIN' },
+        }),
+        criarNext({ success: true }),
+      ),
+    );
+
+    expect(auditLogService.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entidade: 'Auth',
+        acao: AuditAcao.LOGOUT,
+        autorId: 'user-1',
+      }),
+    );
+  });
 });

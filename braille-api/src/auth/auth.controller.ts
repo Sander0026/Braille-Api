@@ -50,6 +50,16 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Encerrar sessao e revogar o Refresh Token atual' })
+  @SwaggerResponse({ status: 200, description: 'Sessao encerrada com sucesso' })
+  logout(@Req() req: AuthenticatedRequest): Promise<ApiResponse<null>> {
+    return this.authService.logout(this.resolverUserId(req));
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
   @Get('me')
   @ApiOperation({ summary: 'Retorna os dados do usuário logado (nome, role, fotoPerfil, etc.)' })
   @SwaggerResponse({ status: 200, description: 'Retorna os dados cadastrais em ApiResponse' })
