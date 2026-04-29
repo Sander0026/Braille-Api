@@ -139,8 +139,8 @@ export class BeneficiariesController {
 
   @Delete(':id/hard')
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Excluir definitivamente um aluno (Soft Delete Nvl 2)' })
-  removeHard(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.beneficiariesService.removeHard(id, getAuditUser(req));
+  @ApiOperation({ summary: 'Arquivar aluno em exclusao logica profunda (nao remove fisicamente)' })
+  archivePermanently(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.beneficiariesService.archivePermanently(id, getAuditUser(req));
   }
 }

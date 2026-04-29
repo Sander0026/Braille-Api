@@ -1,4 +1,11 @@
-import { Injectable, ConflictException, InternalServerErrorException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ConflictException,
+  InternalServerErrorException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
 import type { Response } from 'express';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
@@ -74,6 +81,9 @@ const ALUNO_MUTATION_SELECT = { id: true, fotoPerfil: true, termoLgpdUrl: true, 
 export class BeneficiariesService {
   private readonly logger = new Logger(BeneficiariesService.name);
   private static readonly MAX_CREATE_RETRIES = 3;
+  private static readonly MAX_IMPORT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+  private static readonly MAX_IMPORT_ROWS = 5000;
+  private static readonly MAX_IMPORT_COLUMNS = 80;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -612,7 +622,7 @@ export class BeneficiariesService {
     return result;
   }
 
-  async removeHard(id: string, auditUser?: AuditUser) {
+  async archivePermanently(id: string, auditUser?: AuditUser) {
     await this.assertExists(id);
     const result = await this.prisma.aluno.update({ where: { id }, data: { excluido: true } });
     this.auditService.registrar({
@@ -624,6 +634,11 @@ export class BeneficiariesService {
       newValue: { excluido: true },
     });
     return result;
+  }
+
+  /** @deprecated Use archivePermanently. Mantido apenas para compatibilidade da rota antiga. */
+  async removeHard(id: string, auditUser?: AuditUser) {
+    return this.archivePermanently(id, auditUser);
   }
 
   // ── Importação via Planilha (XLSX / CSV) ───────────────────────────────────
@@ -701,6 +716,10 @@ export class BeneficiariesService {
     ignorados: number;
     erros: { linha: number; documento: string; motivo: string }[];
   }> {
+    if (buffer.byteLength > BeneficiariesService.MAX_IMPORT_FILE_SIZE_BYTES) {
+      throw new BadRequestException('Arquivo muito grande. Envie uma planilha de ate 5 MB.');
+    }
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
     const worksheet = workbook.worksheets[0];
@@ -711,6 +730,19 @@ export class BeneficiariesService {
         ignorados: 0,
         erros: [{ linha: 0, documento: '—', motivo: 'Planilha vazia ou sem dados.' }],
       };
+    }
+
+    const totalLinhas = worksheet.actualRowCount || worksheet.rowCount;
+    const totalColunas = worksheet.actualColumnCount || worksheet.columnCount;
+    if (totalLinhas > BeneficiariesService.MAX_IMPORT_ROWS) {
+      throw new BadRequestException(
+        `Planilha possui ${totalLinhas} linhas. O limite por importacao e ${BeneficiariesService.MAX_IMPORT_ROWS} linhas.`,
+      );
+    }
+    if (totalColunas > BeneficiariesService.MAX_IMPORT_COLUMNS) {
+      throw new BadRequestException(
+        `Planilha possui ${totalColunas} colunas. O limite por importacao e ${BeneficiariesService.MAX_IMPORT_COLUMNS} colunas.`,
+      );
     }
 
     const rawRows: unknown[][] = [];
@@ -953,13 +985,24 @@ export class BeneficiariesService {
       }
 
       // Auditoria em background — não bloqueia a resposta ao cliente
+      const matriculasImportadas = paraInserir.map((aluno) => String(aluno.matricula)).filter(Boolean);
+      const alunosCriados =
+        matriculasImportadas.length > 0
+          ? await this.prisma.aluno.findMany({
+              where: { matricula: { in: matriculasImportadas } },
+              select: { id: true, matricula: true },
+            })
+          : [];
+      const idPorMatricula = new Map(alunosCriados.map((aluno) => [aluno.matricula, aluno.id]));
+
       Promise.resolve().then(async () => {
         for (const aluno of paraInserir) {
+          const matricula = String(aluno.matricula ?? '');
           await this.auditService
             .registrar({
               ...this.toAuditMeta(auditUser),
               entidade: 'Aluno',
-              registroId: String(aluno.matricula ?? 'sem-matricula'),
+              registroId: idPorMatricula.get(matricula) ?? matricula,
               acao: AuditAcao.CRIAR,
               newValue: { ...aluno, origem: 'importacao-planilha' },
             })
