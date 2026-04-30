@@ -85,7 +85,7 @@ THROTTLER_LIMIT=30
 PORT=3000
 ```
 
-> Em produção, `JWT_SECRET` e `SENHA_PADRAO_USUARIO` devem ser obrigatoriamente definidos com valores fortes.
+> Em produção, `JWT_SECRET`, `FRONTEND_URL` e `SENHA_PADRAO_USUARIO` devem ser obrigatoriamente definidos com valores fortes/válidos.
 
 ## Instalação
 
@@ -100,25 +100,31 @@ O projeto executa `prisma generate` automaticamente no `postinstall`.
 Gerar o Prisma Client manualmente, se necessário:
 
 ```bash
-npx prisma generate
+npm run db:generate
 ```
 
 Aplicar migrações em ambiente local:
 
 ```bash
-npx prisma migrate dev
+npm run db:migrate:dev
 ```
 
 Aplicar migrações em produção/deploy:
 
 ```bash
-npx prisma migrate deploy
+npm run db:migrate:deploy
 ```
 
 Executar seed:
 
 ```bash
-npx prisma db seed
+npm run db:seed
+```
+
+Abrir Prisma Studio:
+
+```bash
+npm run db:studio
 ```
 
 ## Execução
@@ -127,6 +133,12 @@ Ambiente de desenvolvimento:
 
 ```bash
 npm run start:dev
+```
+
+Gerar build de produção:
+
+```bash
+npm run build:prod
 ```
 
 Ambiente de produção após build:
@@ -150,33 +162,57 @@ http://localhost:3000/docs
 ## Scripts disponíveis
 
 ```bash
-npm run build          # Executa migração deploy e build NestJS
-npm run build:prod     # Executa migração deploy, prisma generate e build NestJS
-npm run start          # Inicia a aplicação NestJS
-npm run start:dev      # Inicia em modo watch
-npm run start:debug    # Inicia em modo debug
-npm run start:prod     # Inicia a versão compilada em dist/
-npm run lint           # Executa ESLint com correção automática
-npm run format         # Formata arquivos TypeScript
-npm run test           # Executa testes unitários
-npm run test:e2e       # Executa testes e2e
-npm run test:cov       # Executa testes com cobertura
+npm run build              # Compila o NestJS sem executar migrações
+npm run build:prod         # Executa prisma generate e compila o NestJS
+npm run db:generate        # Gera o Prisma Client
+npm run db:migrate:dev     # Cria/aplica migrações em desenvolvimento
+npm run db:migrate:deploy  # Aplica migrações versionadas em produção/deploy
+npm run db:studio          # Abre o Prisma Studio
+npm run db:seed            # Executa o seed do banco
+npm run start              # Inicia a aplicação NestJS
+npm run start:dev          # Inicia em modo watch
+npm run start:debug        # Inicia em modo debug
+npm run start:prod         # Inicia a versão compilada em dist/
+npm run lint               # Executa ESLint com correção automática
+npm run format             # Formata arquivos TypeScript
+npm run test               # Executa testes unitários
+npm run test:e2e           # Executa testes e2e
+npm run test:cov           # Executa testes com cobertura
+```
+
+## Fluxo recomendado de deploy
+
+As migrações de banco devem ser executadas separadamente do build.
+
+```bash
+npm run db:migrate:deploy
+npm run build:prod
+npm run start:prod
+```
+
+Em ambiente local, use:
+
+```bash
+npm run db:migrate:dev
+npm run start:dev
 ```
 
 ## Autenticação
 
-A autenticação usa JWT de curta duração e refresh token.
+A autenticação usa JWT de curta duração e refresh token com rotação.
 
 Fluxo principal:
 
 1. `POST /api/auth/login` retorna `access_token`, `refresh_token` e dados do usuário.
 2. O frontend envia o `access_token` no header `Authorization: Bearer <token>`.
-3. `POST /api/auth/refresh` renova o access token usando o refresh token.
-4. `POST /api/auth/logout` revoga o refresh token salvo no banco.
+3. `POST /api/auth/refresh` renova o access token e também retorna um novo refresh token.
+4. O frontend deve substituir os dois tokens armazenados após cada refresh.
+5. `POST /api/auth/logout` revoga o refresh token salvo no banco.
 
 ## Segurança aplicada
 
 - Validação global com `ValidationPipe`.
+- Validação central das variáveis de ambiente na inicialização.
 - Remoção de campos não definidos nos DTOs com `whitelist`.
 - Rejeição de campos extras com `forbidNonWhitelisted`.
 - Headers HTTP protegidos com `helmet`.
@@ -184,7 +220,7 @@ Fluxo principal:
 - CORS restrito ao frontend local e URL configurada em ambiente.
 - Rate limit global com `@nestjs/throttler`.
 - Senhas com hash usando `bcrypt`.
-- Refresh token salvo com hash no banco.
+- Refresh token salvo com hash no banco e rotacionado a cada renovação.
 - Auditoria de ações críticas.
 - Filtros globais para erros Prisma sem exposição de detalhes internos.
 
@@ -290,6 +326,7 @@ npm run test:cov
 - Não use valores fracos para `JWT_SECRET`.
 - Configure `SENHA_PADRAO_USUARIO` em produção.
 - Rode migrações com cuidado antes de subir nova versão.
+- Execute migrações separadamente do build.
 - Verifique permissões de CORS pelo `FRONTEND_URL`.
 - Monitore consumo do Cloudinary para uploads e certificados.
 - Mantenha backup do banco PostgreSQL.
