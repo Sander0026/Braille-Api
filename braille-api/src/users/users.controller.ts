@@ -42,14 +42,12 @@ export class UsersController {
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.SECRETARIA)
   @ApiOperation({ summary: 'Listar todos os usuários da instituição' })
   findAll(@Query() query: QueryUserDto) {
     return this.usersService.findAll(query);
   }
 
   @Get('resumo')
-  @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR, Role.COMUNICACAO)
   @ApiOperation({ summary: 'Listar usuarios com dados minimos para selecoes internas' })
   findResumo(@Query() query: QueryUserDto) {
     return this.usersService.findResumo(query);
