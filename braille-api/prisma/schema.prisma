@@ -164,6 +164,8 @@ model UserSession {
   id               String    @id @default(uuid())
   userId           String
   refreshTokenHash String
+  previousRefreshTokenHash String?
+  previousRotatedAt        DateTime?
   expiresAt        DateTime
   revokedAt        DateTime?
   userAgent        String?

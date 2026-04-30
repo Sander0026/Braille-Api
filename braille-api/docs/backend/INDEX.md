@@ -234,6 +234,7 @@ O banco e PostgreSQL via Prisma. As entidades principais sao `User`, `Aluno`, `T
 * `GET /users` ficou restrito a `ADMIN` e `SECRETARIA`; demais perfis usam `GET /users/resumo` com dados minimos.
 * `UploadService.deleteFile` valida allowlist de pastas Cloudinary antes de excluir arquivos remotos.
 * Refresh token sem `userId` no payload foi alinhado ao modelo `UserSession`, com logout por sessao atual e testes atualizados.
+* Reuso de refresh token anterior revoga a sessao, enquanto segredo aleatorio invalido retorna 401 sem derrubar a sessao.
 * Alguns endpoints ainda retornam entidade Prisma crua, outros retornam `ApiResponse`; o contrato HTTP nao e totalmente uniforme e continua como ponto de padronizacao futura.
 
 ---

@@ -47,7 +47,7 @@ Access token curto reduz janela de abuso. Refresh token com hash em `UserSession
 6. Assina JWT com `JwtService`.
 7. Gera payload `{ sub, nome, role, precisaTrocarSenha, sid }`.
 8. Retorna refresh token opaco no formato `sessionId.secret`.
-9. `POST /api/auth/refresh` valida `RefreshTokenDto`, localiza a sessao, compara segredo bruto com hash, rotaciona o refresh token e emite novo access token.
+9. `POST /api/auth/refresh` valida `RefreshTokenDto`, localiza a sessao, compara segredo bruto com hash atual, detecta reuso do hash anterior quando existir, rotaciona o refresh token e emite novo access token.
 10. `GET /api/auth/me`, `PATCH /trocar-senha`, `PATCH /foto-perfil`, `PATCH /perfil` exigem `AuthGuard`.
 11. `AuthGuard` extrai bearer token, verifica assinatura, consulta usuario ativo e injeta `request.user`.
 
@@ -126,7 +126,7 @@ Access token curto reduz janela de abuso. Refresh token com hash em `UserSession
 ## Banco de Dados
 
 Tabela `User`: `id`, `username`, `senha`, `role`, `statusAtivo`, `excluido`, `precisaTrocarSenha`, dados de perfil e colunas legadas de refresh limpas durante a transicao.
-Tabela `UserSession`: `id`, `userId`, `refreshTokenHash`, `expiresAt`, `revokedAt`, `userAgent`, `ip`, `criadoEm`, `atualizadoEm`.
+Tabela `UserSession`: `id`, `userId`, `refreshTokenHash`, `previousRefreshTokenHash`, `previousRotatedAt`, `expiresAt`, `revokedAt`, `userAgent`, `ip`, `criadoEm`, `atualizadoEm`.
 
 ## Servicos Externos
 
@@ -163,7 +163,9 @@ Tabela `UserSession`: `id`, `userId`, `refreshTokenHash`, `expiresAt`, `revokedA
 # 7. Regras de Negocio
 
 * Usuario excluido ou inativo nao autentica nem renova token.
-* Refresh token expirado ou invalido revoga a sessao.
+* Refresh token expirado revoga a sessao.
+* Refresh token anterior reutilizado revoga a sessao como indicio de vazamento.
+* Refresh token aleatorio/invalido sem correspondencia com hash atual nem anterior retorna 401 sem revogar a sessao.
 * Refresh token valido e rotacionado a cada renovacao.
 * Toda troca de senha exige senha atual.
 * Nova senha deve conter comprimento minimo, letras maiusculas/minusculas, numero e simbolo.
@@ -179,6 +181,7 @@ Tabela `UserSession`: `id`, `userId`, `refreshTokenHash`, `expiresAt`, `revokedA
 * A rota oficial de logout (`POST /api/auth/logout`) ja esta exposta e documentada via Swagger no `AuthController`, encarregando-se de revogar a sessao atual identificada por `sid`.
 * O controller e os testes foram alinhados ao novo contrato de refresh sem `userId` no payload.
 * `UserSession` agora tambem existe no `schema.prisma`, permitindo uso tipado pelo Prisma Client em vez de SQL cru para criar, rotacionar e revogar sessoes.
+* A revogacao automatica por refresh invalido foi refinada: o sistema guarda o hash anterior e so revoga quando o token apresentado corresponde ao refresh token anterior reutilizado.
 
 ---
 

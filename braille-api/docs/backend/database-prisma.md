@@ -92,7 +92,7 @@ Nao expoe endpoints diretamente.
 ## Banco de Dados
 
 * `User`: funcionarios, credenciais, roles, contato, endereco e colunas legadas de refresh.
-* `UserSession`: sessoes persistidas com hash de refresh token, expiracao, revogacao, IP e user-agent.
+* `UserSession`: sessoes persistidas com hash atual/anterior de refresh token, expiracao, revogacao, IP e user-agent.
 * `Aluno`: beneficiarios, documentos, LGPD, perfil de deficiencia, dados sociais e saude.
 * `Turma`: oficinas, professor, grade, status academico e modelo de certificado.
 * `MatriculaOficina`: vinculo aluno-turma com status e encerramento.

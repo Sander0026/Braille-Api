@@ -139,14 +139,16 @@ export class AuthService {
       throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
     }
 
-    const isRefreshValid = await bcrypt.compare(secret, session.refreshTokenHash);
+    const isRefreshValid = await this.compararSegredoRefresh(secret, session.refreshTokenHash);
     if (!isRefreshValid) {
-      // Possível reuso/tentativa de token antigo: revoga a sessão por segurança.
-      await this.revogarSessao(session.id);
+      const isReuseRefreshAnterior = await this.compararSegredoRefresh(secret, session.previousRefreshTokenHash);
+      if (isReuseRefreshAnterior) {
+        await this.revogarSessao(session.id);
+      }
       throw new UnauthorizedException('Refresh Token inválido. Faça o login novamente.');
     }
 
-    const refresh = await this.rotacionarSessaoRefreshToken(session.id);
+    const refresh = await this.rotacionarSessaoRefreshToken(session.id, session.refreshTokenHash);
     const access_token = await this.gerarAccessToken({
       id: session.userId,
       nome: session.user.nome,
@@ -298,12 +300,14 @@ export class AuthService {
     return refresh;
   }
 
-  private async rotacionarSessaoRefreshToken(sessionId: string): Promise<RefreshTokenPair> {
+  private async rotacionarSessaoRefreshToken(sessionId: string, hashAnterior: string): Promise<RefreshTokenPair> {
     const refresh = await this.gerarRefreshTokenSeguro(sessionId);
 
     await this.prisma.userSession.update({
       where: { id: sessionId },
       data: {
+        previousRefreshTokenHash: hashAnterior,
+        previousRotatedAt: new Date(),
         refreshTokenHash: refresh.hashedRefreshToken,
         expiresAt: refresh.refreshTokenExpiraEm,
         revokedAt: null,
@@ -320,6 +324,7 @@ export class AuthService {
         id: true,
         userId: true,
         refreshTokenHash: true,
+        previousRefreshTokenHash: true,
         expiresAt: true,
         revokedAt: true,
         user: {
@@ -342,6 +347,11 @@ export class AuthService {
     const rawRefreshToken = `${sessionId}.${rawSecret}`;
 
     return { sessionId, rawRefreshToken, rawSecret, hashedRefreshToken, refreshTokenExpiraEm };
+  }
+
+  private async compararSegredoRefresh(secret: string, hash?: string | null): Promise<boolean> {
+    if (!hash) return false;
+    return bcrypt.compare(secret, hash);
   }
 
   private parseRefreshToken(rawRefreshToken: string): { sessionId: string; secret: string } {

@@ -86,6 +86,7 @@ describe('AuthService', () => {
       id: sessionId,
       userId: usuarioBase.id,
       refreshTokenHash: await bcrypt.hash('refresh-token', 10),
+      previousRefreshTokenHash: null,
       expiresAt: new Date(Date.now() - 1000),
       revokedAt: null,
       user: {
@@ -111,6 +112,7 @@ describe('AuthService', () => {
       id: sessionId,
       userId: usuarioBase.id,
       refreshTokenHash: await bcrypt.hash('refresh-token', 10),
+      previousRefreshTokenHash: null,
       expiresAt: new Date(Date.now() + 60_000),
       revokedAt: null,
       user: {
@@ -130,10 +132,60 @@ describe('AuthService', () => {
       expect.objectContaining({
         where: { id: sessionId },
         data: expect.objectContaining({
+          previousRefreshTokenHash: expect.any(String),
+          previousRotatedAt: expect.any(Date),
           refreshTokenHash: expect.any(String),
           expiresAt: expect.any(Date),
           revokedAt: null,
         }),
+      }),
+    );
+  });
+
+  it('deve retornar 401 sem revogar sessao quando secret aleatorio nao corresponde ao hash atual nem ao anterior', async () => {
+    prisma.userSession.findUnique.mockResolvedValue({
+      id: sessionId,
+      userId: usuarioBase.id,
+      refreshTokenHash: await bcrypt.hash('refresh-token-atual', 10),
+      previousRefreshTokenHash: await bcrypt.hash('refresh-token-anterior', 10),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: {
+        nome: usuarioBase.nome,
+        role: usuarioBase.role,
+        statusAtivo: usuarioBase.statusAtivo,
+        excluido: usuarioBase.excluido,
+        precisaTrocarSenha: usuarioBase.precisaTrocarSenha,
+      },
+    });
+
+    await expect(service.refreshToken(`${sessionId}.token-aleatorio`)).rejects.toThrow(UnauthorizedException);
+
+    expect(prisma.userSession.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('deve revogar sessao quando refresh token anterior for reutilizado', async () => {
+    prisma.userSession.findUnique.mockResolvedValue({
+      id: sessionId,
+      userId: usuarioBase.id,
+      refreshTokenHash: await bcrypt.hash('refresh-token-atual', 10),
+      previousRefreshTokenHash: await bcrypt.hash('refresh-token-anterior', 10),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: {
+        nome: usuarioBase.nome,
+        role: usuarioBase.role,
+        statusAtivo: usuarioBase.statusAtivo,
+        excluido: usuarioBase.excluido,
+        precisaTrocarSenha: usuarioBase.precisaTrocarSenha,
+      },
+    });
+
+    await expect(service.refreshToken(`${sessionId}.refresh-token-anterior`)).rejects.toThrow(UnauthorizedException);
+
+    expect(prisma.userSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: sessionId, revokedAt: null }),
       }),
     );
   });
