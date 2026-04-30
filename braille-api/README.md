@@ -1,98 +1,299 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Braille API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API backend do sistema do Instituto Louis Braille, desenvolvida com NestJS, Prisma e PostgreSQL.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Esta API atende os módulos administrativos do sistema, incluindo autenticação, usuários, alunos/beneficiários, turmas, frequência, comunicados, contatos, CMS do site, upload de arquivos, auditoria, atestados, laudos, apoiadores e certificados.
 
-## Description
+## Tecnologias principais
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Node.js
+- NestJS
+- TypeScript
+- Prisma ORM
+- PostgreSQL
+- JWT para autenticação
+- Cloudinary para armazenamento de imagens, PDFs e arquivos gerados
+- Swagger para documentação da API
+- ExcelJS para importação/exportação de planilhas
+- PDF-lib para geração de certificados e documentos PDF
 
-## Project setup
+## Estrutura geral
 
-```bash
-$ npm install
+```txt
+braille-api/
+├── prisma/
+│   ├── schema.prisma
+│   └── seed/
+├── src/
+│   ├── auth/
+│   ├── users/
+│   ├── beneficiaries/
+│   ├── turmas/
+│   ├── frequencias/
+│   ├── comunicados/
+│   ├── contatos/
+│   ├── upload/
+│   ├── site-config/
+│   ├── audit-log/
+│   ├── atestados/
+│   ├── laudos/
+│   ├── apoiadores/
+│   ├── certificados/
+│   ├── common/
+│   ├── prisma/
+│   ├── app.module.ts
+│   └── main.ts
+├── test/
+├── package.json
+└── README.md
 ```
 
-## Compile and run the project
+## Pré-requisitos
 
-```bash
-# development
-$ npm run start
+- Node.js 22 ou superior recomendado
+- npm
+- Banco PostgreSQL disponível
+- Conta Cloudinary configurada para uploads
 
-# watch mode
-$ npm run start:dev
+## Variáveis de ambiente
 
-# production mode
-$ npm run start:prod
+Crie um arquivo `.env` na pasta `braille-api/` com as variáveis abaixo.
+
+```env
+# Banco de dados
+DATABASE_URL="postgresql://usuario:senha@host:porta/banco?schema=public"
+DIRECT_URL="postgresql://usuario:senha@host:porta/banco?schema=public"
+
+# Autenticação
+JWT_SECRET="troque-por-uma-chave-grande-e-segura"
+SENHA_PADRAO_USUARIO="senha-temporaria-forte"
+
+# Frontend autorizado no CORS
+FRONTEND_URL="http://localhost:4200"
+
+# Cloudinary
+CLOUDINARY_CLOUD_NAME="seu-cloud-name"
+CLOUDINARY_API_KEY="sua-api-key"
+CLOUDINARY_API_SECRET="seu-api-secret"
+
+# Cache e limitação de requisições
+CACHE_TTL=300000
+THROTTLER_TTL=60000
+THROTTLER_LIMIT=30
+
+# Porta da API
+PORT=3000
 ```
 
-## Run tests
+> Em produção, `JWT_SECRET` e `SENHA_PADRAO_USUARIO` devem ser obrigatoriamente definidos com valores fortes.
+
+## Instalação
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
 
-## Deployment
+O projeto executa `prisma generate` automaticamente no `postinstall`.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Banco de dados
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Gerar o Prisma Client manualmente, se necessário:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npx prisma generate
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Aplicar migrações em ambiente local:
 
-## Resources
+```bash
+npx prisma migrate dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+Aplicar migrações em produção/deploy:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+npx prisma migrate deploy
+```
 
-## Support
+Executar seed:
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+npx prisma db seed
+```
 
-## Stay in touch
+## Execução
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Ambiente de desenvolvimento:
 
-## License
+```bash
+npm run start:dev
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Ambiente de produção após build:
+
+```bash
+npm run start:prod
+```
+
+Por padrão, a API sobe em:
+
+```txt
+http://localhost:3000/api
+```
+
+A documentação Swagger fica em:
+
+```txt
+http://localhost:3000/docs
+```
+
+## Scripts disponíveis
+
+```bash
+npm run build          # Executa migração deploy e build NestJS
+npm run build:prod     # Executa migração deploy, prisma generate e build NestJS
+npm run start          # Inicia a aplicação NestJS
+npm run start:dev      # Inicia em modo watch
+npm run start:debug    # Inicia em modo debug
+npm run start:prod     # Inicia a versão compilada em dist/
+npm run lint           # Executa ESLint com correção automática
+npm run format         # Formata arquivos TypeScript
+npm run test           # Executa testes unitários
+npm run test:e2e       # Executa testes e2e
+npm run test:cov       # Executa testes com cobertura
+```
+
+## Autenticação
+
+A autenticação usa JWT de curta duração e refresh token.
+
+Fluxo principal:
+
+1. `POST /api/auth/login` retorna `access_token`, `refresh_token` e dados do usuário.
+2. O frontend envia o `access_token` no header `Authorization: Bearer <token>`.
+3. `POST /api/auth/refresh` renova o access token usando o refresh token.
+4. `POST /api/auth/logout` revoga o refresh token salvo no banco.
+
+## Segurança aplicada
+
+- Validação global com `ValidationPipe`.
+- Remoção de campos não definidos nos DTOs com `whitelist`.
+- Rejeição de campos extras com `forbidNonWhitelisted`.
+- Headers HTTP protegidos com `helmet`.
+- Compressão GZIP com `compression`.
+- CORS restrito ao frontend local e URL configurada em ambiente.
+- Rate limit global com `@nestjs/throttler`.
+- Senhas com hash usando `bcrypt`.
+- Refresh token salvo com hash no banco.
+- Auditoria de ações críticas.
+- Filtros globais para erros Prisma sem exposição de detalhes internos.
+
+## Módulos principais
+
+### Auth
+
+Login, refresh token, logout, perfil do usuário logado, troca de senha e atualização de perfil.
+
+### Users
+
+Gestão de funcionários do sistema, geração de matrícula, geração de username, senha temporária, reset de senha, ativação, inativação e arquivamento lógico.
+
+### Beneficiaries
+
+Cadastro de alunos/beneficiários, importação por planilha, exportação Excel, filtros, histórico e controle de status.
+
+### Turmas
+
+Gestão de oficinas/turmas, professor responsável, capacidade, status, grade horária e vínculo com matrículas.
+
+### Frequências
+
+Registro de presença, falta, falta justificada, fechamento/reabertura de diário e vínculo com atestados.
+
+### Comunicados
+
+Mural de comunicados/notícias com categorias, imagem de capa, fixação e rotas públicas de leitura.
+
+### Upload
+
+Upload de imagens, PDFs, laudos, termos LGPD, atestados e arquivos usados pelos módulos administrativos.
+
+### Site Config
+
+CMS simples para configurações públicas do site, como textos, cores, logo e seções da home.
+
+### Audit Log
+
+Registro de ações críticas com autor, IP, user agent, entidade, ação, valores antigos e novos.
+
+### Atestados e Laudos
+
+Controle de documentos médicos e justificativas de ausência dos alunos.
+
+### Apoiadores
+
+Cadastro de voluntários, empresas, ONGs, imprensa, profissionais liberais e histórico de ações.
+
+### Certificados
+
+Modelos de certificados, emissão acadêmica, emissão de honraria, geração de PDF e validação pública por código.
+
+## Rotas públicas principais
+
+- `GET /api/comunicados`
+- `GET /api/comunicados/:id`
+- `GET /api/site-config`
+- `GET /api/site-config/secoes`
+- `GET /api/site-config/secoes/:secao`
+- `GET /api/certificados/validar/:codigo`
+
+## Rotas protegidas principais
+
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `PATCH /api/auth/trocar-senha`
+- `PATCH /api/auth/perfil`
+- `GET /api/users`
+- `POST /api/users`
+- `GET /api/beneficiaries`
+- `POST /api/beneficiaries`
+- `POST /api/beneficiaries/import`
+- `GET /api/beneficiaries/export`
+- `POST /api/upload`
+- `POST /api/upload/pdf`
+- `GET /api/modelos-certificados`
+- `POST /api/modelos-certificados/emitir-academico`
+- `POST /api/modelos-certificados/emitir-honraria`
+
+## Testes
+
+Executar testes unitários:
+
+```bash
+npm run test
+```
+
+Executar testes end-to-end:
+
+```bash
+npm run test:e2e
+```
+
+Executar cobertura:
+
+```bash
+npm run test:cov
+```
+
+## Observações de produção
+
+- Não use valores fracos para `JWT_SECRET`.
+- Configure `SENHA_PADRAO_USUARIO` em produção.
+- Rode migrações com cuidado antes de subir nova versão.
+- Verifique permissões de CORS pelo `FRONTEND_URL`.
+- Monitore consumo do Cloudinary para uploads e certificados.
+- Mantenha backup do banco PostgreSQL.
+
+## Licença
+
+Projeto privado/institucional. Uso restrito ao Instituto Louis Braille e equipe autorizada.
