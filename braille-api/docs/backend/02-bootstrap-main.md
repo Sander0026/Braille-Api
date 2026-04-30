@@ -474,7 +474,3 @@ Baixa/Média. O código é pequeno, mas tem impacto transversal alto.
 - Compression;
 - Swagger;
 - AppModule.
-
-## Observações finais
-
-O arquivo está bem estruturado e cumpre corretamente o papel de bootstrap. Os principais pontos futuros são melhorar logging, externalizar CORS com mais flexibilidade e avaliar limites de payload por rota.

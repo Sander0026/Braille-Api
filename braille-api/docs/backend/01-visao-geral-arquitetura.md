@@ -479,7 +479,3 @@ Alta. A arquitetura sustenta módulos com dados pessoais, dados sensíveis, docu
 ## Complexidade
 
 Média/Alta. A complexidade vem da quantidade de módulos, relacionamentos, documentos, regras acadêmicas, segurança de sessão, auditoria e integrações externas.
-
-## Observação Final
-
-Este documento estabelece apenas a visão arquitetural geral. Os detalhes de bootstrap, `AppModule`, Prisma, Auth, módulos de domínio, rotas e entidades devem ser documentados nos arquivos seguintes conforme o `00-indice-geral.md`.
