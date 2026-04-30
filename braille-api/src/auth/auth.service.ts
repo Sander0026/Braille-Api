@@ -93,18 +93,19 @@ export class AuthService {
     const access_token = await this.jwtService.signAsync(payload);
 
     // Gera e armazena refresh token (string bruta → hash no banco)
-    const randomRefreshString = crypto.randomBytes(40).toString('hex');
-    const hashedRefreshToken = await bcrypt.hash(randomRefreshString, 10);
-    const refreshTokenExpiraEm = this.calcularExpiracaoRefreshToken();
+    const refresh = await this.gerarRefreshTokenSeguro();
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken: hashedRefreshToken, refreshTokenExpiraEm },
+      data: {
+        refreshToken: refresh.hashedRefreshToken,
+        refreshTokenExpiraEm: refresh.refreshTokenExpiraEm,
+      },
     });
 
     return {
       access_token,
-      refresh_token: randomRefreshString,
+      refresh_token: refresh.rawRefreshToken,
       usuario: {
         id: user.id,
         nome: user.nome,
@@ -149,7 +150,21 @@ export class AuthService {
     };
     const access_token = await this.jwtService.signAsync(payload);
 
-    return { access_token };
+    // Refresh Token Rotation: cada uso válido invalida o refresh token anterior.
+    const refresh = await this.gerarRefreshTokenSeguro();
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        refreshToken: refresh.hashedRefreshToken,
+        refreshTokenExpiraEm: refresh.refreshTokenExpiraEm,
+      },
+    });
+
+    return {
+      access_token,
+      refresh_token: refresh.rawRefreshToken,
+    };
   }
 
   // ── Trocar Senha ───────────────────────────────────────────────────────────
@@ -243,6 +258,18 @@ export class AuthService {
     });
 
     return new ApiResponse(true, atualizado, 'Perfil atualizado com sucesso.');
+  }
+
+  private async gerarRefreshTokenSeguro(): Promise<{
+    rawRefreshToken: string;
+    hashedRefreshToken: string;
+    refreshTokenExpiraEm: Date;
+  }> {
+    const rawRefreshToken = crypto.randomBytes(40).toString('hex');
+    const hashedRefreshToken = await bcrypt.hash(rawRefreshToken, 10);
+    const refreshTokenExpiraEm = this.calcularExpiracaoRefreshToken();
+
+    return { rawRefreshToken, hashedRefreshToken, refreshTokenExpiraEm };
   }
 
   private calcularExpiracaoRefreshToken(): Date {
