@@ -24,10 +24,14 @@ import { LaudosModule } from './laudos/laudos.module';
 import { ApoiadoresModule } from './apoiadores/apoiadores.module';
 import { CertificadosModule } from './certificados/certificados.module';
 import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/prisma-exception.filter';
+import { validateEnv } from './common/config/env.validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateEnv,
+    }),
     // Memória Cache (Fase 14) - Configurado Globalmente com vida natural padrão (via Config)
     CacheModule.registerAsync({
       isGlobal: true,
