@@ -15,11 +15,14 @@ import {
 } from '@nestjs/common';
 import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 import { ComunicadosService } from './comunicados.service';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
 import { UpdateComunicadoDto } from './dto/update-comunicado.dto';
 import { QueryComunicadoDto } from './dto/query-comunicado.dto';
 import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
 import { getAuditUser } from '../common/helpers/audit.helper';
 import { SkipAudit } from '../common/decorators/skip-audit.decorator';
@@ -31,11 +34,12 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 export class ComunicadosController {
   constructor(private readonly comunicadosService: ComunicadosService) {}
 
-  // ── Rotas protegidas (requerem JWT válido) ───────────────────────────────────
+  // ── Rotas protegidas (requerem JWT válido e perfil de conteúdo) ──────────────
 
   @Post()
   @ApiBearerAuth()
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.COMUNICACAO)
   @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Criar um novo comunicado' })
   create(@Body() dto: CreateComunicadoDto, @Req() req: AuthenticatedRequest) {
@@ -44,7 +48,8 @@ export class ComunicadosController {
 
   @Patch(':id')
   @ApiBearerAuth()
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.COMUNICACAO)
   @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Editar um comunicado' })
   update(
@@ -57,7 +62,8 @@ export class ComunicadosController {
 
   @Delete(':id')
   @ApiBearerAuth()
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.COMUNICACAO)
   @ApiOperation({ summary: 'Excluir um comunicado' })
   remove(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: AuthenticatedRequest) {
     return this.comunicadosService.remove(id, getAuditUser(req));
