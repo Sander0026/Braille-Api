@@ -109,6 +109,7 @@ A arquitetura modular do NestJS separa dominios por responsabilidade, reduz acop
 * `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`: credenciais Cloudinary.
 * `FRONTEND_URL`: base usada no QR Code de validacao de certificados.
 * `SENHA_PADRAO_USUARIO`: senha inicial de usuarios internos.
+* `FREQUENCIAS_PERMITIR_RETROATIVAS`: permite chamadas retroativas para nao administradores durante implantacao; padrao `true`.
 
 ## Funcoes e Metodos
 
@@ -226,7 +227,7 @@ O banco e PostgreSQL via Prisma. As entidades principais sao `User`, `Aluno`, `T
 
 * A pasta inesperada `src/users/dto/rc/users/dto/query-user.dto.ts` foi removida.
 * Alguns comentarios e strings do codigo aparecem com encoding corrompido no terminal, embora a intencao funcional esteja clara.
-* `FrequenciasService.validarDataHoje` esta relaxado e nao aplica a regra descrita nos comentarios.
+* `FrequenciasService.validarDataHoje` agora aplica a regra quando `FREQUENCIAS_PERMITIR_RETROATIVAS=false`; o padrao `true` preserva a implantacao atual.
 * `CertificadosService.remove` foi simplificado para delecao direta dos arquivos externos, sem caminho redundante por `trocarArquivo`.
 * Auditoria ganhou `@SkipAudit()` e helpers de mapeamento para reduzir manutencao manual de paths excluidos.
 * Alguns endpoints ainda retornam entidade Prisma crua, outros retornam `ApiResponse`; o contrato HTTP nao e totalmente uniforme e continua como ponto de padronizacao futura.

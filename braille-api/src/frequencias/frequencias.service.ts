@@ -15,6 +15,7 @@ import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
 import { Role, AuditAcao, Prisma, StatusFrequencia } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class FrequenciasService {
@@ -23,6 +24,7 @@ export class FrequenciasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -61,11 +63,26 @@ export class FrequenciasService {
   }
 
   /**
-   * Garante que a chamada pertence ao dia atual.
-   * ADMIN pode ignorar a trava (bypass = true).
+   * Define se professores e secretaria podem operar chamadas fora do dia atual.
+   * O padrao continua permissivo para preservar a regra de implantacao atual.
+   */
+  private permiteFrequenciaRetroativa(): boolean {
+    const valor = this.configService.get<string>('FREQUENCIAS_PERMITIR_RETROATIVAS', 'true');
+    return valor !== 'false';
+  }
+
+  /**
+   * Garante que a chamada pertence ao dia atual quando a regra retroativa
+   * estiver bloqueada. ADMIN pode ignorar a trava para retificacao.
    */
   private validarDataHoje(dataAula: Date, bypass = false): void {
-    // Validação de retroatividade temporariamente relaxada conforme regra de negócio
+    if (bypass || this.permiteFrequenciaRetroativa() || this.ehHoje(dataAula)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      'Lancamento retroativo de frequencia bloqueado para este perfil.',
+    );
   }
 
   /**

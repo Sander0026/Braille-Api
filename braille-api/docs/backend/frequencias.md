@@ -79,7 +79,8 @@ Frequencia e um fluxo sensivel porque impacta certificado e historico academico.
 ## Funcoes e Metodos
 
 * `ehHoje(dataAula)`: compara data em UTC.
-* `validarDataHoje(dataAula,bypass)`: atualmente relaxado.
+* `permiteFrequenciaRetroativa()`: le `FREQUENCIAS_PERMITIR_RETROATIVAS` e define se a regra de dia atual sera aplicada.
+* `validarDataHoje(dataAula,bypass)`: bloqueia lancamento retroativo quando a regra estiver desativada; admin pode retificar.
 * `verificarDiarioAberto(turmaId,dataAula,role)`: bloqueia se fechado e nao admin.
 * `create(dto,auditUser)`: cria chamada individual.
 * `salvarLote(dto,auditUser)`: grava lote atomico.
@@ -165,14 +166,15 @@ Nao ha integracoes externas.
 * Uma chamada por aluno/turma/data.
 * Falta justificada por atestado nao deve ser sobrescrita por lote comum.
 * Falta em data coberta por atestado vira justificada automaticamente.
-* Professor so deveria operar dia atual conforme comentarios, mas regra esta relaxada em `validarDataHoje`.
+* Professor e secretaria podem operar datas retroativas durante a implantacao porque `FREQUENCIAS_PERMITIR_RETROATIVAS` fica `true` por padrao.
+* Se `FREQUENCIAS_PERMITIR_RETROATIVAS=false`, nao administradores ficam restritos ao dia atual; `ADMIN` continua podendo retificar datas anteriores.
 * Diario fechado bloqueia alteracoes ate reabertura administrativa.
 
 ---
 
 # 8. Pontos de Atencao Tratados
 
-* A função `validarDataHoje` (que impediria professores de lançar faltas retroativas) está vazia intencionalmente. Trata-se de um relaxamento temporário ("by design") solicitado pela diretoria administrativa para a fase de implantação/adequação do sistema.
+* A funcao `validarDataHoje` deixou de ficar vazia: o relaxamento temporario agora e explicito pela chave `FREQUENCIAS_PERMITIR_RETROATIVAS`, com padrao `true` para preservar a fase de implantacao. Ao mudar para `false`, professores e secretaria deixam de lancar/editar/remover frequencias retroativas.
 * Uma revisão anterior da doc apontava o risco de que operações em lote (`salvarLote`) pudessem alterar apenas o booleano antigo `presente` e esquecer o `status`. O código foi analisado e refatorado de forma implacável: absolutamente *todos* os `tx.frequencia.update` dentro do lote injetam as variáveis `statusResolvido` e `presenteLegado` lado-a-lado, cravando o sincronismo.
 * No `findResumo`, a paginação é feita em memória (através de um array `.slice()`) após o `groupBy`. O Prisma ainda não suporta paginação e cursor nativos em cláusulas `groupBy`. Como a carga extraída pela query é apenas de colunas escalares (`dataAula`, `turmaId`, `count`), o consumo de heap é ínfimo, tornando-se uma limitação superada e estabilizada de IO/Memory.
 
@@ -190,4 +192,3 @@ Nao ha integracoes externas.
 # 10. Resumo Tecnico Final
 
 Frequências é um módulo sensível com um *Transaction Script* robusto. Com as refatorações recentes do sistema, as maiores preocupações foram mitigadas: o alinhamento legado `presente/status` se tornou uma barreira blindada (impossível de ser sobreposta acidentalmente), e o recurso de "Autojustificativa" varre atestados e atualiza retroativamente o status com exatidão. O módulo agora é resiliente, atômico na persistência de lotes grandes e tolerante a sobrecarga por uso inteligente de recursos limitados do ORM.
-
