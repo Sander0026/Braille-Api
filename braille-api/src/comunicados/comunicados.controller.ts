@@ -13,7 +13,7 @@ import {
   Req,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { ComunicadosService } from './comunicados.service';
@@ -73,8 +73,7 @@ export class ComunicadosController {
 
   @Get()
   @UseInterceptors(CacheInterceptor)
-  @CacheKey('comunicados:lista')
-  @CacheTTL(60_000) // 1 minuto — cache-manager v7 usa milissegundos (antes estava 30ms por engano)
+  @CacheTTL(60_000) // 1 minuto — usa a URL completa como chave, preservando filtros e paginação
   @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
   findAll(@Query() query: QueryComunicadoDto) {
     return this.comunicadosService.findAll(query);
