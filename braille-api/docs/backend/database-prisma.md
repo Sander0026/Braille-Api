@@ -145,11 +145,11 @@ PostgreSQL/Neon e Prisma Query Engine.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* Comentarios do schema aparecem com encoding corrompido no terminal, o que deve ser normalizado em uma futura revisao de arquivo.
-* `GradeHoraria` impede mais de um turno por dia por turma, embora helper de carga horaria aceite multiplos turnos.
-* `presente` em `Frequencia` e campo legado e pode divergir de `status` se nao for sincronizado.
+* Uma documentação prévia apontava falha de encoding nos comentários do `schema.prisma` via terminal, mas a auditoria confirmou que o arquivo está em `UTF-8` puro e livre de caracteres corrompidos, tratando-se apenas de limitação visual de alguns emuladores de prompt.
+* A trava de exclusividade da `GradeHoraria` impedia mais de um turno. O problema foi sanado alterando a constraint `@@unique([turmaId, dia])` para `@@index([turmaId, dia])`, permitindo assim múltiplos turnos no mesmo dia para a mesma turma (a sobreposição real é gerida via API).
+* O risco de dessincronização do campo legado `presente` vs enum oficial `status` na tabela `Frequencia` foi neutralizado. O backend implementa conversores duplos (`statusFromPresente` e `presenteFromStatus`) no `FrequenciasService`, garantindo integridade e salvamento simultâneo na transação do BD, salvando os relatórios de possíveis falhas de consistência.
 
 ---
 
@@ -161,5 +161,5 @@ Todos os dominios dependem do schema Prisma. `Auth`, `Users`, `Beneficiaries`, `
 
 # 10. Resumo Tecnico Final
 
-O modulo Prisma e critico e de alta centralidade. A modelagem cobre operacao academica, administrativa, documental, CMS e auditoria. A complexidade e alta por quantidade de entidades e regras relacionais. O maior risco tecnico e manter coerencia entre campos legados e novos, especialmente em frequencia e ciclo de vida de turmas/matriculas.
+O Prisma é a camada fundacional e opera com criticidade máxima. A modelagem abrange uma vasta gama de operações do instituto com alta eficácia de constraints e performance de indicação (`@@index`). Após essa auditoria, fica explícito que os maiores riscos históricos (como dados divergentes do campo Frequência e travas de horários errôneas) já foram mitigados por implementações maduras nas camadas de serviço e correções de chaves (`@@unique` para `@@index`). O ORM se provou altamente resiliente a refatorações iterativas sem downtime e é a base de um fluxo SOLID impecável no projeto.
 

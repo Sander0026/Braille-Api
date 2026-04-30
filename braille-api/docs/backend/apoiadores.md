@@ -175,11 +175,11 @@ Cloudinary via `UploadService`; PDF via `PdfService`.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `emitirCertificado` retorna `pdfBase64`, mas tambem tenta salvar `pdfUrl`; o contrato pode ficar pesado.
-* Falha de upload no certificado nao impede criar registro, podendo gerar certificado sem URL.
-* Reativar define `exibirNoSite=true` automaticamente; pode publicar apoiador sem revisao.
+* O retorno do `pdfBase64` no `emitirCertificado` agora é opcional (controlado via query param `incluirPdfBase64=true`), evitando sobrecarga no payload da resposta.
+* A criação do registro do certificado no banco agora só ocorre após o upload bem-sucedido do PDF (`pdfUrl`), garantindo que não existam certificados sem arquivo.
+* A reativação de um apoiador (`reativar`) agora define `exibirNoSite=false` por padrão, forçando uma revisão antes da publicação no site.
 
 ---
 
@@ -194,5 +194,5 @@ Cloudinary via `UploadService`; PDF via `PdfService`.
 
 # 10. Resumo Tecnico Final
 
-Apoiadores e modulo de criticidade media-alta por combinar CRM, dados publicos/privados e certificados. A complexidade e media-alta. A principal recomendacao e separar melhor estados de reativacao e publicacao no site.
+Apoiadores é um módulo de criticidade média-alta por combinar CRM, dados públicos/privados e certificados. A complexidade é média-alta. As principais recomendações de segurança (prevenção de certificados órfãos de URL, payload controlável e reativação com visibilidade padrão fechada) já se encontram implementadas e garantem a robustez e integridade da funcionalidade.
 

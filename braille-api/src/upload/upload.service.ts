@@ -9,6 +9,7 @@ import { AuditAcao, Role } from '@prisma/client';
 @Injectable()
 export class UploadService {
   private readonly logger = new Logger(UploadService.name);
+  private static readonly cloudinaryMaxFileSize = 10 * 1024 * 1024;
 
   constructor(
     private readonly configService: ConfigService,
@@ -21,6 +22,55 @@ export class UploadService {
     });
   }
 
+  private validarTamanhoArquivo(bytes: number, tipo: 'arquivo' | 'pdf' | 'imagem' = 'arquivo'): void {
+    if (bytes <= UploadService.cloudinaryMaxFileSize) return;
+
+    const tipoFormatado = tipo === 'pdf' ? 'PDF' : tipo === 'imagem' ? 'Imagem' : 'Arquivo';
+    throw new BadRequestException(`${tipoFormatado} muito grande. O tamanho máximo é 10 MB.`);
+  }
+
+  private validarTamanhoMulter(file: Express.Multer.File, tipo: 'arquivo' | 'pdf' | 'imagem' = 'arquivo'): void {
+    this.validarTamanhoArquivo(Math.max(file.size ?? 0, file.buffer?.length ?? 0), tipo);
+  }
+
+  private extrairPublicIdsCloudinary(fileUrl: string): string[] {
+    const rawValue = fileUrl.trim();
+    if (!rawValue) throw new BadRequestException('A URL do arquivo é obrigatória.');
+
+    const publicIdComExt = this.extrairPublicIdDeUrl(rawValue) ?? rawValue.replace(/^\/+|\/+$/g, '');
+    const publicIdSemExt = publicIdComExt.replace(/\.[^/.]+$/, '');
+
+    return Array.from(new Set([publicIdComExt, publicIdSemExt].filter(Boolean)));
+  }
+
+  private extrairPublicIdDeUrl(fileUrl: string): string | null {
+    let parsed: URL;
+    try {
+      parsed = new URL(fileUrl);
+    } catch {
+      return null;
+    }
+
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const uploadIndex = parts.indexOf('upload');
+    if (uploadIndex < 0) throw new BadRequestException('URL do Cloudinary inválida.');
+
+    const afterUpload = parts.slice(uploadIndex + 1);
+    const versionIndex = afterUpload.findIndex((part) => /^v\d+$/.test(part));
+    const publicIdParts = versionIndex >= 0 ? afterUpload.slice(versionIndex + 1) : afterUpload;
+
+    if (publicIdParts.length === 0) throw new BadRequestException('URL do Cloudinary inválida.');
+    return decodeURIComponent(publicIdParts.join('/'));
+  }
+
+  private tiposDeletePorArquivo(fileUrl: string): Array<'image' | 'raw'> {
+    const lowerUrl = fileUrl.toLowerCase();
+    if (lowerUrl.includes('/raw/upload/')) return ['raw', 'image'];
+    if (lowerUrl.includes('/image/upload/')) return ['image', 'raw'];
+    if (lowerUrl.endsWith('.pdf')) return ['raw', 'image'];
+    return ['image', 'raw'];
+  }
+
   // ─── Upload de Imagem ou PDF (foto perfil / laudo como imagem) ─────────────
   uploadImage(file: Express.Multer.File, auditUser?: AuditUser): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
@@ -30,6 +80,11 @@ export class UploadService {
       }
 
       const isPdf = file.mimetype === 'application/pdf';
+      try {
+        this.validarTamanhoMulter(file, isPdf ? 'pdf' : 'imagem');
+      } catch (error) {
+        return reject(error);
+      }
 
       // PDFs não suportam transformation de qualidade — apenas resource_type:auto
       const uploadOptions = isPdf
@@ -89,6 +144,12 @@ export class UploadService {
 
       if (!isImage && !isPdf) {
         return reject(new BadRequestException('Apenas arquivos PDF ou imagens são permitidos.'));
+      }
+
+      try {
+        this.validarTamanhoMulter(file, isPdf ? 'pdf' : 'imagem');
+      } catch (error) {
+        return reject(error);
       }
 
       // Imagens: Cloudinary otimiza automaticamente; PDFs: resource_type auto
@@ -152,6 +213,12 @@ export class UploadService {
    */
   uploadPdfBuffer(buffer: Buffer, fileName: string, folder = 'braille_certificados'): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
+      try {
+        this.validarTamanhoArquivo(buffer.length, 'pdf');
+      } catch (error) {
+        return reject(error);
+      }
+
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder,
@@ -179,29 +246,37 @@ export class UploadService {
     }
 
     try {
-      const urlParts = fileUrl.split('/');
-      const filenameWithExtension = urlParts.at(-1);
-      const folder = urlParts.at(-2);
+      const publicIds = this.extrairPublicIdsCloudinary(fileUrl);
+      const resourceTypes = this.tiposDeletePorArquivo(fileUrl);
+      let publicIdAuditado = publicIds[0];
+      let arquivoNaoEncontrado = false;
 
-      if (!filenameWithExtension || !folder) {
-        throw new BadRequestException('URL do Cloudinary inválida.');
-      }
+      for (const resourceType of resourceTypes) {
+        for (const publicId of publicIds) {
+          const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
 
-      const filename = filenameWithExtension.split('.')[0];
-      const publicId = `${folder}/${filename}`;
-      const resourceType = fileUrl.toLowerCase().includes('.pdf') ? 'raw' : 'image';
+          if (result.result === 'ok') {
+            publicIdAuditado = publicId;
+            arquivoNaoEncontrado = false;
+            break;
+          }
 
-      const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+          if (result.result === 'not found') {
+            arquivoNaoEncontrado = true;
+            continue;
+          }
 
-      if (result.result !== 'ok' && result.result !== 'not found') {
-        throw new Error(`Falha ao excluir no Cloudinary: ${result.result}`);
+          throw new Error(`Falha ao excluir no Cloudinary: ${result.result}`);
+        }
+
+        if (!arquivoNaoEncontrado) break;
       }
 
       if (auditUser) {
         this.auditLogService
           .registrar({
             entidade: 'Cloudinary_System',
-            registroId: publicId,
+            registroId: publicIdAuditado,
             acao: AuditAcao.EXCLUIR,
             autorId: auditUser.sub,
             autorNome: auditUser.nome,

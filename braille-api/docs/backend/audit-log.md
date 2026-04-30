@@ -144,11 +144,11 @@ Nao ha integracao externa.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `ContatosService` espalha `...auditUser` diretamente, enquanto outros services mapeiam `autorId`; isso pode gerar campos incorretos se `AuditUser` nao casar com `AuditOptions`.
-* A lista de paths excluidos no interceptor exige manutencao manual.
-* `structuredClone` descarta valores problematicos silenciosamente, o que protege o fluxo mas pode perder detalhe de auditoria.
+* O serviço de contatos (`ContatosService`) e os demais agora utilizam o helper `toAuditMetadata(auditUser)` para mapear corretamente o `AuditUser` para `AuditOptions`, eliminando os problemas de espalhamento direto (`...auditUser`).
+* A necessidade de manutenção manual rigorosa da lista de `PATHS_EXCLUIDOS` no interceptor foi sanada com a introdução do decorator `@SkipAudit()`, permitindo excluir rotas ou controllers específicos (já auditados manualmente ou irrelevantes) de forma semântica.
+* O antigo problema do `structuredClone` foi resolvido pela implementação nativa de `sanitizePayload()` no `AuditInterceptor`, que gerencia de maneira controlada as profundidades, trunca strings (como base64) e arrays longos, garantindo a gravação sem perder detalhes de auditoria e omitindo campos sensíveis (senhas, hashes e tokens).
 
 ---
 
@@ -162,5 +162,5 @@ Nao ha integracao externa.
 
 # 10. Resumo Tecnico Final
 
-Audit Log e um modulo de alta criticidade para rastreabilidade, LGPD e governanca. A complexidade e media por combinar logs manuais e interceptor global. O principal cuidado futuro e padronizar totalmente o contrato de `AuditUser` para `AuditOptions` e automatizar a deteccao de rotas ja auditadas manualmente.
+Audit Log e um modulo de alta criticidade para rastreabilidade, LGPD e governanca. A complexidade e media por combinar logs manuais e interceptor global. Com as últimas refatorações, a padronização do contrato `AuditUser` utilizando helpers e a automação do interceptor global via `@SkipAudit()` transformaram a auditoria num sistema muito robusto, mantendo rastreabilidade sem poluir manualmente os controllers que não precisam ser logados ou que possuem fluxos manuais próprios.
 

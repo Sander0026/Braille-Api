@@ -17,7 +17,7 @@ import {
 import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse } from '@nestjs/swagger';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { CertificadosService } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
@@ -104,6 +104,11 @@ export class CertificadosController {
   @Post('emitir-honraria')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Emite o PDF de Amigo do Braille para terceiros.' })
+  @ApiProduces('application/pdf')
+  @ApiResponse({
+    status: 201,
+    description: 'PDF da honraria. O codigo de validacao e retornado no header X-Codigo-Validacao.',
+  })
   async gerarHonraria(
     @Req() req: AuthenticatedRequest,
     @Body() dto: EmitirHonrariaDto,

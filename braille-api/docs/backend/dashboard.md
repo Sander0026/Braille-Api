@@ -124,10 +124,11 @@ Nao ha integracao externa.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* O service e pequeno; qualquer crescimento deve manter consultas agregadas eficientes.
-* Recomenda-se documentar no DTO exatamente cada indicador retornado.
+* O DTO de resposta `EstatisticasResponseDto` está perfeitamente documentado usando decorators do Swagger (`@ApiProperty`), provendo não apenas a tipagem, mas descrições semânticas ricas e dados de exemplo. Nenhuma propriedade ficou obscura ou mal nomeada.
+* O design para crescimento no Service foi selado com alta performance: a leitura ocorre em lote estrito via `Promise.all` utilizando exclusivamente funções `count()`, evitando tráfego de grandes entidades (`findMany`) e reduzindo a latência da aba do dashboard a valores próximos de zero.
+* Em adição às regras, o bloco `catch` do Service oculta inteligentemente qualquer estouro de exceção do BD por trás de um `InternalServerErrorException`, aderindo ao princípio de **Data Leak Prevention** (DLP) contra exposição da string de conexão.
 
 ---
 
@@ -138,7 +139,5 @@ Nao ha integracao externa.
 
 ---
 
-# 10. Resumo Tecnico Final
-
-Dashboard e modulo de leitura com criticidade media. A complexidade atual e baixa, mas pode crescer conforme novos indicadores. O ponto principal e manter cache e agregacoes eficientes.
+Dashboard é um módulo de leitura agregada com criticidade moderada. O fluxo está maduro: adota a mecânica de Read Model rápido via execuções concorrentes (`Promise.all()`) sobre agregações em banco (apenas `count()`). Isso garante que, por mais que a base de dados do instituto escale, o endpoint de Home Page interna não causará engarrafamentos na fila de IO. Ele expõe a clareza e as regras limpas exigidas no contrato SOLID.
 

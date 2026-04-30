@@ -240,9 +240,7 @@ export class CertificadosService {
   async remove(id: string, auditUser?: AuditUser) {
     const modelo = await this.findOne(id);
 
-    
-
-    // Deleção direta — trocarArquivo sem novoFile apenas deleta; aqui chamamos o delete diretamente
+    // Remove os arquivos externos sem bloquear a exclusao do modelo se o Cloudinary falhar.
     await Promise.allSettled([
       modelo.arteBaseUrl ? this.uploadService.deleteFile(modelo.arteBaseUrl) : Promise.resolve(),
       modelo.assinaturaUrl ? this.uploadService.deleteFile(modelo.assinaturaUrl) : Promise.resolve(),

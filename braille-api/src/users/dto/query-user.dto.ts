@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsEnum } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
+import { Role } from '@prisma/client';
 
 export class QueryUserDto {
   @ApiPropertyOptional({ default: 1 })
@@ -28,8 +29,8 @@ export class QueryUserDto {
   @IsOptional()
   inativos?: boolean = false;
 
-  @ApiPropertyOptional({ description: 'Filtrar por perfil (role) do usuário' })
-  @IsString()
+  @ApiPropertyOptional({ description: 'Filtrar por perfil (role) do usuário', enum: Role })
+  @IsEnum(Role)
   @IsOptional()
-  role?: string;
+  role?: Role;
 }

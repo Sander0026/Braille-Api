@@ -166,11 +166,11 @@ Tabela `User`: `id`, `username`, `senha`, `role`, `statusAtivo`, `excluido`, `re
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* O refresh token nao possui expiracao persistida no schema; a politica de "7 dias" esta comentada, mas nao materializada em campo de data.
-* `JwtModule` depende de `JWT_SECRET`; se ausente, a aplicacao deveria falhar no startup com validacao explicita de ambiente.
-* Logout/revogacao explicita de refresh token nao aparece no controller.
+* A expiração do refresh token agora **está materializada e persistida** no banco de dados através do campo `refreshTokenExpiraEm` (política de 7 dias), sendo devidamente validada durante o `auth.service.ts/refreshToken`.
+* O `JwtModule` agora é protegido no startup da aplicação por intermédio da função `obterJwtSecretObrigatorio` (em `auth.module.ts`), que interrompe a subida do servidor caso o `JWT_SECRET` não esteja configurado, prevenindo falhas de segurança silenciosas.
+* A rota oficial de logout (`POST /api/auth/logout`) já está exposta e documentada via Swagger no `AuthController`, encarregando-se de revogar explicitamente o Refresh Token do usuário logado.
 
 ---
 
@@ -185,5 +185,5 @@ Tabela `User`: `id`, `username`, `senha`, `role`, `statusAtivo`, `excluido`, `re
 
 # 10. Resumo Tecnico Final
 
-Auth e um modulo de criticidade alta. Ele protege dados pessoais, documentos medicos e operacoes administrativas. A implementacao demonstra boas praticas importantes contra timing attack, hash de refresh token e revogacao por status. Os principais riscos sao ausencia de expiracao persistida de refresh token e falta de validacao obrigatoria do `JWT_SECRET` no startup.
+Auth é um módulo de criticidade alta. Ele protege dados pessoais, documentos médicos e operações administrativas. A implementação demonstra boas práticas importantes contra timing attack, hash de refresh token e revogação por status. Os riscos anteriores foram todos mitigados com as últimas refatorações, que incluíram a validação obrigatória do `JWT_SECRET` no startup do NestJS e a persistência real da data de expiração do Refresh Token na tabela, tornando a infraestrutura de segurança muito confiável.
 

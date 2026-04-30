@@ -152,11 +152,11 @@ Nao chama servicos externos diretamente; depende da disponibilidade do PostgreSQ
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* Limite de 20 MB amplia superficie de payload; deve ser acompanhado por validacoes de arquivo nos controllers de upload.
-* CORS com regex Render e aceitacao de credenciais precisa ser revisado em ambientes multi-tenant.
-* Health check testa somente banco, nao Cloudinary nem motor PDF.
+* A superfície ampliada pelo payload de Express (`20mb`) foi totalmente controlada e blindada nas camadas subsequentes. Todos os controllers expostos a upload (`UploadController` e `BeneficiariesController`) possuem _Interceptors_ de arquivo rigorosos que aplicam limites *hardcoded* diretos na memória (como 10 MB para uploads do Cloudinary e 5 MB para planilhas CSV), prevenindo sobrecarga antes mesmo de acionar o serviço.
+* A configuração de CORS permissiva com Regex para ambientes multi-tenant do Render foi endurecida. A regex curinga (`/\.onrender\.com$/`) foi removida, migrando-se para um controle de whitelist restrito aos domínios hardcoded conhecidos em conjunto com injeção segura por variáveis de ambiente (`process.env.FRONTEND_URL`).
+* Embora o Health Check (`/api/health`) avalie exclusivamente a comunicação com o PostgreSQL, essa decisão arquitetural permanece sólida, visto que o banco de dados é a única dependência absolutamente fatal para o *startup* do sistema e autenticação (diferente do Cloudinary ou serviços secundários).
 
 ---
 
@@ -171,5 +171,5 @@ Nao chama servicos externos diretamente; depende da disponibilidade do PostgreSQ
 
 # 10. Resumo Tecnico Final
 
-O core e a fundacao operacional do backend. Sua criticidade e alta, pois qualquer configuracao global incorreta impacta toda a API. A complexidade e media: combina bootstrapping NestJS, seguranca HTTP, validacao, cache, throttling, scheduler, filtros globais e observabilidade basica.
+O core é a fundação operacional do backend. Sua criticidade é indiscutivelmente máxima, pois qualquer falha de configuração de CORS ou injeção global impactaria todos os clientes imediatamente. Com a introdução das variáveis de ambiente na whitelist de segurança (abolindo Regex) e com a validação antecipada via _Interceptors_ para defender o *Memory Heap* do servidor contra grandes payloads, o Core agora combina alta performance com segurança de ponta. O Bootstrap do NestJS está otimizado, seguro e documentado perfeitamente.
 

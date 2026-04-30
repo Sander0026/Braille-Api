@@ -187,11 +187,11 @@ Certificados combinam regra academica, identidade visual e validade publica. Usa
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `emitirHonraria` retorna diretamente `construirPdfBase`, que retorna `Buffer`, enquanto API documenta PDF; contrato deve ser revisado.
-* `remove` executa chamadas redundantes de limpeza antes de `deleteFile` efetivo.
-* Busca de fontes externas no runtime pode falhar sem internet; cache local ou fontes empacotadas aumentariam resiliencia.
+* O contrato de `emitirHonraria` foi tipado e padronizado com o retorno `HonrariaPdfResult` contendo o buffer e o código de validação legível para ser tratado adequadamente pelo Controller.
+* O método `remove` do CRUD de modelos foi refatorado para utilizar chamadas diretas através de um `Promise.allSettled` para deleção paralela de arquivos antigos no Cloudinary (excluindo redundâncias prévias).
+* A resiliência do carregamento de fontes foi consideravelmente melhorada. O `PdfService` agora conta com um cache em memória (`fontCache` de instâncias `ArrayBuffer`) para evitar downloads repetitivos via rede, além de adotar um fallback seguro para a fonte embutida `Helvetica` nativa do PDF em caso de queda de rede externa (evitando falha catastrófica da emissão).
 
 ---
 
@@ -205,5 +205,5 @@ Certificados combinam regra academica, identidade visual e validade publica. Usa
 
 # 10. Resumo Tecnico Final
 
-Certificados e modulo de alta criticidade e alta complexidade. Ele transforma regras academicas e relacionais em documento publico verificavel. Os principais riscos sao dependencia de assets remotos/fontes externas e contratos heterogeneos entre academico/honraria.
+Certificados é um módulo de alta criticidade e complexidade gráfica. Ele transforma regras acadêmicas e relacionais em um documento público, rastreável e verificável. A arquitetura atual se provou madura: os riscos clássicos de falha na geração do PDF por perda de rede foram sanados com a implementação do cache de memória `fontCache` e do uso das fontes padrão embutidas no PDF como rede de segurança final (`StandardFonts.Helvetica`). A comunicação assíncrona entre o upload visual e a persistência também o mantém muito estável.
 

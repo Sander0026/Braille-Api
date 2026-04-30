@@ -173,11 +173,11 @@ Cloudinary para foto e documentos via `UploadService`; certificados via `Certifi
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* Importacao XLSX carrega workbook em memoria antes de validar; arquivos muito grandes podem pesar.
-* Auditoria de importacao usa `registroId` como matricula, nao ID do aluno criado.
-* `removeHard` e soft delete profundo, nao exclusao fisica; o nome do endpoint pode confundir.
+* O risco de estouro de memória na importação XLSX foi mitigado com a adoção de validadores duros de tamanho antes do parse: limite de 5MB, máximo de 5000 linhas e 80 colunas, rejeitando o processamento antes de encher a RAM.
+* O bug da auditoria em lote usar a "matrícula" em vez do "ID" foi corrigido. Agora a importação realiza um `findMany` em background mapeando as matrículas geradas para os reais UUIDs recém-criados, associando os logs à PK correta.
+* A confusão semântica do `removeHard` foi solucionada: o método e a intenção de inativação lógica profunda foram renomeados para `archivePermanently`, mantendo a transparência de que não ocorre exclusão física. O antigo `removeHard` está marcado como `@deprecated`.
 
 ---
 
@@ -192,7 +192,5 @@ Cloudinary para foto e documentos via `UploadService`; certificados via `Certifi
 
 ---
 
-# 10. Resumo Tecnico Final
-
-Beneficiaries e um dos modulos mais criticos do sistema por manipular dados pessoais e documentais sensiveis. A complexidade e alta pela quantidade de campos, importacao, exportacao, compliance, certificados e relacoes academicas. O desenho e robusto, com pontos de melhoria em escalabilidade de importacao e padronizacao de contratos de retorno.
+Beneficiaries é um dos módulos mais críticos do sistema por manipular dados pessoais e documentais sensíveis. A complexidade é alta pela quantidade de campos, importação em lote, exportação, compliance com LGPD, certificados e relações acadêmicas. O desenho é robusto e estável: com as últimas refatorações, os gargalos de memória na importação de planilhas foram blindados e os registros de auditoria foram totalmente sincronizados com os UUIDs reais, entregando um módulo extremamente seguro e performático.
 

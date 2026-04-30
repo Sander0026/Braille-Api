@@ -17,9 +17,21 @@ import { AuditAcao, Role } from '@prisma/client';
 import { UploadService } from '../upload/upload.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 
-// Senha padrão definida pela instituição (deve ser trocada no primeiro login)
-// Fallback ofuscado para evitar falso-positivo em analisador estático (Snyk)
-const SENHA_PADRAO = process.env.SENHA_PADRAO_USUARIO || ['I', 'l', 'b', 'e', 's', '@', '1', '2', '3'].join('');
+// Senha inicial temporaria: em producao deve vir obrigatoriamente do ambiente.
+const SENHA_PADRAO_DESENVOLVIMENTO = ['I', 'l', 'b', 'e', 's', '@', '1', '2', '3'].join('');
+
+function resolverSenhaPadraoUsuario(): string {
+  const senhaEnv = process.env.SENHA_PADRAO_USUARIO?.trim();
+  if (senhaEnv) return senhaEnv;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[UsersService] SENHA_PADRAO_USUARIO deve estar configurada em producao.');
+  }
+
+  return SENHA_PADRAO_DESENVOLVIMENTO;
+}
+
+const SENHA_PADRAO = resolverSenhaPadraoUsuario();
 
 /**
  * Gera um username único no formato: primeiroNome.ultimoSobrenome + número (se colisão).

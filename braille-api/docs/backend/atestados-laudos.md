@@ -14,7 +14,7 @@ Atestados justificam faltas em periodo especifico e laudos mantem historico medi
 
 ## Fluxo de Funcionamento
 
-Atestados criam um registro por periodo e, em transacao, atualizam frequencias `FALTA` para `FALTA_JUSTIFICADA`. Laudos criam, listam, atualizam e removem documentos medicos, apagando arquivo antigo do Cloudinary quando substituido/removido.
+Atestados criam um registro por período e, em transação, atualizam frequências `FALTA` para `FALTA_JUSTIFICADA`. Laudos criam, listam e atualizam documentos médicos. A remoção de um laudo aplica *soft delete* (marcado como `excluidoEm`), preservando o histórico médico e seu arquivo no Cloudinary para segurança jurídica.
 
 ---
 
@@ -48,8 +48,8 @@ Documentos medicos possuem alto impacto em frequencia e privacidade. Atestado ex
 7. Remocao de atestado reverte frequencias vinculadas para `FALTA` e exclui o atestado em transacao.
 8. Preview consulta faltas no periodo sem escrita.
 9. `LaudosService.criar` valida aluno e cria `LaudoMedico`.
-10. Atualizacao de laudo remove arquivo antigo se URL mudou.
-11. Remocao tenta remover arquivo e deleta registro.
+10. Atualizacao de laudo não remove o arquivo antigo, mantendo a integridade do histórico médico.
+11. Remocao de laudo apenas aplica soft delete (`excluidoEm`), mantendo o registro no banco de dados e o arquivo na nuvem intactos.
 
 ## Dependencias Internas
 
@@ -132,7 +132,7 @@ Documentos medicos possuem alto impacto em frequencia e privacidade. Atestado ex
 
 ## Servicos Externos
 
-Cloudinary por `UploadService.deleteFile`.
+Cloudinary via `UploadService.deleteFile` (apenas para substituição de atestados). Laudos preservam arquivos sem excluí-los.
 
 ---
 
@@ -168,11 +168,11 @@ Cloudinary por `UploadService.deleteFile`.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* Atestados nao registram auditoria via `AuditLogService`, apesar de receberem `auditUser`.
-* Atualizacao de atestado nao permite mudar periodo; isso e coerente, mas deve estar claro para usuarios.
-* Remocao fisica de laudo pode apagar historico medico; regra juridica deve confirmar permissao.
+* Atestados agora **registram auditoria** corretamente em todas as operações (criação, atualização e remoção) via `AuditLogService`.
+* Atualizacao de atestado não permite mudar periodo; trata-se de uma regra de negócio rígida. Para alterar datas, deve-se remover e criar novo atestado para reverter justificativas de faltas adequadamente.
+* Remocao de laudo utiliza **soft delete** (`excluidoEm`); o histórico médico e os respectivos anexos nunca são apagados fisicamente, garantindo conformidade jurídica e rastreabilidade.
 
 ---
 
@@ -187,5 +187,5 @@ Cloudinary por `UploadService.deleteFile`.
 
 # 10. Resumo Tecnico Final
 
-Atestados e laudos sao dominios de criticidade alta por envolverem saude e frequencia academica. A complexidade e media: atestados impactam dados derivados, laudos impactam armazenamento e auditoria. O principal ponto de melhoria e auditar tambem operacoes de atestados.
+Atestados e laudos sao domínios de criticidade alta por envolverem saúde e frequência acadêmica. A complexidade é média: atestados impactam dados derivados (frequências), enquanto laudos gerenciam armazenamento e auditoria. As melhorias implementadas de soft delete e auditoria em ambos os serviços conferem alta segurança jurídica e controle à plataforma.
 

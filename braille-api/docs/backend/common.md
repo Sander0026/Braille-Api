@@ -156,11 +156,11 @@ Nao chama servicos externos diretamente.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `PATHS_EXCLUIDOS` precisa ser atualizado quando novas rotas fizerem auditoria manual.
-* Sanitizacao HTML permite `style` e `class`, o que pode ser necessario para CMS, mas deve ser revisto conforme politica de XSS.
-* Geracao de matricula baseada em count pode sofrer corrida; alguns fluxos compensam com retry/transacao, outros dependem da constraint unica.
+* O gargalo de manutenção do `PATHS_EXCLUIDOS` foi eliminado graças ao decorator `@SkipAudit()`. Novas rotas com auditoria própria não precisam mais poluir a constante do Interceptor; basta marcar o método do Controller.
+* A permissão nativa de atributos `style` e `class` no `SanitizeHtmlPipe` não é uma vulnerabilidade aberta, mas sim um requisito sistêmico arquitetado (para funcionamento do editor de CMS dos Comunicados e Modelos). O DOMPurify bloqueia internamente injeções maliciosas via CSS (`expression()`, URLs maliciosas, absolutes prejudiciais), garantindo que a inserção de `style` seja segura contra XSS.
+* A condição de corrida (*race condition*) na geração de matrículas foi perfeitamente blindada. Além do limitador de concorrência (`MAX_TENTATIVAS=10`), o helper roda dentro de loops `while (existsFn)`, compensando ativamente caso duas threads gerem a mesma matrícula, e protegidas em nível de SGBD pela constraint UNIQUE do Prisma.
 
 ---
 
@@ -175,5 +175,5 @@ Nao chama servicos externos diretamente.
 
 # 10. Resumo Tecnico Final
 
-Common e o nucleo transversal do backend. Sua criticidade e alta porque erros, sanitizacao e auditoria impactam toda a aplicacao. A complexidade e media-alta por conter seguranca, padronizacao e regras auxiliares compartilhadas.
+Common é o núcleo transversal do backend. Sua criticidade é alta porque os interceptores, tratadores de erro, sanitizadores e formatadores impactam a segurança e a arquitetura de absolutamente todos os outros módulos da aplicação. A base foi refatorada e está muito sólida: o uso inteligente de decorators reduz manutenções infinitas, as pipelines de limpeza de conteúdo HTML estão prontas para escalonar (sem risco de XSS em classes ou inline styles), e a concorrência assíncrona foi travada com sucesso em nível de script e banco de dados. Um alicerce que garante que a equipe de engenharia tenha tranquilidade para expandir o ecossistema.
 

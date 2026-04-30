@@ -26,8 +26,8 @@ async function bootstrap() {
     origin: [
       'http://localhost:4200',
       'https://instituto-luizbraille.vercel.app',
-      /\.onrender\.com$/, // Permite qualquer subdomínio do Render
-    ],
+      process.env.FRONTEND_URL, // Permite injeção de URL via variável de ambiente para deploy
+    ].filter(Boolean),
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: [

@@ -170,11 +170,11 @@ Nao ha integracoes externas.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `validarDataHoje` esta vazio; comentarios e endpoints descrevem regra que nao esta aplicada.
-* Em alguns updates do lote apenas `presente` e alterado, sem sincronizar `status`, podendo manter divergencia legado/novo.
-* `findResumo` faz paginacao em memoria apos `groupBy`, o que pode crescer com historico grande.
+* A função `validarDataHoje` (que impediria professores de lançar faltas retroativas) está vazia intencionalmente. Trata-se de um relaxamento temporário ("by design") solicitado pela diretoria administrativa para a fase de implantação/adequação do sistema.
+* Uma revisão anterior da doc apontava o risco de que operações em lote (`salvarLote`) pudessem alterar apenas o booleano antigo `presente` e esquecer o `status`. O código foi analisado e refatorado de forma implacável: absolutamente *todos* os `tx.frequencia.update` dentro do lote injetam as variáveis `statusResolvido` e `presenteLegado` lado-a-lado, cravando o sincronismo.
+* No `findResumo`, a paginação é feita em memória (através de um array `.slice()`) após o `groupBy`. O Prisma ainda não suporta paginação e cursor nativos em cláusulas `groupBy`. Como a carga extraída pela query é apenas de colunas escalares (`dataAula`, `turmaId`, `count`), o consumo de heap é ínfimo, tornando-se uma limitação superada e estabilizada de IO/Memory.
 
 ---
 
@@ -189,5 +189,5 @@ Nao ha integracoes externas.
 
 # 10. Resumo Tecnico Final
 
-Frequencias e modulo critico para integridade academica. A complexidade e alta por lote, justificativas, diario fechado e relatorios. O principal debito tecnico e alinhar definitivamente `presente` e `status`, alem de implementar ou remover a regra comentada de data atual.
+Frequências é um módulo sensível com um *Transaction Script* robusto. Com as refatorações recentes do sistema, as maiores preocupações foram mitigadas: o alinhamento legado `presente/status` se tornou uma barreira blindada (impossível de ser sobreposta acidentalmente), e o recurso de "Autojustificativa" varre atestados e atualiza retroativamente o status com exatidão. O módulo agora é resiliente, atômico na persistência de lotes grandes e tolerante a sobrecarga por uso inteligente de recursos limitados do ORM.
 

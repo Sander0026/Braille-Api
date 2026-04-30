@@ -1,5 +1,8 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PDFDocument, PDFPage, PDFFont, rgb, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import * as QRCode from 'qrcode';
@@ -33,6 +36,19 @@ const FONTS_URLS: Record<string, string> = {
   'Dancing Script':
     'https://raw.githubusercontent.com/google/fonts/main/ofl/dancingscript/static/DancingScript-Regular.ttf',
   Pacifico: 'https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf',
+};
+
+const FONT_FILE_NAMES: Record<string, string> = {
+  Roboto: 'Roboto-Regular.ttf',
+  'Open Sans': 'OpenSans-Regular.ttf',
+  Montserrat: 'Montserrat-Regular.ttf',
+  Merriweather: 'Merriweather-Regular.ttf',
+  Cinzel: 'Cinzel-Regular.ttf',
+  'Playfair Display': 'PlayfairDisplay-Regular.ttf',
+  'Great Vibes': 'GreatVibes-Regular.ttf',
+  Parisienne: 'Parisienne-Regular.ttf',
+  'Dancing Script': 'DancingScript-Regular.ttf',
+  Pacifico: 'Pacifico-Regular.ttf',
 };
 
 /**
@@ -72,11 +88,14 @@ type AssinaturaContext = {
 export class PdfService {
   private readonly logger = new Logger(PdfService.name);
   private readonly fontCache = new Map<string, ArrayBuffer>();
+  private readonly fontCacheDir: string;
   private readonly frontendUrl: string;
 
   constructor(private readonly configService: ConfigService) {
     // Resolve a URL do frontend no startup — elimina require('dotenv') em produção (CWE-547)
     this.frontendUrl = this.configService.get<string>('FRONTEND_URL') ?? 'https://instituto-luizbraille.vercel.app';
+    this.fontCacheDir =
+      this.configService.get<string>('CERTIFICADOS_FONT_CACHE_DIR') ?? join(tmpdir(), 'braille-api-font-cache');
   }
 
   // ── Validação de URL (SSRF Prevention) ────────────────────────────────────
@@ -115,6 +134,48 @@ export class PdfService {
 
   // ── Carregamento de Fontes ─────────────────────────────────────────────────
 
+  private bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+  }
+
+  private caminhosFonteLocal(fontName: string): string[] {
+    const fileName = FONT_FILE_NAMES[fontName];
+    if (!fileName) return [];
+
+    return [
+      join(process.cwd(), 'assets', 'fonts', fileName),
+      join(process.cwd(), 'src', 'assets', 'fonts', fileName),
+      join(this.fontCacheDir, fileName),
+    ];
+  }
+
+  private carregarFonteLocal(fontName: string): ArrayBuffer | null {
+    const caminho = this.caminhosFonteLocal(fontName).find((candidate) => existsSync(candidate));
+    if (!caminho) return null;
+
+    try {
+      return this.bufferToArrayBuffer(readFileSync(caminho));
+    } catch (err: unknown) {
+      this.logger.warn(`Falha ao ler fonte local "${fontName}": ${String(err)}`);
+      return null;
+    }
+  }
+
+  private salvarFonteNoCacheLocal(fontName: string, fontBytes: ArrayBuffer): void {
+    const fileName = FONT_FILE_NAMES[fontName];
+    if (!fileName) return;
+
+    try {
+      mkdirSync(this.fontCacheDir, { recursive: true });
+      const destino = join(this.fontCacheDir, fileName);
+      if (!existsSync(destino)) {
+        writeFileSync(destino, Buffer.from(fontBytes));
+      }
+    } catch (err: unknown) {
+      this.logger.warn(`Falha ao salvar cache local da fonte "${fontName}": ${String(err)}`);
+    }
+  }
+
   private async carregarFonte(pdfDoc: PDFDocument, fontName?: string): Promise<PDFFont> {
     if (!fontName || fontName === 'Helvetica') return pdfDoc.embedFont(StandardFonts.Helvetica);
     if (fontName === 'TimesRoman') return pdfDoc.embedFont(StandardFonts.TimesRoman);
@@ -131,6 +192,10 @@ export class PdfService {
 
       let fontBytes = this.fontCache.get(fontName);
       if (!fontBytes) {
+        fontBytes = this.carregarFonteLocal(fontName) ?? undefined;
+      }
+
+      if (!fontBytes) {
         // Fontes vêm do catálogo hardcoded — allowlist de font hosts
         const safeUrl = this.sanitizeSafeUrl(fontUrl, ALLOWED_FONT_HOSTS);
         const res = await fetch(safeUrl);
@@ -141,8 +206,9 @@ export class PdfService {
           throw new Error(`URL devolveu HTML (não é um .ttf): ${fontUrl}`);
         }
         fontBytes = await res.arrayBuffer();
-        this.fontCache.set(fontName, fontBytes);
+        this.salvarFonteNoCacheLocal(fontName, fontBytes);
       }
+      this.fontCache.set(fontName, fontBytes);
       return pdfDoc.embedFont(fontBytes);
     } catch (err: unknown) {
       this.logger.error(`Falha ao carregar fonte "${fontName}": ${String(err)}. Usando Helvetica.`);

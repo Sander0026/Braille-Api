@@ -9,7 +9,7 @@ import { CreateTurmaDto, GradeHorariaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryTurmaDto } from './dto/query-turma.dto';
-import { AuditAcao, DiaSemana, Role, TurmaStatus } from '@prisma/client';
+import { AuditAcao, DiaSemana, MatriculaStatus, Role, TurmaStatus } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { calcularCargaHorariaTotal } from '../common/helpers/data.helper';
@@ -156,6 +156,9 @@ export class TurmasService {
   async findProfessoresAtivos() {
     return this.prisma.user.findMany({
       where: {
+        role: Role.PROFESSOR,
+        statusAtivo: true,
+        excluido: false,
         turmas: {
           some: {
             excluido: false,
@@ -189,10 +192,13 @@ export class TurmasService {
       cargaFinalStr = calcularCargaHorariaTotal(start, end, gradeConsiderada);
     }
 
-    const novoStatusTurma: string | undefined = dadosTurma.status;
-    let statusMatricula: string | null = null;
-    if (novoStatusTurma === 'CONCLUIDA') statusMatricula = 'CONCLUIDA';
-    if (novoStatusTurma === 'CANCELADA') statusMatricula = 'CANCELADA';
+    const novoStatusTurma = dadosTurma.status as TurmaStatus | undefined;
+    if (novoStatusTurma && novoStatusTurma !== turma.status) {
+      this.validarTransicaoStatus(turma.status, novoStatusTurma);
+    }
+
+    const statusMatricula = novoStatusTurma ? this.statusMatriculaPorStatus(novoStatusTurma) : null;
+    const statusAtivoResolvido = novoStatusTurma ? this.statusAtivoPorStatus(novoStatusTurma) : undefined;
 
     try {
       const [turmaAtualizada] = await this.prisma.$transaction(async (tx) => {
@@ -200,6 +206,7 @@ export class TurmasService {
           where: { id },
           data: {
             ...dadosTurma,
+            ...(statusAtivoResolvido !== undefined && { statusAtivo: statusAtivoResolvido }),
             ...(start !== undefined && { dataInicio: start }),
             ...(end !== undefined && { dataFim: end }),
             ...(cargaFinalStr !== undefined && { cargaHoraria: cargaFinalStr }),
@@ -219,8 +226,8 @@ export class TurmasService {
 
         if (statusMatricula) {
           await tx.matriculaOficina.updateMany({
-            where: { turmaId: id, status: 'ATIVA' },
-            data: { status: statusMatricula as any, dataEncerramento: new Date() },
+            where: { turmaId: id, status: MatriculaStatus.ATIVA },
+            data: { status: statusMatricula, dataEncerramento: new Date() },
           });
         }
 
@@ -620,34 +627,56 @@ export class TurmasService {
    * Muda o status acadêmico da turma.
    * PREVISTA → ANDAMENTO/CANCELADA; ANDAMENTO → CONCLUIDA/CANCELADA; CANCELADA → PREVISTA
    */
-  async mudarStatus(id: string, novoStatus: TurmaStatus, auditUser: AuditUser) {
-    const turma = await this.prisma.turma.findUnique({
-      where: { id },
-      select: { id: true, status: true, nome: true },
-    });
-    if (!turma) throw new NotFoundException('Turma não encontrada.');
-
-    const permitidos = TRANSICOES_VALIDAS[turma.status];
+  private validarTransicaoStatus(statusAtual: TurmaStatus, novoStatus: TurmaStatus): void {
+    const permitidos = TRANSICOES_VALIDAS[statusAtual];
     if (!permitidos.includes(novoStatus)) {
       throw new BadRequestException(
-        `Transição inválida: "${turma.status}" → "${novoStatus}". ` +
+        `Transição inválida: "${statusAtual}" → "${novoStatus}". ` +
           `Permitidas: ${permitidos.length ? permitidos.join(', ') : 'nenhuma'}.`,
       );
     }
+  }
 
-    const statusAtivo = novoStatus === 'ANDAMENTO' || novoStatus === 'PREVISTA';
+  private statusAtivoPorStatus(status: TurmaStatus): boolean {
+    return status === TurmaStatus.ANDAMENTO || status === TurmaStatus.PREVISTA;
+  }
+
+  private statusMatriculaPorStatus(status: TurmaStatus): MatriculaStatus | null {
+    if (status === TurmaStatus.CONCLUIDA) return MatriculaStatus.CONCLUIDA;
+    if (status === TurmaStatus.CANCELADA) return MatriculaStatus.CANCELADA;
+    return null;
+  }
+
+  private async aplicarTransicaoStatus(
+    turma: { id: string; status: TurmaStatus; nome: string },
+    novoStatus: TurmaStatus,
+    auditUser: AuditUser,
+  ) {
+    const statusAtivo = this.statusAtivoPorStatus(novoStatus);
+    const statusMatricula = this.statusMatriculaPorStatus(novoStatus);
 
     try {
-      const result = await this.prisma.turma.update({
-        where: { id },
-        data: { status: novoStatus, statusAtivo },
-        select: { id: true, nome: true, status: true, statusAtivo: true },
+      const [result] = await this.prisma.$transaction(async (tx) => {
+        const turmaAtualizada = await tx.turma.update({
+          where: { id: turma.id },
+          data: { status: novoStatus, statusAtivo },
+          select: { id: true, nome: true, status: true, statusAtivo: true },
+        });
+
+        if (statusMatricula) {
+          await tx.matriculaOficina.updateMany({
+            where: { turmaId: turma.id, status: MatriculaStatus.ATIVA },
+            data: { status: statusMatricula, dataEncerramento: new Date() },
+          });
+        }
+
+        return [turmaAtualizada];
       });
 
       this.auditService
         .registrar({
           entidade: 'Turma',
-          registroId: id,
+          registroId: turma.id,
           acao: AuditAcao.MUDAR_STATUS,
           autorId: auditUser.sub,
           autorNome: auditUser.nome,
@@ -655,68 +684,34 @@ export class TurmasService {
           ip: auditUser.ip,
           userAgent: auditUser.userAgent,
           oldValue: { status: turma.status },
-          newValue: { status: result.status },
+          newValue: { status: result.status, statusAtivo: result.statusAtivo },
         })
         .catch((e) => this.logger.warn(`Failure auditing Turma mudarStatus: ${e.message}`));
 
       return result;
     } catch (err) {
-      this.logger.error(`Tentativa corrompida de mudarStatus da turma ${id}`, err);
+      this.logger.error(`Tentativa corrompida de mudarStatus da turma ${turma.id}`, err);
       throw new InternalServerErrorException('Não foi possível mudar o status da turma.');
     }
   }
 
-  async cancelar(id: string, auditUser: AuditUser) {
-    try {
-      const turma = await this.prisma.turma.update({
-        where: { id },
-        data: { status: 'CANCELADA' },
-      });
+  async mudarStatus(id: string, novoStatus: TurmaStatus, auditUser: AuditUser) {
+    const turma = await this.prisma.turma.findUnique({
+      where: { id },
+      select: { id: true, status: true, nome: true },
+    });
+    if (!turma) throw new NotFoundException('Turma não encontrada.');
 
-      this.auditService
-        .registrar({
-          entidade: 'Turma',
-          registroId: id,
-          acao: AuditAcao.MUDAR_STATUS,
-          autorId: auditUser.sub,
-          autorNome: auditUser.nome,
-          autorRole: auditUser.role,
-          ip: auditUser.ip,
-          userAgent: auditUser.userAgent,
-          newValue: { status: 'CANCELADA' },
-        })
-        .catch((e) => this.logger.warn(`Failure auditing Turma cancelar: ${e.message}`));
-      return turma;
-    } catch (err) {
-      this.logger.error(`Tentativa corrompida de cancelar a turma ${id}`, err);
-      throw new InternalServerErrorException('Não foi possível cancelar status turma.');
-    }
+    this.validarTransicaoStatus(turma.status, novoStatus);
+    return this.aplicarTransicaoStatus(turma, novoStatus, auditUser);
+
+  }
+
+  async cancelar(id: string, auditUser: AuditUser) {
+    return this.mudarStatus(id, TurmaStatus.CANCELADA, auditUser);
   }
 
   async concluir(id: string, auditUser: AuditUser) {
-    try {
-      const turma = await this.prisma.turma.update({
-        where: { id },
-        data: { status: 'CONCLUIDA' },
-      });
-
-      this.auditService
-        .registrar({
-          entidade: 'Turma',
-          registroId: id,
-          acao: AuditAcao.MUDAR_STATUS,
-          autorId: auditUser.sub,
-          autorNome: auditUser.nome,
-          autorRole: auditUser.role,
-          ip: auditUser.ip,
-          userAgent: auditUser.userAgent,
-          newValue: { status: 'CONCLUIDA' },
-        })
-        .catch((e) => this.logger.warn(`Failure auditing Turma concluir: ${e.message}`));
-      return turma;
-    } catch (err) {
-      this.logger.error(`Tentativa corrompida de concluir a turma ${id}`, err);
-      throw new InternalServerErrorException('Não foi possível concluir a turma.');
-    }
+    return this.mudarStatus(id, TurmaStatus.CONCLUIDA, auditUser);
   }
 }
