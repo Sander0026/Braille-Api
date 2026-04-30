@@ -224,12 +224,12 @@ O banco e PostgreSQL via Prisma. As entidades principais sao `User`, `Aluno`, `T
 
 # 8. Pontos de Atencao
 
-* Existe uma pasta inesperada `src/users/dto/rc/users/dto/query-user.dto.ts`, indicando possivel copia acidental.
+* A pasta inesperada `src/users/dto/rc/users/dto/query-user.dto.ts` foi removida.
 * Alguns comentarios e strings do codigo aparecem com encoding corrompido no terminal, embora a intencao funcional esteja clara.
 * `FrequenciasService.validarDataHoje` esta relaxado e nao aplica a regra descrita nos comentarios.
-* `CertificadosService.remove` chama `trocarArquivo` sem novo arquivo antes de `deleteFile`; a primeira chamada nao remove nada, mas gera custo cognitivo e duplicidade conceitual.
-* Auditoria mistura instrumentacao manual e global; a lista de exclusoes precisa ser mantida sempre que novo service passar a registrar logs manualmente.
-* Alguns endpoints retornam entidade Prisma crua, outros retornam `ApiResponse`; o contrato HTTP nao e totalmente uniforme.
+* `CertificadosService.remove` foi simplificado para delecao direta dos arquivos externos, sem caminho redundante por `trocarArquivo`.
+* Auditoria ganhou `@SkipAudit()` e helpers de mapeamento para reduzir manutencao manual de paths excluidos.
+* Alguns endpoints ainda retornam entidade Prisma crua, outros retornam `ApiResponse`; o contrato HTTP nao e totalmente uniforme e continua como ponto de padronizacao futura.
 
 ---
 

@@ -17,6 +17,7 @@ import { PrismaClient } from '@prisma/client';
 import { seedAdmin }      from './admin-seeder.js';
 import { seedSiteConfig } from './site-config-seeder.js';
 import { importarAlunos } from './alunos-seeder.js';
+import { requireProductionConfirmation } from '../../scripts/lib/execution-guard.js';
 
 const prisma = new PrismaClient();
 
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   const csvEnv = process.env.SEED_ALUNOS_CSV;
 
   if (csvEnv) {
+    requireProductionConfirmation('SeedAlunos', 'CONFIRMAR_SEED_ALUNOS_PRODUCAO');
     console.log('');
     await importarAlunos(prisma, csvEnv);
   } else {

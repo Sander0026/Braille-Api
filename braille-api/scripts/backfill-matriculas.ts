@@ -14,6 +14,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { generateMatriculas } from './lib/matricula-generator.js';
+import { hasCliFlag, requireProductionConfirmation } from './lib/execution-guard.js';
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -21,8 +22,15 @@ const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
   const ano = new Date().getFullYear();
+  const dryRun = hasCliFlag('--dry-run');
 
   console.log('🚀 Iniciando backfill de matrículas...\n');
+
+  requireProductionConfirmation('BackfillMatriculas', 'CONFIRMAR_BACKFILL_MATRICULAS_PRODUCAO');
+
+  if (dryRun) {
+    console.log('Modo dry-run ativo: nenhuma matricula sera gravada.\n');
+  }
 
   // Alunos e Staff processados sequencialmente para evitar sobrecarga no banco.
   // Se o banco tiver alta capacidade, podem ser paralelizados com Promise.all.
@@ -31,6 +39,7 @@ async function main(): Promise<void> {
     model: 'aluno',
     prefix: `${ano}`,
     padLength: 5,
+    dryRun,
   });
 
   console.log('');
@@ -39,6 +48,7 @@ async function main(): Promise<void> {
     model: 'user',
     prefix: `P${ano}`,
     padLength: 5,
+    dryRun,
   });
 
   // ── Relatório final ────────────────────────────────────────────────────────

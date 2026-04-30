@@ -165,11 +165,11 @@ Cloudinary via `UploadService.deleteFile` para remocao de foto antiga.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `SENHA_PADRAO` tem fallback no codigo; idealmente ambiente deveria ser obrigatorio em producao.
-* `role` em query e string, convertida no service; validacao poderia usar enum.
-* Existe arquivo duplicado em `src/users/dto/rc/users/dto/query-user.dto.ts`, provavel residuo.
+* `SENHA_PADRAO_USUARIO` passou a ser obrigatoria em producao; o fallback local permanece restrito a desenvolvimento/teste.
+* `role` em `QueryUserDto` agora usa enum `Role`, com validacao de DTO e documentacao Swagger alinhada.
+* O arquivo duplicado `src/users/dto/rc/users/dto/query-user.dto.ts` foi removido.
 
 ---
 
@@ -186,4 +186,3 @@ Cloudinary via `UploadService.deleteFile` para remocao de foto antiga.
 # 10. Resumo Tecnico Final
 
 Users e modulo critico por controlar identidade interna e acesso operacional. A complexidade e media, com regras de credencial, reativacao, auditoria e soft delete. O principal risco e a politica de senha padrao depender de configuracao e processo operacional seguro.
-

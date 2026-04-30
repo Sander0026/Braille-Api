@@ -176,11 +176,12 @@ Nao integra servico externo diretamente.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `cancelar` e `concluir` diretos nao usam `TRANSICOES_VALIDAS`; podem furar a maquina de estados.
-* `GradeHoraria` no schema permite uma entrada por dia por turma; se negocio exigir dois turnos no mesmo dia, sera preciso mudar constraint.
-* `findProfessoresAtivos` retorna usuarios com turmas, nao necessariamente role `PROFESSOR`.
+* `cancelar` e `concluir` agora delegam para a mesma maquina de estados usada por `mudarStatus`, bloqueando transicoes invalidas.
+* Transicoes para `CONCLUIDA` e `CANCELADA` passaram a encerrar matriculas ativas na mesma transacao e ajustar `statusAtivo`.
+* `GradeHoraria` ja permite multiplos turnos no mesmo dia via indices no schema, com validacao de sobreposicao no service.
+* `findProfessoresAtivos` agora retorna apenas usuarios com role `PROFESSOR`, ativos e nao excluidos.
 
 ---
 
@@ -197,4 +198,3 @@ Nao integra servico externo diretamente.
 # 10. Resumo Tecnico Final
 
 Turmas e modulo de alta criticidade academica. A complexidade e alta por horarios, capacidade, matriculas, status e certificado. A implementacao e forte em validacoes de negocio, mas deve alinhar todos os atalhos de status a mesma maquina de estados.
-

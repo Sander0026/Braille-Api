@@ -130,11 +130,12 @@ Nao ha integracoes externas principais.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* Rodar seed em producao pode sobrescrever dados se nao for idempotente.
-* Scripts devem ser revisados antes de executar em bancos reais.
-* Credenciais padrao devem ser trocadas imediatamente.
+* Os seeders principais sao idempotentes: admin usa `upsert` sem sobrescrever senha existente, site config usa `skipDuplicates` e importacao de alunos so roda quando `SEED_ALUNOS_CSV` e informado.
+* Importacao de alunos via seed agora exige confirmacao explicita em producao por `CONFIRMAR_SEED_ALUNOS_PRODUCAO=true`.
+* O backfill de matriculas agora exige `CONFIRMAR_BACKFILL_MATRICULAS_PRODUCAO=true` em producao e suporta `--dry-run` para simular a faixa de matriculas antes de gravar.
+* Credenciais padrao do admin dependem de `SENHA_PADRAO_ADMIN`; se ausente, o seed falha sem criar senha hardcoded.
 
 ---
 
@@ -150,4 +151,3 @@ Nao ha integracoes externas principais.
 # 10. Resumo Tecnico Final
 
 Seeds e scripts sao suporte operacional de criticidade media. Eles nao fazem parte do caminho HTTP, mas impactam dados iniciais e integridade historica. A complexidade e media por lidar com dados legados e configuracao inicial.
-

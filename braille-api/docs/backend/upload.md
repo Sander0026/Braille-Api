@@ -146,11 +146,11 @@ Cloudinary.
 
 ---
 
-# 8. Pontos de Atencao
+# 8. Pontos de Atencao Tratados
 
-* `deleteFile` infere `resource_type` por extensao `.pdf`; PDFs enviados como `auto` podem ter comportamento diferente conforme Cloudinary.
-* `publicId` derivado por split simples pode falhar em URLs com transformacoes complexas.
-* Nao ha validacao de tamanho antes do stream; depende da rejeicao Cloudinary/Multer.
+* `deleteFile` agora tenta remover o asset em tipos compatíveis (`image` e `raw`), cobrindo PDFs enviados como `auto` ou `raw`.
+* A extracao de `publicId` passou a considerar URLs Cloudinary com versao e transformacoes, evitando erro em URLs complexas.
+* O limite de 10 MB tambem e validado dentro do `UploadService`, protegendo chamadas feitas fora dos controllers com Multer.
 
 ---
 
@@ -164,4 +164,3 @@ Cloudinary.
 # 10. Resumo Tecnico Final
 
 Upload e modulo transversal de criticidade alta por manipular documentos e imagens externas. A complexidade e media. O maior risco tecnico esta na robustez da extracao de `publicId` e no alinhamento de `resource_type` entre upload e delete.
-

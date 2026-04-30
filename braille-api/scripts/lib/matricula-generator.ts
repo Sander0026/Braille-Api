@@ -28,6 +28,8 @@ export interface MatriculaGeneratorConfig {
   prefix: string;
   /** Número de dígitos do sequencial com zero-padding (default: 5 → '00001'). */
   padLength?: number;
+  /** Quando true, calcula e exibe a faixa sem gravar no banco. */
+  dryRun?: boolean;
 }
 
 export interface MatriculaGeneratorResult {
@@ -77,7 +79,7 @@ export async function generateMatriculas(
   prisma: PrismaClient,
   config: MatriculaGeneratorConfig,
 ): Promise<MatriculaGeneratorResult> {
-  const { model, prefix, padLength = 5 } = config;
+  const { model, prefix, padLength = 5, dryRun = false } = config;
 
   // ── Passo 1: Teto numérico — 1 query cirúrgica com select mínimo ──────────
   log.info(`🔍 [${model}] Buscando teto numérico para prefixo "${prefix}"...`);
@@ -119,6 +121,12 @@ export async function generateMatriculas(
 
   const primeiraNova = formatarMatricula(prefix, baseSequencial, padLength);
   const ultimaNova   = formatarMatricula(prefix, sequencial - 1, padLength);
+
+  if (dryRun) {
+    log.warn(`[${model}] Dry-run ativo. Nenhuma matricula sera gravada.`);
+    log.info(`   Faixa simulada: ${primeiraNova} -> ${ultimaNova}`);
+    return { geradas: updates.length, primeiraNova, ultimaNova };
+  }
 
   // ── Passo 4: Commit atômico ACID ─────────────────────────────────────────
   log.info(`🚀 [${model}] Comitando lote de ${updates.length} registros via $transaction (ACID)...`);
