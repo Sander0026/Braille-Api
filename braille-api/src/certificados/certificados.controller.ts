@@ -24,7 +24,6 @@ import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
 import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
 import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
-import { PdfService } from './pdf.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -38,10 +37,7 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 @SkipAudit()
 @Controller('modelos-certificados')
 export class CertificadosController {
-  constructor(
-    private readonly certificadosService: CertificadosService,
-    private readonly pdfService: PdfService,
-  ) {}
+  constructor(private readonly certificadosService: CertificadosService) {}
 
   private static readonly cloudinaryMaxFileSize = 10 * 1024 * 1024;
 
@@ -65,30 +61,6 @@ export class CertificadosController {
       );
     },
   };
-
-  @Get('teste')
-  @ApiOperation({ summary: 'Rota temporária de homologação geométrica do PDF' })
-  async gerarPdfTeste(@Res({ passthrough: true }) res: Response) {
-    const buffer = await this.pdfService.construirPdfBase(
-      {
-        arteBaseUrl: 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
-        assinaturaUrl: 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
-        assinaturaUrl2: null,
-        layoutConfig: null,
-        nomeAssinante: 'Assinante Demo',
-        cargoAssinante: 'Cargo Demo',
-        nomeAssinante2: null,
-        cargoAssinante2: null,
-      },
-      'CERTIFICAMOS QUE\n\nAluno de Teste do Sistema Braille\n\nConcluiu com êxito o curso de testes.',
-      'BR-TEST-01',
-    );
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="teste_homologacao.pdf"',
-    });
-    return new StreamableFile(buffer);
-  }
 
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
