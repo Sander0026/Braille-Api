@@ -14,9 +14,8 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 
 // Chaves de cache centralizadas — usadas tanto nos @CacheKey quanto na invalidação
 const CACHE_KEYS = {
-  all:    'site_config:all',
+  all: 'site_config:all',
   secoes: 'site_config:secoes',
-  secao:  (s: string) => `site_config:secao:${s}`,
 } as const;
 
 @ApiTags('CMS — Configurações do Site')
@@ -51,8 +50,6 @@ export class SiteConfigController {
   }
 
   @Get('secoes/:secao')
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(600_000) // 10 minutos — chave gerada automaticamente pela URL (/api/site-config/secoes/hero)
   @ApiOperation({ summary: 'Retorna o conteúdo de uma seção específica' })
   getSecao(@Param('secao') secao: string) {
     return this.service.getSecao(secao);
@@ -83,11 +80,8 @@ export class SiteConfigController {
   @ApiOperation({ summary: 'Atualiza o conteúdo de uma seção' })
   async updateSecao(@Param('secao') secao: string, @Body() body: Record<string, string>, @Req() req: AuthenticatedRequest) {
     const result = await this.service.updateSecao(secao, body, getAuditUser(req));
-    // Invalida cache geral de seções e o cache específico desta seção
-    await Promise.all([
-      this.cacheManager.del(CACHE_KEYS.secoes),
-      this.cacheManager.del(CACHE_KEYS.secao(secao)),
-    ]);
+    // Invalida a listagem geral de seções. A rota de seção específica não usa cache para evitar conteúdo antigo.
+    await this.cacheManager.del(CACHE_KEYS.secoes);
     return result;
   }
 }
