@@ -27,13 +27,13 @@ import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 @ApiTags('Usuários do Sistema (Staff)')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
 @SkipAudit()
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Cadastrar novo funcionário. Username, senha padrão e matrícula são gerados automaticamente.',
   })
@@ -42,14 +42,12 @@ export class UsersController {
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR, Role.COMUNICACAO)
   @ApiOperation({ summary: 'Listar todos os usuários da instituição' })
   findAll(@Query() query: QueryUserDto) {
     return this.usersService.findAll(query);
   }
 
   @Get('check-cpf')
-  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Verifica se um CPF já existe no sistema' })
   async checkCpf(@Query('cpf') cpf?: string) {
     if (!cpf) throw new BadRequestException('Informe o CPF para verificação.');
@@ -57,42 +55,36 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Atualizar dados de um usuário' })
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto, @Req() req: AuthenticatedRequest) {
     return this.usersService.update(id, updateUserDto, getAuditUser(req));
   }
 
   @Post(':id/reativar')
-  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Reativar um funcionário inativo. Gera nova senha padrão e restaura o acesso.' })
   reativar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.usersService.reativar(id, getAuditUser(req));
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Inativar um usuário do sistema' })
   remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.usersService.remove(id, getAuditUser(req));
   }
 
   @Patch(':id/reset-password')
-  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Resetar a senha de um usuário (Admin)' })
   resetPassword(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.usersService.resetPassword(id, getAuditUser(req));
   }
 
   @Patch(':id/restore')
-  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Restaurar um usuário inativo' })
   restore(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.usersService.restore(id, getAuditUser(req));
   }
 
   @Delete(':id/hard')
-  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Excluir definitivamente um usuário (Soft Delete profundo)' })
   removeHard(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.usersService.removeHard(id, getAuditUser(req));
