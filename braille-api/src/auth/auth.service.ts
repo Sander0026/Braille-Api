@@ -342,7 +342,7 @@ export class AuthService {
     return rows[0] ?? null;
   }
 
-  private async gerarRefreshTokenSeguro(sessionId = crypto.randomUUID()): Promise<RefreshTokenPair> {
+  private async gerarRefreshTokenSeguro(sessionId: string = crypto.randomUUID()): Promise<RefreshTokenPair> {
     const rawSecret = crypto.randomBytes(40).toString('hex');
     const hashedRefreshToken = await bcrypt.hash(rawSecret, 10);
     const refreshTokenExpiraEm = this.calcularExpiracaoRefreshToken();

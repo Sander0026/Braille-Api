@@ -91,7 +91,8 @@ Nao expoe endpoints diretamente.
 
 ## Banco de Dados
 
-* `User`: funcionarios, credenciais, refresh token, roles, contato e endereco.
+* `User`: funcionarios, credenciais, roles, contato, endereco e colunas legadas de refresh.
+* `UserSession`: sessoes persistidas com hash de refresh token, expiracao e revogacao.
 * `Aluno`: beneficiarios, documentos, LGPD, perfil de deficiencia, dados sociais e saude.
 * `Turma`: oficinas, professor, grade, status academico e modelo de certificado.
 * `MatriculaOficina`: vinculo aluno-turma com status e encerramento.
@@ -119,7 +120,7 @@ PostgreSQL/Neon e Prisma Query Engine.
 * Query logs com parametros sensiveis permanecem desabilitados.
 * Erros Prisma sao logados internamente.
 * Filtros globais impedem vazamento de schema/SQL.
-* Campos sensiveis existem no banco (`senha`, `refreshToken`), mas services usam selects cirurgicos para evitar retorno indevido.
+* Campos sensiveis existem no banco (`senha`, hashes de refresh token), mas services usam selects cirurgicos para evitar retorno indevido.
 
 ## Qualidade
 
@@ -162,4 +163,3 @@ Todos os dominios dependem do schema Prisma. `Auth`, `Users`, `Beneficiaries`, `
 # 10. Resumo Tecnico Final
 
 O Prisma é a camada fundacional e opera com criticidade máxima. A modelagem abrange uma vasta gama de operações do instituto com alta eficácia de constraints e performance de indicação (`@@index`). Após essa auditoria, fica explícito que os maiores riscos históricos (como dados divergentes do campo Frequência e travas de horários errôneas) já foram mitigados por implementações maduras nas camadas de serviço e correções de chaves (`@@unique` para `@@index`). O ORM se provou altamente resiliente a refatorações iterativas sem downtime e é a base de um fluxo SOLID impecável no projeto.
-

@@ -14,7 +14,7 @@ Criar, listar, atualizar, inativar, restaurar, reativar, resetar senha e arquiva
 
 ## Fluxo de Funcionamento
 
-Todas as rotas usam `AuthGuard` e `RolesGuard`. A maioria exige `ADMIN`; listagem permite roles internas. `UsersService` valida CPF, gera username e matricula, aplica senha padrao com hash bcrypt, registra auditoria e remove fotos antigas quando necessario.
+Todas as rotas usam `AuthGuard` e `RolesGuard`. Mutacoes exigem `ADMIN`; a listagem completa fica restrita a `ADMIN` e `SECRETARIA`; a listagem resumida exposta em `/users/resumo` atende perfis internos sem vazar dados pessoais sensiveis. `UsersService` valida CPF, gera username e matricula, aplica senha padrao com hash bcrypt, registra auditoria e remove fotos antigas quando necessario.
 
 ---
 
@@ -85,7 +85,8 @@ Usuarios sao entidade sensivel por conter credenciais e autorizacao. A criacao a
 * `create(dto, auditUser)`: cria funcionario.
 * `reativar(id, auditUser)`: reativa e reseta senha.
 * `checkCpf(cpf)`: retorna status `livre`, `ativo`, `inativo` ou `excluido`.
-* `findAll(query)`: lista usuarios com paginacao, filtro por nome, role e inativos.
+* `findAll(query)`: lista usuarios com dados completos, paginacao, filtro por nome, role e inativos.
+* `findResumo(query)`: lista apenas `id`, `nome`, `username`, `role` e `fotoPerfil` para selecoes internas.
 * `update(id, dto, auditUser)`: atualiza dados e audita snapshot.
 * `remove(id, auditUser)`: inativa usuario.
 * `restore(id, auditUser)`: restaura `statusAtivo`.
@@ -113,7 +114,8 @@ Usuarios sao entidade sensivel por conter credenciais e autorizacao. A criacao a
 ## APIs
 
 * `POST /api/users`: ADMIN cria funcionario.
-* `GET /api/users`: roles internas listam usuarios.
+* `GET /api/users`: ADMIN e SECRETARIA listam usuarios com dados completos.
+* `GET /api/users/resumo`: ADMIN, SECRETARIA, PROFESSOR e COMUNICACAO listam usuarios com dados minimos.
 * `GET /api/users/check-cpf`: ADMIN valida CPF.
 * `PATCH /api/users/:id`: ADMIN atualiza.
 * `POST /api/users/:id/reativar`: ADMIN reativa.
@@ -137,6 +139,8 @@ Cloudinary via `UploadService.deleteFile` para remocao de foto antiga.
 ## Seguranca
 
 * Rotas mutaveis restritas a `ADMIN`.
+* Dados pessoais completos de usuarios ficam restritos a `ADMIN` e `SECRETARIA`.
+* Perfis operacionais usam `/users/resumo`, sem CPF, contato, endereco, matricula ou email.
 * Senhas sempre gravadas com bcrypt.
 * Reset e inativacao bloqueiam autoacao para evitar self-lock/root reset.
 * Senha padrao força troca no login.
@@ -170,6 +174,7 @@ Cloudinary via `UploadService.deleteFile` para remocao de foto antiga.
 * `SENHA_PADRAO_USUARIO` passou a ser obrigatoria em producao; o fallback local permanece restrito a desenvolvimento/teste.
 * `role` em `QueryUserDto` agora usa enum `Role`, com validacao de DTO e documentacao Swagger alinhada.
 * O arquivo duplicado `src/users/dto/rc/users/dto/query-user.dto.ts` foi removido.
+* A exposicao de dados pessoais em listagens foi reduzida: `/users` e completo apenas para `ADMIN`/`SECRETARIA`, enquanto `/users/resumo` atende demais perfis com dados minimos.
 
 ---
 

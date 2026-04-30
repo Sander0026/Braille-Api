@@ -44,7 +44,7 @@ Centralizar Cloudinary evita duplicacao de configuracao e regras de validacao. S
 4. PDF em `uploadImage` usa `resource_type:auto`.
 5. `uploadPdf` aceita imagem ou PDF e pasta especifica: `braille_lgpd`, `braille_atestados`, `braille_laudos`.
 6. `uploadPdfBuffer` envia buffer de certificado como `raw`, com `public_id` deterministico.
-7. `deleteFile` extrai pasta e filename da URL, detecta tipo por `.pdf` e chama `cloudinary.uploader.destroy`.
+7. `deleteFile` extrai pasta e filename da URL, valida se o arquivo pertence a uma pasta autorizada, detecta tipo por `.pdf` e chama `cloudinary.uploader.destroy`.
 8. Auditoria registra operacoes Cloudinary quando `auditUser` existe.
 
 ## Dependencias Internas
@@ -73,6 +73,7 @@ Centralizar Cloudinary evita duplicacao de configuracao e regras de validacao. S
 * `resource_type`: `image`, `auto` ou `raw`.
 * `public_id`: identificador remoto.
 * `secure_url`: URL final retornada.
+* `cloudinaryAllowedFolders`: allowlist de pastas que o sistema pode excluir.
 
 ## Funcoes e Metodos
 
@@ -122,6 +123,7 @@ Cloudinary.
 * Delete exige roles altas.
 * Tipo MIME e validado.
 * Tamanho grande recebe mensagem amigavel.
+* Delete bloqueia `publicId` fora das pastas funcionais do sistema.
 * Auditoria registra URL/pasta/publicId.
 
 ## Qualidade
@@ -142,6 +144,7 @@ Cloudinary.
 * Apenas imagens e PDFs sao aceitos.
 * Documentos sao separados por pastas funcionais.
 * PDFs gerados em memoria ficam em `braille_certificados` por padrao.
+* Exclusao remota so e permitida em `braille_instituicao`, `braille_lgpd`, `braille_atestados`, `braille_laudos` e `braille_certificados`.
 * Exclusao considera resultado `ok` e `not found` como sucesso operacional.
 
 ---
@@ -151,6 +154,7 @@ Cloudinary.
 * `deleteFile` agora tenta remover o asset em tipos compatíveis (`image` e `raw`), cobrindo PDFs enviados como `auto` ou `raw`.
 * A extracao de `publicId` passou a considerar URLs Cloudinary com versao e transformacoes, evitando erro em URLs complexas.
 * O limite de 10 MB tambem e validado dentro do `UploadService`, protegendo chamadas feitas fora dos controllers com Multer.
+* A exclusao Cloudinary agora valida allowlist de pastas antes de chamar `destroy`, reduzindo o risco de apagar assets externos ao sistema.
 
 ---
 

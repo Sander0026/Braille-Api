@@ -64,4 +64,21 @@ describe('UsersService', () => {
       }),
     );
   });
+
+  it('lista resumo de usuarios sem dados pessoais sensiveis', async () => {
+    await service.findResumo({ role: Role.PROFESSOR });
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ role: Role.PROFESSOR }),
+        select: {
+          id: true,
+          nome: true,
+          username: true,
+          role: true,
+          fotoPerfil: true,
+        },
+      }),
+    );
+  });
 });

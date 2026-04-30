@@ -154,7 +154,7 @@ Cloudinary para imagem de capa removida via `UploadService`.
 * Defaults evitam site quebrado.
 * Atualizacoes de config usam transacao.
 * Auditoria registra estado antes/depois.
-* Cache em endpoints de consulta.
+* Cache em endpoints de consulta com cuidado para nao reutilizar resposta entre filtros diferentes.
 
 ## Performance
 
@@ -170,6 +170,8 @@ Cloudinary para imagem de capa removida via `UploadService`.
 * Mensagem ja lida nao gera escrita repetida.
 * Site sempre retorna defaults mesmo sem dados persistidos.
 * Atualizacao de secao substitui a secao inteira.
+* `GET /comunicados` deixa o `CacheInterceptor` usar a URL completa como chave, preservando filtros e paginacao.
+* `GET /site-config/secoes/:secao` nao usa cache para evitar conteudo antigo apos edicao pontual.
 
 ---
 
@@ -178,6 +180,9 @@ Cloudinary para imagem de capa removida via `UploadService`.
 * A quebra de contrato de auditoria manual no `ContatosService` foi totalmente resolvida utilizando o helper unificado `toAuditMetadata(auditUser)`. O spread blindado mapeia corretamente `sub` para `autorId`, erradicando falhas de tipagem no log.
 * A liberação da flag `style` no sanitizador de texto rico (`SanitizeHtmlPipe`) foi documentada como comportamento planejado. Não configura risco de *CSS Injection*, visto que o DOMPurify intercepta nativamente `expression()` e links suspeitos, sendo essencial para manter a fidelidade visual dos Comunicados editados via CMS.
 * O fluxo de "Replace-all" nas configurações foi refinado: a mutação de Configurações Gerais (`updateMany`) opera de forma cirúrgica, deletando exclusivamente as chaves enviadas no payload. Já na mutação de Seções (`updateSecao`), o apagamento em bloco reflete exatamente o comportamento determinístico do frontend, que sempre reenvia a seção completa, prevenindo acúmulo de chaves fantasmas.
+
+* A listagem publica de comunicados nao usa `@CacheKey` fixo, evitando colisao entre `/comunicados`, filtros e paginas.
+* A rota dinamica de secao especifica do site-config permanece sem cache, mantendo resposta atualizada depois de `PATCH /site-config/secoes/:secao`.
 
 ---
 
@@ -193,4 +198,3 @@ Cloudinary para imagem de capa removida via `UploadService`.
 # 10. Resumo Tecnico Final
 
 Comunicados, Contatos e Site Config formam em conjunto o núcleo do CMS Institucional. É um grupo de domínios com elevada exposição pública (Fale Conosco) e responsabilidade visual. O código hoje se encontra blindado contra quebras de formatação visual sem comprometer a segurança, possui auditoria manual fortemente tipada que não rompe os padrões globais e apresenta alta performance através da camada de cache sobre defaults infalíveis. O modelo adotado de persistência para as transações de configuração elimina lixos de versões passadas, resultando num ambiente resiliente e limpo para manutenção futura.
-

@@ -172,7 +172,7 @@ O banco e PostgreSQL via Prisma. As entidades principais sao `User`, `Aluno`, `T
 ## Seguranca
 
 * JWT com access token curto.
-* Refresh token gerado aleatoriamente e armazenado com hash bcrypt.
+* Refresh token gerado aleatoriamente, armazenado com hash bcrypt em `UserSession` e rotacionado por sessao.
 * Anti timing attack no login com dummy hash.
 * `AuthGuard` valida assinatura e status real do usuario no banco.
 * `RolesGuard` valida autorizacao declarativa via `@Roles`.
@@ -230,6 +230,10 @@ O banco e PostgreSQL via Prisma. As entidades principais sao `User`, `Aluno`, `T
 * `FrequenciasService.validarDataHoje` agora aplica a regra quando `FREQUENCIAS_PERMITIR_RETROATIVAS=false`; o padrao `true` preserva a implantacao atual.
 * `CertificadosService.remove` foi simplificado para delecao direta dos arquivos externos, sem caminho redundante por `trocarArquivo`.
 * Auditoria ganhou `@SkipAudit()` e helpers de mapeamento para reduzir manutencao manual de paths excluidos.
+* Cache publico de comunicados usa URL completa como chave e `site-config/secoes/:secao` nao usa cache para evitar conteudo antigo.
+* `GET /users` ficou restrito a `ADMIN` e `SECRETARIA`; demais perfis usam `GET /users/resumo` com dados minimos.
+* `UploadService.deleteFile` valida allowlist de pastas Cloudinary antes de excluir arquivos remotos.
+* Refresh token sem `userId` no payload foi alinhado ao modelo `UserSession`, com testes atualizados.
 * Alguns endpoints ainda retornam entidade Prisma crua, outros retornam `ApiResponse`; o contrato HTTP nao e totalmente uniforme e continua como ponto de padronizacao futura.
 
 ---

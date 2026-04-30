@@ -69,6 +69,24 @@ export class UsersService {
     private readonly uploadService: UploadService,
   ) {}
 
+  private montarFiltroListagem(query: QueryUserDto) {
+    const { nome, inativos, role } = query;
+    const whereCondicao: any = {
+      statusAtivo: !inativos,
+      excluido: false,
+    };
+
+    if (nome) {
+      whereCondicao.nome = { contains: nome, mode: 'insensitive' };
+    }
+
+    if (role) {
+      whereCondicao.role = role as Role;
+    }
+
+    return whereCondicao;
+  }
+
   async create(createUserDto: CreateUserDto, auditUser: AuditUser) {
     try {
       const { nome, cpf, email, role, telefone, cep, rua, numero, complemento, bairro, cidade, uf } = createUserDto;
@@ -248,21 +266,9 @@ export class UsersService {
 
   async findAll(query: QueryUserDto) {
     try {
-      const { page = 1, limit = 10, nome, inativos, role } = query;
+      const { page = 1, limit = 10 } = query;
       const skip = (page - 1) * limit;
-
-      const whereCondicao: any = {
-        statusAtivo: !inativos,
-        excluido: false,
-      };
-
-      if (nome) {
-        whereCondicao.nome = { contains: nome, mode: 'insensitive' };
-      }
-
-      if (role) {
-        whereCondicao.role = role as Role;
-      }
+      const whereCondicao = this.montarFiltroListagem(query);
 
       const [users, total] = await Promise.all([
         this.prisma.user.findMany({
@@ -300,6 +306,39 @@ export class UsersService {
     } catch (error) {
       this.logger.error(`Error on findAll users: ${error.message}`, error.stack);
       throw new InternalServerErrorException('Erro interno ao listar usuários.');
+    }
+  }
+
+  async findResumo(query: QueryUserDto) {
+    try {
+      const { page = 1, limit = 10 } = query;
+      const skip = (page - 1) * limit;
+      const whereCondicao = this.montarFiltroListagem(query);
+
+      const [users, total] = await Promise.all([
+        this.prisma.user.findMany({
+          where: whereCondicao,
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            nome: true,
+            username: true,
+            role: true,
+            fotoPerfil: true,
+          },
+          orderBy: { nome: 'asc' },
+        }),
+        this.prisma.user.count({ where: whereCondicao }),
+      ]);
+
+      return {
+        data: users,
+        meta: { total, page, lastPage: Math.ceil(total / limit) },
+      };
+    } catch (error) {
+      this.logger.error(`Error on findResumo users: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Erro interno ao listar resumo de usuarios.');
     }
   }
 

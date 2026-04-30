@@ -4,12 +4,19 @@ import * as streamifier from 'streamifier';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
-import { AuditAcao, Role } from '@prisma/client';
+import { AuditAcao } from '@prisma/client';
 
 @Injectable()
 export class UploadService {
   private readonly logger = new Logger(UploadService.name);
   private static readonly cloudinaryMaxFileSize = 10 * 1024 * 1024;
+  private static readonly cloudinaryAllowedFolders = [
+    'braille_instituicao',
+    'braille_lgpd',
+    'braille_atestados',
+    'braille_laudos',
+    'braille_certificados',
+  ];
 
   constructor(
     private readonly configService: ConfigService,
@@ -41,6 +48,16 @@ export class UploadService {
     const publicIdSemExt = publicIdComExt.replace(/\.[^/.]+$/, '');
 
     return Array.from(new Set([publicIdComExt, publicIdSemExt].filter(Boolean)));
+  }
+
+  private validarPastaCloudinary(publicId: string): void {
+    const permitido = UploadService.cloudinaryAllowedFolders.some((folder) =>
+      publicId === folder || publicId.startsWith(`${folder}/`),
+    );
+
+    if (!permitido) {
+      throw new BadRequestException('Arquivo fora das pastas permitidas do sistema.');
+    }
   }
 
   private extrairPublicIdDeUrl(fileUrl: string): string | null {
@@ -247,6 +264,7 @@ export class UploadService {
 
     try {
       const publicIds = this.extrairPublicIdsCloudinary(fileUrl);
+      publicIds.forEach((publicId) => this.validarPastaCloudinary(publicId));
       const resourceTypes = this.tiposDeletePorArquivo(fileUrl);
       let publicIdAuditado = publicIds[0];
       let arquivoNaoEncontrado = false;
@@ -290,6 +308,10 @@ export class UploadService {
 
       return { success: true, message: 'Arquivo excluído com sucesso.' };
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
       this.logger.error(`Tentativa falha de exclusão na nuvem (Url: ${fileUrl}):`, error);
       throw new BadRequestException('Não foi possível excluir o arquivo na nuvem.');
     }

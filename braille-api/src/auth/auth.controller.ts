@@ -45,7 +45,7 @@ export class AuthController {
   @SwaggerResponse({ status: 201, description: 'Sessão validada e Novo Token de 15m Emitido' })
   @SwaggerResponse({ status: 401, description: 'Refresh Token Inválido ou Sessão Encerrada' })
   refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshToken(dto.userId, dto.refreshToken);
+    return this.authService.refreshToken(dto.refreshToken);
   }
 
   @ApiBearerAuth()

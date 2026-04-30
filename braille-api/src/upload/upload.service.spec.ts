@@ -47,4 +47,15 @@ describe('UploadService', () => {
       }),
     );
   });
+
+  it('bloqueia exclusao fora das pastas permitidas do sistema', async () => {
+    const { service } = criarService();
+    const destroy = jest.spyOn(cloudinary.uploader, 'destroy');
+
+    await expect(
+      service.deleteFile('https://res.cloudinary.com/demo/image/upload/v123/pasta_externa/arquivo.pdf'),
+    ).rejects.toThrow('Arquivo fora das pastas permitidas do sistema.');
+
+    expect(destroy).not.toHaveBeenCalled();
+  });
 });

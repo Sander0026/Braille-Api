@@ -10,6 +10,7 @@ describe('UsersController', () => {
   const mockUsersService = {
     create: jest.fn().mockResolvedValue({ id: 'dummy', _credenciais: {} }),
     findAll: jest.fn().mockResolvedValue({ data: [], meta: {} }),
+    findResumo: jest.fn().mockResolvedValue({ data: [], meta: {} }),
     checkCpf: jest.fn().mockResolvedValue({ status: 'livre' }),
     update: jest.fn().mockResolvedValue({ id: 'dummy' }),
     reativar: jest.fn().mockResolvedValue({ id: 'dummy' }),
