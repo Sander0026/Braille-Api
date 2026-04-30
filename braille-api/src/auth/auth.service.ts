@@ -8,6 +8,7 @@ import { LoginDto } from './dto/login.dto';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
 import { AtualizarPerfilDto } from './dto/atualizar-perfil.dto';
 import { ApiResponse } from '../common/dto/api-response.dto';
+import { Role } from '@prisma/client';
 
 // ── SELECT cirúrgico reutilizado — não trafega campos desnecessários ──────────
 
@@ -36,6 +37,32 @@ const PERFIL_SELECT = {
 const REFRESH_TOKEN_TTL_DIAS = 7;
 const REFRESH_TOKEN_TTL_MS = REFRESH_TOKEN_TTL_DIAS * 24 * 60 * 60 * 1000;
 
+interface SessionMetadata {
+  ip?: string;
+  userAgent?: string;
+}
+
+interface RefreshSessionRow {
+  id: string;
+  userId: string;
+  refreshTokenHash: string;
+  expiresAt: Date;
+  revokedAt: Date | null;
+  userNome: string;
+  userRole: Role;
+  userStatusAtivo: boolean;
+  userExcluido: boolean;
+  userPrecisaTrocarSenha: boolean;
+}
+
+interface RefreshTokenPair {
+  sessionId: string;
+  rawRefreshToken: string;
+  rawSecret: string;
+  hashedRefreshToken: string;
+  refreshTokenExpiraEm: Date;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -55,7 +82,7 @@ export class AuthService {
 
   // ── Login ──────────────────────────────────────────────────────────────────
 
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, metadata?: SessionMetadata) {
     // Select mínimo — nunca incluir refreshToken nem outros hashes desnecessários
     const user = await this.prisma.user.findUnique({
       where: { username: loginDto.username },
@@ -84,23 +111,13 @@ export class AuthService {
       throw new UnauthorizedException('Esta conta está desativada. Procure o administrador do sistema.');
     }
 
-    const payload = {
-      sub: user.id,
+    const refresh = await this.criarSessaoRefreshToken(user.id, metadata);
+    const access_token = await this.gerarAccessToken({
+      id: user.id,
       nome: user.nome,
       role: user.role,
       precisaTrocarSenha: user.precisaTrocarSenha,
-    };
-    const access_token = await this.jwtService.signAsync(payload);
-
-    // Gera e armazena refresh token (string bruta → hash no banco)
-    const refresh = await this.gerarRefreshTokenSeguro();
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        refreshToken: refresh.hashedRefreshToken,
-        refreshTokenExpiraEm: refresh.refreshTokenExpiraEm,
-      },
+      sessionId: refresh.sessionId,
     });
 
     return {
@@ -117,48 +134,38 @@ export class AuthService {
 
   // ── Refresh Token ──────────────────────────────────────────────────────────
 
-  async refreshToken(userId: string, rawRefreshToken: string) {
-    // Select mínimo — exclui senha e outros campos pesados
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { ...AUTH_SELECT, refreshToken: true, refreshTokenExpiraEm: true },
-    });
+  async refreshToken(rawRefreshToken: string) {
+    const { sessionId, secret } = this.parseRefreshToken(rawRefreshToken);
 
-    if (!user || !user.refreshToken) {
+    const session = await this.buscarSessaoRefresh(sessionId);
+    if (!session || session.revokedAt) {
       throw new UnauthorizedException('Sua sessão expirou ou foi revogada administrativamente.');
     }
 
-    if (!user.refreshTokenExpiraEm || user.refreshTokenExpiraEm.getTime() <= Date.now()) {
-      await this.revogarRefreshToken(user.id);
+    if (session.expiresAt.getTime() <= Date.now()) {
+      await this.revogarSessao(session.id);
       throw new UnauthorizedException('Sua sessao expirou. Faca o login novamente.');
     }
 
-    if (user.excluido || !user.statusAtivo) {
+    if (session.userExcluido || !session.userStatusAtivo) {
+      await this.revogarSessao(session.id);
       throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
     }
 
-    const isRefreshValid = await bcrypt.compare(rawRefreshToken, user.refreshToken);
+    const isRefreshValid = await bcrypt.compare(secret, session.refreshTokenHash);
     if (!isRefreshValid) {
+      // Possível reuso/tentativa de token antigo: revoga a sessão por segurança.
+      await this.revogarSessao(session.id);
       throw new UnauthorizedException('Refresh Token inválido. Faça o login novamente.');
     }
 
-    const payload = {
-      sub: user.id,
-      nome: user.nome,
-      role: user.role,
-      precisaTrocarSenha: user.precisaTrocarSenha,
-    };
-    const access_token = await this.jwtService.signAsync(payload);
-
-    // Refresh Token Rotation: cada uso válido invalida o refresh token anterior.
-    const refresh = await this.gerarRefreshTokenSeguro();
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        refreshToken: refresh.hashedRefreshToken,
-        refreshTokenExpiraEm: refresh.refreshTokenExpiraEm,
-      },
+    const refresh = await this.rotacionarSessaoRefreshToken(session.id);
+    const access_token = await this.gerarAccessToken({
+      id: session.userId,
+      nome: session.userNome,
+      role: session.userRole,
+      precisaTrocarSenha: session.userPrecisaTrocarSenha,
+      sessionId: session.id,
     });
 
     return {
@@ -169,8 +176,13 @@ export class AuthService {
 
   // ── Trocar Senha ───────────────────────────────────────────────────────────
 
-  async logout(userId: string): Promise<ApiResponse<null>> {
-    await this.revogarRefreshToken(userId);
+  async logout(userId: string, sessionId?: string): Promise<ApiResponse<null>> {
+    if (sessionId) {
+      await this.revogarSessao(sessionId, userId);
+    } else {
+      await this.revogarTodasSessoesDoUsuario(userId);
+    }
+
     return new ApiResponse(true, null, 'Logout realizado com sucesso.');
   }
 
@@ -260,26 +272,128 @@ export class AuthService {
     return new ApiResponse(true, atualizado, 'Perfil atualizado com sucesso.');
   }
 
-  private async gerarRefreshTokenSeguro(): Promise<{
-    rawRefreshToken: string;
-    hashedRefreshToken: string;
-    refreshTokenExpiraEm: Date;
-  }> {
-    const rawRefreshToken = crypto.randomBytes(40).toString('hex');
-    const hashedRefreshToken = await bcrypt.hash(rawRefreshToken, 10);
-    const refreshTokenExpiraEm = this.calcularExpiracaoRefreshToken();
+  private async gerarAccessToken(user: {
+    id: string;
+    nome: string;
+    role: Role;
+    precisaTrocarSenha: boolean;
+    sessionId: string;
+  }): Promise<string> {
+    return this.jwtService.signAsync({
+      sub: user.id,
+      nome: user.nome,
+      role: user.role,
+      precisaTrocarSenha: user.precisaTrocarSenha,
+      sid: user.sessionId,
+    });
+  }
 
-    return { rawRefreshToken, hashedRefreshToken, refreshTokenExpiraEm };
+  private async criarSessaoRefreshToken(userId: string, metadata?: SessionMetadata): Promise<RefreshTokenPair> {
+    const refresh = await this.gerarRefreshTokenSeguro();
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "UserSession" ("id", "userId", "refreshTokenHash", "expiresAt", "userAgent", "ip")
+      VALUES (${refresh.sessionId}, ${userId}, ${refresh.hashedRefreshToken}, ${refresh.refreshTokenExpiraEm}, ${metadata?.userAgent ?? null}, ${metadata?.ip ?? null})
+    `;
+
+    // Limpa colunas legadas para evitar estados conflitantes durante a transição.
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshToken: null, refreshTokenExpiraEm: null },
+    });
+
+    return refresh;
+  }
+
+  private async rotacionarSessaoRefreshToken(sessionId: string): Promise<RefreshTokenPair> {
+    const refresh = await this.gerarRefreshTokenSeguro(sessionId);
+
+    await this.prisma.$executeRaw`
+      UPDATE "UserSession"
+      SET "refreshTokenHash" = ${refresh.hashedRefreshToken},
+          "expiresAt" = ${refresh.refreshTokenExpiraEm},
+          "revokedAt" = NULL,
+          "atualizadoEm" = CURRENT_TIMESTAMP
+      WHERE "id" = ${sessionId}
+    `;
+
+    return refresh;
+  }
+
+  private async buscarSessaoRefresh(sessionId: string): Promise<RefreshSessionRow | null> {
+    const rows = await this.prisma.$queryRaw<RefreshSessionRow[]>`
+      SELECT
+        s."id",
+        s."userId",
+        s."refreshTokenHash",
+        s."expiresAt",
+        s."revokedAt",
+        u."nome" AS "userNome",
+        u."role" AS "userRole",
+        u."statusAtivo" AS "userStatusAtivo",
+        u."excluido" AS "userExcluido",
+        u."precisaTrocarSenha" AS "userPrecisaTrocarSenha"
+      FROM "UserSession" s
+      INNER JOIN "User" u ON u."id" = s."userId"
+      WHERE s."id" = ${sessionId}
+      LIMIT 1
+    `;
+
+    return rows[0] ?? null;
+  }
+
+  private async gerarRefreshTokenSeguro(sessionId = crypto.randomUUID()): Promise<RefreshTokenPair> {
+    const rawSecret = crypto.randomBytes(40).toString('hex');
+    const hashedRefreshToken = await bcrypt.hash(rawSecret, 10);
+    const refreshTokenExpiraEm = this.calcularExpiracaoRefreshToken();
+    const rawRefreshToken = `${sessionId}.${rawSecret}`;
+
+    return { sessionId, rawRefreshToken, rawSecret, hashedRefreshToken, refreshTokenExpiraEm };
+  }
+
+  private parseRefreshToken(rawRefreshToken: string): { sessionId: string; secret: string } {
+    const [sessionId, secret, extra] = rawRefreshToken.split('.');
+
+    if (!sessionId || !secret || extra || !this.isUuidV4(sessionId) || secret.length > 200) {
+      throw new UnauthorizedException('Refresh Token inválido. Faça o login novamente.');
+    }
+
+    return { sessionId, secret };
+  }
+
+  private isUuidV4(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
   private calcularExpiracaoRefreshToken(): Date {
     return new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
   }
 
-  private async revogarRefreshToken(userId: string): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshToken: null, refreshTokenExpiraEm: null },
-    });
+  private async revogarSessao(sessionId: string, userId?: string): Promise<void> {
+    if (userId) {
+      await this.prisma.$executeRaw`
+        UPDATE "UserSession"
+        SET "revokedAt" = CURRENT_TIMESTAMP,
+            "atualizadoEm" = CURRENT_TIMESTAMP
+        WHERE "id" = ${sessionId} AND "userId" = ${userId} AND "revokedAt" IS NULL
+      `;
+      return;
+    }
+
+    await this.prisma.$executeRaw`
+      UPDATE "UserSession"
+      SET "revokedAt" = CURRENT_TIMESTAMP,
+          "atualizadoEm" = CURRENT_TIMESTAMP
+      WHERE "id" = ${sessionId} AND "revokedAt" IS NULL
+    `;
+  }
+
+  private async revogarTodasSessoesDoUsuario(userId: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE "UserSession"
+      SET "revokedAt" = CURRENT_TIMESTAMP,
+          "atualizadoEm" = CURRENT_TIMESTAMP
+      WHERE "userId" = ${userId} AND "revokedAt" IS NULL
+    `;
   }
 }
