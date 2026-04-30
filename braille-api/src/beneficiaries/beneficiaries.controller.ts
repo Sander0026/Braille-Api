@@ -17,6 +17,7 @@ import {
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import * as ExcelJS from 'exceljs';
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
@@ -30,6 +31,7 @@ import type { AuthenticatedRequest } from '../common/interfaces/authenticated-re
 
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const XLSX_EXTENSION_REGEX = /\.xlsx$/i;
+const INVALID_XLSX_MESSAGE = 'Não foi possível ler a planilha. Verifique se o arquivo enviado é o modelo .xlsx válido.';
 
 @ApiTags('Alunos (Beneficiários)')
 @ApiBearerAuth()
@@ -66,8 +68,12 @@ export class BeneficiariesController {
       },
     }),
   )
-  importFromSheet(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new BadRequestException('Nenhum arquivo enviado.');
+  async importFromSheet(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Nenhum arquivo enviado. Selecione a planilha modelo .xlsx.');
+    }
+
+    await this.validarPlanilhaXlsx(file);
     return this.beneficiariesService.importFromSheet(file.buffer, getAuditUser(req));
   }
 
@@ -93,12 +99,12 @@ export class BeneficiariesController {
     // Sanitiza status para prevenir header injection (OWASP A3)
     const status = query.inativos ? 'Inativos' : 'Ativos';
     const filename = `Alunos_${status}_${date}.xlsx`.replaceAll(/[^\w._-]/g, '_');
-    
+
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="${filename}"`,
     });
-    
+
     await this.beneficiariesService.exportToXlsxStream(query, res);
   }
 
@@ -141,5 +147,19 @@ export class BeneficiariesController {
   @ApiOperation({ summary: 'Arquivar aluno em exclusao logica profunda (nao remove fisicamente)' })
   archivePermanently(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.beneficiariesService.archivePermanently(id, getAuditUser(req));
+  }
+
+  private async validarPlanilhaXlsx(file: Express.Multer.File): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+
+    try {
+      await workbook.xlsx.load(file.buffer as unknown as ArrayBuffer);
+    } catch {
+      throw new BadRequestException(INVALID_XLSX_MESSAGE);
+    }
+
+    if (!workbook.worksheets[0]) {
+      throw new BadRequestException(INVALID_XLSX_MESSAGE);
+    }
   }
 }
