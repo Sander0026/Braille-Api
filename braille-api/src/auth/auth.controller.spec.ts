@@ -21,12 +21,12 @@ describe('AuthController', () => {
     controller = new AuthController(authService as unknown as AuthService);
   });
 
-  it('deve delegar logout usando o usuario autenticado', async () => {
+  it('deve delegar logout usando o usuario e a sessao autenticada', async () => {
     authService.logout.mockResolvedValue({ success: true, data: null, message: 'Logout realizado com sucesso.' });
 
-    await controller.logout({ user: { sub: 'user-1' } } as AuthenticatedRequest);
+    await controller.logout({ user: { sub: 'user-1', sid: 'session-1' } } as AuthenticatedRequest);
 
-    expect(authService.logout).toHaveBeenCalledWith('user-1');
+    expect(authService.logout).toHaveBeenCalledWith('user-1', 'session-1');
   });
 
   it('deve rejeitar logout sem usuario autenticado', async () => {

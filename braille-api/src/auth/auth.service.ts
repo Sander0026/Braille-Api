@@ -42,19 +42,6 @@ interface SessionMetadata {
   userAgent?: string;
 }
 
-interface RefreshSessionRow {
-  id: string;
-  userId: string;
-  refreshTokenHash: string;
-  expiresAt: Date;
-  revokedAt: Date | null;
-  userNome: string;
-  userRole: Role;
-  userStatusAtivo: boolean;
-  userExcluido: boolean;
-  userPrecisaTrocarSenha: boolean;
-}
-
 interface RefreshTokenPair {
   sessionId: string;
   rawRefreshToken: string;
@@ -147,7 +134,7 @@ export class AuthService {
       throw new UnauthorizedException('Sua sessao expirou. Faca o login novamente.');
     }
 
-    if (session.userExcluido || !session.userStatusAtivo) {
+    if (session.user.excluido || !session.user.statusAtivo) {
       await this.revogarSessao(session.id);
       throw new UnauthorizedException('Usuário não encontrado no sistema. Procure o administrador.');
     }
@@ -162,9 +149,9 @@ export class AuthService {
     const refresh = await this.rotacionarSessaoRefreshToken(session.id);
     const access_token = await this.gerarAccessToken({
       id: session.userId,
-      nome: session.userNome,
-      role: session.userRole,
-      precisaTrocarSenha: session.userPrecisaTrocarSenha,
+      nome: session.user.nome,
+      role: session.user.role,
+      precisaTrocarSenha: session.user.precisaTrocarSenha,
       sessionId: session.id,
     });
 
@@ -291,10 +278,16 @@ export class AuthService {
   private async criarSessaoRefreshToken(userId: string, metadata?: SessionMetadata): Promise<RefreshTokenPair> {
     const refresh = await this.gerarRefreshTokenSeguro();
 
-    await this.prisma.$executeRaw`
-      INSERT INTO "UserSession" ("id", "userId", "refreshTokenHash", "expiresAt", "userAgent", "ip")
-      VALUES (${refresh.sessionId}, ${userId}, ${refresh.hashedRefreshToken}, ${refresh.refreshTokenExpiraEm}, ${metadata?.userAgent ?? null}, ${metadata?.ip ?? null})
-    `;
+    await this.prisma.userSession.create({
+      data: {
+        id: refresh.sessionId,
+        userId,
+        refreshTokenHash: refresh.hashedRefreshToken,
+        expiresAt: refresh.refreshTokenExpiraEm,
+        userAgent: metadata?.userAgent,
+        ip: metadata?.ip,
+      },
+    });
 
     // Limpa colunas legadas para evitar estados conflitantes durante a transição.
     await this.prisma.user.update({
@@ -308,38 +301,38 @@ export class AuthService {
   private async rotacionarSessaoRefreshToken(sessionId: string): Promise<RefreshTokenPair> {
     const refresh = await this.gerarRefreshTokenSeguro(sessionId);
 
-    await this.prisma.$executeRaw`
-      UPDATE "UserSession"
-      SET "refreshTokenHash" = ${refresh.hashedRefreshToken},
-          "expiresAt" = ${refresh.refreshTokenExpiraEm},
-          "revokedAt" = NULL,
-          "atualizadoEm" = CURRENT_TIMESTAMP
-      WHERE "id" = ${sessionId}
-    `;
+    await this.prisma.userSession.update({
+      where: { id: sessionId },
+      data: {
+        refreshTokenHash: refresh.hashedRefreshToken,
+        expiresAt: refresh.refreshTokenExpiraEm,
+        revokedAt: null,
+      },
+    });
 
     return refresh;
   }
 
-  private async buscarSessaoRefresh(sessionId: string): Promise<RefreshSessionRow | null> {
-    const rows = await this.prisma.$queryRaw<RefreshSessionRow[]>`
-      SELECT
-        s."id",
-        s."userId",
-        s."refreshTokenHash",
-        s."expiresAt",
-        s."revokedAt",
-        u."nome" AS "userNome",
-        u."role" AS "userRole",
-        u."statusAtivo" AS "userStatusAtivo",
-        u."excluido" AS "userExcluido",
-        u."precisaTrocarSenha" AS "userPrecisaTrocarSenha"
-      FROM "UserSession" s
-      INNER JOIN "User" u ON u."id" = s."userId"
-      WHERE s."id" = ${sessionId}
-      LIMIT 1
-    `;
-
-    return rows[0] ?? null;
+  private async buscarSessaoRefresh(sessionId: string) {
+    return this.prisma.userSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        userId: true,
+        refreshTokenHash: true,
+        expiresAt: true,
+        revokedAt: true,
+        user: {
+          select: {
+            nome: true,
+            role: true,
+            statusAtivo: true,
+            excluido: true,
+            precisaTrocarSenha: true,
+          },
+        },
+      },
+    });
   }
 
   private async gerarRefreshTokenSeguro(sessionId: string = crypto.randomUUID()): Promise<RefreshTokenPair> {
@@ -370,30 +363,20 @@ export class AuthService {
   }
 
   private async revogarSessao(sessionId: string, userId?: string): Promise<void> {
-    if (userId) {
-      await this.prisma.$executeRaw`
-        UPDATE "UserSession"
-        SET "revokedAt" = CURRENT_TIMESTAMP,
-            "atualizadoEm" = CURRENT_TIMESTAMP
-        WHERE "id" = ${sessionId} AND "userId" = ${userId} AND "revokedAt" IS NULL
-      `;
-      return;
-    }
-
-    await this.prisma.$executeRaw`
-      UPDATE "UserSession"
-      SET "revokedAt" = CURRENT_TIMESTAMP,
-          "atualizadoEm" = CURRENT_TIMESTAMP
-      WHERE "id" = ${sessionId} AND "revokedAt" IS NULL
-    `;
+    await this.prisma.userSession.updateMany({
+      where: {
+        id: sessionId,
+        ...(userId ? { userId } : {}),
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
   }
 
   private async revogarTodasSessoesDoUsuario(userId: string): Promise<void> {
-    await this.prisma.$executeRaw`
-      UPDATE "UserSession"
-      SET "revokedAt" = CURRENT_TIMESTAMP,
-          "atualizadoEm" = CURRENT_TIMESTAMP
-      WHERE "userId" = ${userId} AND "revokedAt" IS NULL
-    `;
+    await this.prisma.userSession.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
   }
 }

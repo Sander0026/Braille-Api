@@ -151,12 +151,31 @@ model User {
   atualizadoEm DateTime     @updatedAt
   turmas       Turma[]      @relation("TurmaProfessorPrincipal")
   comunicados  Comunicado[]
+  sessoes      UserSession[]
 
   @@index([statusAtivo, excluido])
   @@index([role])
   @@index([refreshTokenExpiraEm])
   @@index([cpf])
   @@index([email]) // Acelera buscas quando houver muitos usuários
+}
+
+model UserSession {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  userAgent        String?
+  ip               String?
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 model Aluno {

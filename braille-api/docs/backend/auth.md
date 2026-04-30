@@ -79,7 +79,7 @@ Access token curto reduz janela de abuso. Refresh token com hash em `UserSession
 * `dummyHash`: hash bcrypt gerado no startup para mitigar timing attack.
 * `access_token`: JWT curto.
 * `refresh_token`: token opaco entregue ao cliente no formato `sessionId.secret`; apenas hash do segredo e salvo.
-* `sid`: identificador da sessao no payload JWT.
+* `sid`: identificador da sessao no payload JWT, usado para revogar apenas o dispositivo atual no logout.
 * `userId`: `sub` do JWT.
 * `fotoPerfil`: URL opcional da foto.
 
@@ -87,6 +87,7 @@ Access token curto reduz janela de abuso. Refresh token com hash em `UserSession
 
 * `login(loginDto)`: autentica usuario e retorna tokens.
 * `refreshToken(rawRefreshToken)`: valida sessao, rotaciona refresh token e renova access token.
+* `logout(userId, sessionId)`: revoga a sessao atual quando `sessionId` existe; preserva fallback para revogar todas as sessoes do usuario.
 * `trocarSenha(userId, dto)`: valida senha atual, grava nova senha forte e remove obrigacao de troca.
 * `getMe(userId)`: retorna perfil seguro.
 * `atualizarFotoPerfil(userId, fotoPerfil)`: troca URL e tenta remover arquivo antigo.
@@ -175,8 +176,9 @@ Tabela `UserSession`: `id`, `userId`, `refreshTokenHash`, `expiresAt`, `revokedA
 
 * A expiracao do refresh token agora esta materializada em `UserSession.expiresAt` com politica de 7 dias, sendo validada durante `auth.service.ts/refreshToken`.
 * O `JwtModule` agora é protegido no startup da aplicação por intermédio da função `obterJwtSecretObrigatorio` (em `auth.module.ts`), que interrompe a subida do servidor caso o `JWT_SECRET` não esteja configurado, prevenindo falhas de segurança silenciosas.
-* A rota oficial de logout (`POST /api/auth/logout`) ja esta exposta e documentada via Swagger no `AuthController`, encarregando-se de revogar sessoes persistidas do usuario logado.
+* A rota oficial de logout (`POST /api/auth/logout`) ja esta exposta e documentada via Swagger no `AuthController`, encarregando-se de revogar a sessao atual identificada por `sid`.
 * O controller e os testes foram alinhados ao novo contrato de refresh sem `userId` no payload.
+* `UserSession` agora tambem existe no `schema.prisma`, permitindo uso tipado pelo Prisma Client em vez de SQL cru para criar, rotacionar e revogar sessoes.
 
 ---
 

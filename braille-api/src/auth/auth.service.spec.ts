@@ -14,12 +14,16 @@ describe('AuthService', () => {
   };
 
   const prisma = {
-    $executeRaw: jest.fn(),
-    $queryRaw: jest.fn(),
     user: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+    },
+    userSession: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
     },
   };
 
@@ -40,8 +44,10 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    prisma.$executeRaw.mockResolvedValue(1);
-    prisma.$queryRaw.mockResolvedValue([]);
+    prisma.userSession.create.mockResolvedValue({});
+    prisma.userSession.findUnique.mockResolvedValue(null);
+    prisma.userSession.update.mockResolvedValue({});
+    prisma.userSession.updateMany.mockResolvedValue({ count: 1 });
     service = new AuthService(
       jwtService as unknown as JwtService,
       prisma as unknown as PrismaService,
@@ -60,7 +66,15 @@ describe('AuthService', () => {
     expect(resultado.refresh_token).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-f0-9]{80}$/i,
     );
-    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(prisma.userSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: usuarioBase.id,
+          refreshTokenHash: expect.any(String),
+          expiresAt: expect.any(Date),
+        }),
+      }),
+    );
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: usuarioBase.id },
       data: { refreshToken: null, refreshTokenExpiraEm: null },
@@ -68,53 +82,81 @@ describe('AuthService', () => {
   });
 
   it('deve recusar refresh token expirado e revogar a sessao persistida', async () => {
-    prisma.$queryRaw.mockResolvedValue([
-      {
-        id: sessionId,
-        userId: usuarioBase.id,
-        refreshTokenHash: await bcrypt.hash('refresh-token', 10),
-        expiresAt: new Date(Date.now() - 1000),
-        revokedAt: null,
-        userNome: usuarioBase.nome,
-        userRole: usuarioBase.role,
-        userStatusAtivo: usuarioBase.statusAtivo,
-        userExcluido: usuarioBase.excluido,
-        userPrecisaTrocarSenha: usuarioBase.precisaTrocarSenha,
+    prisma.userSession.findUnique.mockResolvedValue({
+      id: sessionId,
+      userId: usuarioBase.id,
+      refreshTokenHash: await bcrypt.hash('refresh-token', 10),
+      expiresAt: new Date(Date.now() - 1000),
+      revokedAt: null,
+      user: {
+        nome: usuarioBase.nome,
+        role: usuarioBase.role,
+        statusAtivo: usuarioBase.statusAtivo,
+        excluido: usuarioBase.excluido,
+        precisaTrocarSenha: usuarioBase.precisaTrocarSenha,
       },
-    ]);
+    });
 
     await expect(service.refreshToken(`${sessionId}.refresh-token`)).rejects.toThrow(UnauthorizedException);
 
-    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(prisma.userSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: sessionId, revokedAt: null }),
+      }),
+    );
   });
 
   it('deve emitir novo access token e rotacionar refresh token quando sessao esta valida', async () => {
-    prisma.$queryRaw.mockResolvedValue([
-      {
-        id: sessionId,
-        userId: usuarioBase.id,
-        refreshTokenHash: await bcrypt.hash('refresh-token', 10),
-        expiresAt: new Date(Date.now() + 60_000),
-        revokedAt: null,
-        userNome: usuarioBase.nome,
-        userRole: usuarioBase.role,
-        userStatusAtivo: usuarioBase.statusAtivo,
-        userExcluido: usuarioBase.excluido,
-        userPrecisaTrocarSenha: usuarioBase.precisaTrocarSenha,
+    prisma.userSession.findUnique.mockResolvedValue({
+      id: sessionId,
+      userId: usuarioBase.id,
+      refreshTokenHash: await bcrypt.hash('refresh-token', 10),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: {
+        nome: usuarioBase.nome,
+        role: usuarioBase.role,
+        statusAtivo: usuarioBase.statusAtivo,
+        excluido: usuarioBase.excluido,
+        precisaTrocarSenha: usuarioBase.precisaTrocarSenha,
       },
-    ]);
+    });
 
     await expect(service.refreshToken(`${sessionId}.refresh-token`)).resolves.toEqual({
       access_token: 'access-token',
       refresh_token: expect.stringMatching(new RegExp(`^${sessionId}\\.[a-f0-9]{80}$`, 'i')),
     });
-    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(prisma.userSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: sessionId },
+        data: expect.objectContaining({
+          refreshTokenHash: expect.any(String),
+          expiresAt: expect.any(Date),
+          revokedAt: null,
+        }),
+      }),
+    );
   });
 
-  it('deve revogar sessoes persistidas no logout', async () => {
+  it('deve revogar somente a sessao atual no logout quando sessionId for informado', async () => {
+    const resultado = await service.logout(usuarioBase.id, sessionId);
+
+    expect(resultado.success).toBe(true);
+    expect(prisma.userSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: sessionId, userId: usuarioBase.id, revokedAt: null },
+      }),
+    );
+  });
+
+  it('deve revogar todas as sessoes do usuario quando sessionId nao for informado', async () => {
     const resultado = await service.logout(usuarioBase.id);
 
     expect(resultado.success).toBe(true);
-    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(prisma.userSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: usuarioBase.id, revokedAt: null },
+      }),
+    );
   });
 });

@@ -20,6 +20,7 @@ import { AtualizarFotoDto } from './dto/atualizar-foto.dto';
 import { AtualizarPerfilDto } from './dto/atualizar-perfil.dto';
 import { ApiResponse } from '../common/dto/api-response.dto';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+import type { Request } from 'express';
 
 /**
  * AuthController — rotas públicas e semi-públicas de autenticação.
@@ -35,8 +36,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Fazer login no sistema' })
   @SwaggerResponse({ status: 200, description: 'Login com sucesso e retorna o Token JWT' })
   @SwaggerResponse({ status: 401, description: 'Credenciais inválidas' })
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  login(@Body() loginDto: LoginDto, @Req() req: Request) {
+    return this.authService.login(loginDto, {
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
   }
 
   @Post('refresh')
@@ -55,7 +59,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Encerrar sessao e revogar o Refresh Token atual' })
   @SwaggerResponse({ status: 200, description: 'Sessao encerrada com sucesso' })
   logout(@Req() req: AuthenticatedRequest): Promise<ApiResponse<null>> {
-    return this.authService.logout(this.resolverUserId(req));
+    return this.authService.logout(this.resolverUserId(req), req.user?.sid);
   }
 
   @ApiBearerAuth()

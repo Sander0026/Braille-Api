@@ -8,6 +8,8 @@ export interface AuthenticatedUser {
   nome?: string;
   /** Email como fallback para identificação em logs de auditoria. */
   email?: string;
+  /** ID da sessao autenticada, vindo do campo `sid` do JWT. */
+  sid?: string;
 }
 
 /**
