@@ -296,4 +296,4 @@ npm run test:cov
 
 ## Licença
 
-Projeto privado/institucional. Uso restrito ao Instituto Louis Braille e equipe autorizada.
+Projeto privado/institucional. Uso restrito ao Instituto Luis Braille e equipe autorizada.
