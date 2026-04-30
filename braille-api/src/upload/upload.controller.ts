@@ -23,13 +23,15 @@ import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 
 @ApiTags('Uploads de Arquivos')
 @ApiBearerAuth()
-@UseGuards(AuthGuard) // 🔒 Só quem está logado pode fazer upload
+@UseGuards(AuthGuard) // 🔒 Só quem está logado pode tentar acessar as rotas de upload
 @SkipAudit()
 @Controller('upload')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.COMUNICACAO)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -48,6 +50,7 @@ export class UploadController {
       },
     }),
   )
+  @ApiOperation({ summary: 'Upload de imagem/PDF para conteúdo institucional do site' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -69,13 +72,16 @@ export class UploadController {
 
   @Delete()
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN, Role.SECRETARIA)
+  @Roles(Role.ADMIN, Role.SECRETARIA, Role.COMUNICACAO)
+  @ApiOperation({ summary: 'Excluir arquivo do Cloudinary por URL' })
   async deleteFile(@Query('url') url: string, @Req() req: AuthenticatedRequest) {
     return this.uploadService.deleteFile(url, getAuditUser(req));
   }
 
   // ─── Upload de PDF (Termo LGPD / Atestado Médico) ──────────────────────────
   @Post('pdf')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.SECRETARIA)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
