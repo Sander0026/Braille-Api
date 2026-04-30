@@ -551,7 +551,3 @@ Média. O arquivo não possui lógica de negócio, mas orquestra muitas dependê
 - PrismaModule;
 - AuditInterceptor;
 - filtros Prisma.
-
-## Observações finais
-
-O `AppModule` está bem alinhado com uma arquitetura NestJS modular e profissional. Os principais cuidados futuros são cache distribuído, ajuste fino de rate limit e documentação detalhada da cobertura de auditoria por módulo.
