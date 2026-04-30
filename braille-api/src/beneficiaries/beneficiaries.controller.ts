@@ -28,12 +28,8 @@ import { getAuditUser } from '../common/helpers/audit.helper';
 import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
-const ALLOWED_MIME_TYPES = [
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-  'text/csv',
-  'application/csv',
-];
+const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const XLSX_EXTENSION_REGEX = /\.xlsx$/i;
 
 @ApiTags('Alunos (Beneficiários)')
 @ApiBearerAuth()
@@ -52,17 +48,20 @@ export class BeneficiariesController {
 
   @Post('import')
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Importar alunos via planilha Excel (.xlsx) ou CSV' })
+  @ApiOperation({ summary: 'Importar alunos via planilha modelo Excel (.xlsx)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
       fileFilter: (_req, file, callback) => {
-        const allowed = ALLOWED_MIME_TYPES.includes(file.mimetype) || /\.(xlsx|xls|csv)$/i.test(file.originalname);
-        if (allowed) {
+        const isXlsx = file.mimetype === XLSX_MIME_TYPE || XLSX_EXTENSION_REGEX.test(file.originalname);
+        if (isXlsx) {
           callback(null, true);
         } else {
-          callback(new BadRequestException('Tipo de arquivo não permitido. Envie um arquivo .xlsx ou .csv.'), false);
+          callback(
+            new BadRequestException('Tipo de arquivo não permitido. Envie a planilha modelo no formato .xlsx.'),
+            false,
+          );
         }
       },
     }),
