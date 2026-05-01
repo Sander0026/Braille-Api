@@ -1,7 +1,7 @@
 /**
  * @seeder AlunosSeeder
  *
- * Responsabilidade única: importar alunos de uma planilha Excel (.xlsx) ou CSV.
+ * Responsabilidade única: importar alunos de uma planilha Excel (.xlsx).
  *
  * Melhorias em relação ao código original (seed.ts monolítico):
  *   - Zero uso de `require()` inline — imports ESM estáticos no topo do arquivo.
