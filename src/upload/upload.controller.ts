@@ -12,7 +12,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadService } from './upload.service';
-import { ApiTags, ApiBearerAuth, ApiConsumes, ApiBody, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiConsumes, ApiBody, ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -22,7 +22,7 @@ import { getAuditUser } from '../common/helpers/audit.helper';
 import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 
 @ApiTags('Uploads de Arquivos')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard) // 🔒 Só quem está logado pode tentar acessar as rotas de upload
 @SkipAudit()
 @Controller('upload')
@@ -63,6 +63,11 @@ export class UploadController {
       },
     },
   })
+  @ApiResponse({ status: 201, description: 'Arquivo enviado e URL do Cloudinary retornada.' })
+  @ApiResponse({ status: 400, description: 'Nenhum arquivo enviado ou tipo não suportado.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiResponse({ status: 403, description: 'Role sem permissão (requer ADMIN ou COMUNICACAO).' })
+  @ApiResponse({ status: 413, description: 'Arquivo excede 10 MB.' })
   async uploadFile(@UploadedFile() file: Express.Multer.File, @Req() req: AuthenticatedRequest) {
     if (!file) {
       throw new BadRequestException('Nenhum arquivo foi enviado. Selecione um arquivo e tente novamente.');
@@ -74,6 +79,10 @@ export class UploadController {
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN, Role.SECRETARIA, Role.COMUNICACAO)
   @ApiOperation({ summary: 'Excluir arquivo do Cloudinary por URL' })
+  @ApiQuery({ name: 'url', required: true, description: 'URL pública do arquivo no Cloudinary' })
+  @ApiResponse({ status: 200, description: 'Arquivo excluído com sucesso.' })
+  @ApiResponse({ status: 400, description: 'URL não informada ou inválida.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
   async deleteFile(@Query('url') url: string, @Req() req: AuthenticatedRequest) {
     return this.uploadService.deleteFile(url, getAuditUser(req));
   }
@@ -106,9 +115,14 @@ export class UploadController {
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { file: { type: 'string', format: 'binary', description: 'Arquivo PDF ou imagem (JPG/PNG/WebP) — sem limite rígido, Cloudinary otimiza automaticamente' } },
+      properties: { file: { type: 'string', format: 'binary', description: 'Arquivo PDF ou imagem (JPG/PNG/WebP)' } },
     },
   })
+  @ApiResponse({ status: 201, description: 'Documento enviado e URL do Cloudinary retornada.' })
+  @ApiResponse({ status: 400, description: 'Arquivo ausente, tipo inválido ou parâmetro "tipo" incorreto.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiResponse({ status: 403, description: 'Role sem permissão (requer ADMIN ou SECRETARIA).' })
+  @ApiResponse({ status: 413, description: 'Arquivo excede 10 MB.' })
   async uploadPdf(
     @UploadedFile() file: Express.Multer.File,
     @Query('tipo') tipo: 'lgpd' | 'atestado' | 'laudo',

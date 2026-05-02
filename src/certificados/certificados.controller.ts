@@ -17,7 +17,7 @@ import {
 import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { CertificadosService } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
@@ -32,7 +32,7 @@ import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @ApiTags('Modelos de Certificados')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard, RolesGuard)
 @SkipAudit()
 @Controller('modelos-certificados')
@@ -65,6 +65,9 @@ export class CertificadosController {
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
   @ApiOperation({ summary: 'Emite (ou recupera do cache) o certificado acadêmico. Retorna { pdfUrl, codigoValidacao }.' })
+  @ApiResponse({ status: 201, description: 'PDF do certificado gerado. Retorna { pdfUrl, codigoValidacao }.' })
+  @ApiResponse({ status: 400, description: 'Dados inválidos ou aluno sem turma concluída.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
   async gerarAcademico(
     @Req() req: AuthenticatedRequest,
     @Body() dto: EmitirAcademicoDto,
@@ -106,6 +109,9 @@ export class CertificadosController {
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Cria um novo modelo de certificado' })
+  @ApiResponse({ status: 201, description: 'Modelo criado com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Imagens obrigatórias ausentes ou tipo de arquivo inválido.' })
+  @ApiResponse({ status: 413, description: 'Arquivo excede 10 MB.' })
   create(
     @Req() req: AuthenticatedRequest,
     @Body() createDto: CreateCertificadoDto,
@@ -132,6 +138,8 @@ export class CertificadosController {
   @CacheTTL(30000)
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
   @ApiOperation({ summary: 'Lista todos os modelos de certificados' })
+  @ApiResponse({ status: 200, description: 'Lista de modelos retornada.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
   findAll() {
     return this.certificadosService.findAll();
   }
@@ -141,6 +149,9 @@ export class CertificadosController {
   @CacheTTL(30000)
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
   @ApiOperation({ summary: 'Retorna um modelo de certificado pelo ID' })
+  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
+  @ApiResponse({ status: 200, description: 'Modelo encontrado.' })
+  @ApiResponse({ status: 404, description: 'Modelo não encontrado.' })
   findOne(@Param('id') id: string) {
     return this.certificadosService.findOne(id);
   }
@@ -156,6 +167,10 @@ export class CertificadosController {
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Atualiza um modelo de certificado (texto e/ou imagens)' })
+  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
+  @ApiResponse({ status: 200, description: 'Modelo atualizado com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Tipo de arquivo inválido.' })
+  @ApiResponse({ status: 404, description: 'Modelo não encontrado.' })
   update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -184,6 +199,9 @@ export class CertificadosController {
   @Delete(':id')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Deleta um modelo e remove os arquivos do Cloudinary' })
+  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
+  @ApiResponse({ status: 200, description: 'Modelo deletado com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Modelo não encontrado.' })
   remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.certificadosService.remove(id, getAuditUser(req));
   }
