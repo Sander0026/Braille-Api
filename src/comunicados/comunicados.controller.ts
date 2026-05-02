@@ -14,7 +14,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { ComunicadosService } from './comunicados.service';
 import { CreateComunicadoDto } from './dto/create-comunicado.dto';
@@ -37,21 +37,31 @@ export class ComunicadosController {
   // ── Rotas protegidas (requerem JWT válido e perfil de conteúdo) ──────────────
 
   @Post()
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.COMUNICACAO)
   @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Criar um novo comunicado' })
+  @ApiResponse({ status: 201, description: 'Comunicado criado com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Payload inválido.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiResponse({ status: 403, description: 'Role sem permissão (requer ADMIN ou COMUNICACAO).' })
   create(@Body() dto: CreateComunicadoDto, @Req() req: AuthenticatedRequest) {
     return this.comunicadosService.create(dto, getAuditUser(req));
   }
 
   @Patch(':id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.COMUNICACAO)
   @UsePipes(new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Editar um comunicado' })
+  @ApiParam({ name: 'id', description: 'UUID do comunicado' })
+  @ApiResponse({ status: 200, description: 'Comunicado atualizado.' })
+  @ApiResponse({ status: 400, description: 'Payload inválido.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiResponse({ status: 403, description: 'Role sem permissão.' })
+  @ApiResponse({ status: 404, description: 'Comunicado não encontrado.' })
   update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateComunicadoDto,
@@ -61,10 +71,15 @@ export class ComunicadosController {
   }
 
   @Delete(':id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.COMUNICACAO)
   @ApiOperation({ summary: 'Excluir um comunicado' })
+  @ApiParam({ name: 'id', description: 'UUID do comunicado' })
+  @ApiResponse({ status: 200, description: 'Comunicado excluído.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiResponse({ status: 403, description: 'Role sem permissão.' })
+  @ApiResponse({ status: 404, description: 'Comunicado não encontrado.' })
   remove(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: AuthenticatedRequest) {
     return this.comunicadosService.remove(id, getAuditUser(req));
   }
@@ -73,16 +88,20 @@ export class ComunicadosController {
 
   @Get()
   @UseInterceptors(CacheInterceptor)
-  @CacheTTL(60_000) // 1 minuto — usa a URL completa como chave, preservando filtros e paginação
+  @CacheTTL(60_000)
   @ApiOperation({ summary: 'Listar todos os comunicados (Rota Pública)' })
+  @ApiResponse({ status: 200, description: 'Lista de comunicados retornada.' })
   findAll(@Query() query: QueryComunicadoDto) {
     return this.comunicadosService.findAll(query);
   }
 
   @Get(':id')
   @UseInterceptors(CacheInterceptor)
-  @CacheTTL(60_000) // 1 minuto — URL do item serve como chave (ex: /api/comunicados/<uuid>)
+  @CacheTTL(60_000)
   @ApiOperation({ summary: 'Obter um comunicado específico pelo ID (Rota Pública)' })
+  @ApiParam({ name: 'id', description: 'UUID do comunicado' })
+  @ApiResponse({ status: 200, description: 'Comunicado encontrado.' })
+  @ApiResponse({ status: 404, description: 'Comunicado não encontrado.' })
   findOne(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.comunicadosService.findOne(id);
   }

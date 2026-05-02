@@ -3,7 +3,7 @@ import { CACHE_MANAGER, CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cac
 import type { Cache } from 'cache-manager';
 import { SiteConfigService } from './site-config.service';
 import { SanitizeHtmlPipe } from '../common/pipes/sanitize-html.pipe';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -34,8 +34,9 @@ export class SiteConfigController {
   @Get()
   @UseInterceptors(CacheInterceptor)
   @CacheKey(CACHE_KEYS.all)
-  @CacheTTL(600_000) // 10 minutos
+  @CacheTTL(600_000)
   @ApiOperation({ summary: 'Retorna todas as configurações do site (cor, logo…)' })
+  @ApiResponse({ status: 200, description: 'Configurações retornadas com sucesso.' })
   getAll() {
     return this.service.getAll();
   }
@@ -43,25 +44,32 @@ export class SiteConfigController {
   @Get('secoes')
   @UseInterceptors(CacheInterceptor)
   @CacheKey(CACHE_KEYS.secoes)
-  @CacheTTL(600_000) // 10 minutos
+  @CacheTTL(600_000)
   @ApiOperation({ summary: 'Retorna o conteúdo de todas as seções da home' })
+  @ApiResponse({ status: 200, description: 'Seções retornadas com sucesso.' })
   getSecoes() {
     return this.service.getSecoes();
   }
 
   @Get('secoes/:secao')
   @ApiOperation({ summary: 'Retorna o conteúdo de uma seção específica' })
+  @ApiParam({ name: 'secao', description: "Slug da seção (ex: 'missao', 'historia', 'apoiadores')" })
+  @ApiResponse({ status: 200, description: 'Seção retornada com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Seção não encontrada.' })
   getSecao(@Param('secao') secao: string) {
     return this.service.getSecao(secao);
   }
 
   // ── Rotas PROTEGIDAS (somente admin/comunicacao) ─────────
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.COMUNICACAO)
   @Patch()
   @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }), new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Atualiza configurações gerais do site' })
+  @ApiResponse({ status: 200, description: 'Configurações atualizadas com sucesso.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiResponse({ status: 403, description: 'Role sem permissão (requer ADMIN ou COMUNICACAO).' })
   async updateAll(@Body() body: Record<string, string>, @Req() req: AuthenticatedRequest) {
     const result = await this.service.updateMany(body, getAuditUser(req));
     // Invalida cache das rotas públicas para que o frontend receba dados atualizados imediatamente
@@ -72,12 +80,17 @@ export class SiteConfigController {
     return result;
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.COMUNICACAO)
   @Patch('secoes/:secao')
   @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }), new SanitizeHtmlPipe())
   @ApiOperation({ summary: 'Atualiza o conteúdo de uma seção' })
+  @ApiParam({ name: 'secao', description: "Slug da seção a atualizar (ex: 'missao', 'historia')" })
+  @ApiResponse({ status: 200, description: 'Seção atualizada com sucesso.' })
+  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiResponse({ status: 403, description: 'Role sem permissão.' })
+  @ApiResponse({ status: 404, description: 'Seção não encontrada.' })
   async updateSecao(@Param('secao') secao: string, @Body() body: Record<string, string>, @Req() req: AuthenticatedRequest) {
     const result = await this.service.updateSecao(secao, body, getAuditUser(req));
     // Invalida a listagem geral de seções. A rota de seção específica não usa cache para evitar conteúdo antigo.

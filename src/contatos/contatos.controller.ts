@@ -45,7 +45,7 @@ export class ContatosController {
 
   // ── Rotas autenticadas ────────────────────────────────────────────────────
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @Get()
@@ -59,7 +59,7 @@ export class ContatosController {
     return this.contatosService.findAll(query);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @Get(':id')
@@ -73,7 +73,7 @@ export class ContatosController {
     return this.contatosService.findOne(id);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @Patch(':id/lida')
@@ -85,7 +85,7 @@ export class ContatosController {
     return this.contatosService.marcarComoLida(id, getAuditUser(req));
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'COMUNICACAO', 'SECRETARIA')
   @Delete(':id')
