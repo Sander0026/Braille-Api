@@ -1,75 +1,187 @@
-# 📅 Cronograma de Desenvolvimento - Projeto ILBES (Sistema Administrativo)
+# README — Braille-Api
 
-**Projeto:** Sistema de Gestão para o Instituto Luiz Braille, voltado ao atendimento de pessoas com deficiência visual.
+![NestJS](https://img.shields.io/badge/NestJS-11.x-E0234E?logo=nestjs&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-5.x-2D3748?logo=prisma)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?logo=postgresql&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)
+![Deploy](https://img.shields.io/badge/Deploy-Render.com-46E3B7?logo=render)
 
-**Adaptação de Escopo (Março/2026):** Inclusão de novos requisitos solicitados pelo cliente (Certificados Dinâmicos, Apoiadores, QR Code e Módulo de Ajuda), mantendo a data de entrega e Go-Live em 26/05/2026.
-
-**Legenda de Status:**
-- [X] ✅ Concluído
-- [~] 🚧 Em Andamento / Parcialmente Feito
-- [ ] ⏳ Pendente
-
----
-
-## 🏗️ FASE 1 — Fundação e Estrutura (Semanas 1 e 2)
-> 17/02/2026 a 03/03/2026 (Apresentadas e Validadas)
-
-| Sprint | Data | Tarefa / Entregável | Status |
-| :--: | :--- | :--- | :---: |
-| 1.1 | **17/02/2026** | **Configuração do Ambiente e Repositórios**<br>- Criar repositório Git (Front e API)<br>- Inicializar projeto NestJS e Angular<br>- Configurar banco PostgreSQL no Neon.tech<br>- Configurar proxy e variáveis de ambiente | [X] |
-| 1.2 | **24/02/2026** | **Modelagem de Dados e Autenticação**<br>- Definir schema Prisma completo<br>- Implementar Login com JWT no NestJS<br>- Definir Roles (ADMIN, SECRETARIA, PROFESSOR, COMUNICACAO)<br>- Tela de Login no Angular | [X] |
-| 1.3 | **03/03/2026** | **CRUD de Beneficiários (Alunos)**<br>- Ficha completa: dados, contato, perfil da deficiência, socioeconômica<br>- Upload de foto de perfil e laudo médico (Cloudinary)<br>- Wizard de cadastro no Angular | [X] | 
+API REST do sistema de gestão institucional do **Instituto Luiz Braille** — plataforma para gestão de alunos com deficiência visual, turmas de oficinas, frequências, certificados, apoiadores e CMS do site público.
 
 ---
 
-## ⚙️ FASE 2 — Backend Core e Módulos de Negócio (Semanas 3, 4 e 5)
-> 10/03/2026 a 31/03/2026
+## Pré-requisitos
 
-| Sprint | Data | Tarefa / Entregável | Status |
-| :--: | :--- | :--- | :---: |
-| 2.1 | **10/03/2026** | **Módulo de Oficinas/Turmas**<br>- API de Turmas (oficinas): criar, editar, listar<br>- Vinculação de aluno a uma ou mais turmas<br>- Suporte a múltiplas oficinas dinâmicas | [X] |
-| 2.2 | **17/03/2026** | **Módulo de Frequência (Chamada)**<br>- API de Frequência: registrar presença/ausência<br>- Tela de frequências no Angular com filtros | [X] |
-| 2.3 | **24/03/2026** | **Gestão de Usuários do Sistema**<br>- API para CRUD de usuários do painel<br>- Fluxo de redefinição de senha e upload de foto<br>- Controle de roles e permissões | [X] |
-| 2.4 | **31/03/2026** | **Módulo de Comunicados e Notícias**<br>- API de Comunicados: criar, editar, publicar, fixar, categorizar<br>- Categorias: Notícia, Serviço, Vaga, Evento, etc.<br>- Upload de imagem de capa e tela de listagem | [~] |
+| Ferramenta | Versão | Verificação |
+|---|---|---|
+| Node.js | 22.x LTS | `node --version` |
+| npm | 10.x | `npm --version` |
+| PostgreSQL | 15+ | `psql --version` (ou usar Supabase) |
 
 ---
 
-## 👁️ FASE 3 — Site Público e Painel CMS (Semanas 6 e 7)
-> 07/04/2026 a 14/04/2026
+## Setup Rápido (5 passos)
 
-| Sprint | Data | Tarefa / Entregável | Status |
-| :--: | :--- | :--- | :---: |
-| 3.1 | **07/04/2026** | **Site Público (Vitrine Institucional)**<br>- Página Home com seções: hero, missão, oficinas, depoimentos<br>- Página Sobre e Página de Notícias<br>- Página de Contato com formulário "Fale Conosco" | [ ] |
-| 3.2 | **14/04/2026** | **Painel CMS & Dashboard Administrativo**<br>- API de SiteConfig e ConteudoSecao para edição do site<br>- API de métricas e Tela de Dashboard com cards de resumo<br>- Navegação e menu lateral para o painel admin | [ ] |
+```bash
+# 1. Clone e instale
+git clone <URL_REPOSITORIO>
+cd Braille-Api
+npm install
+
+# 2. Configure o ambiente
+cp .env.example .env
+# → Edite o .env com suas credenciais (banco, JWT, Cloudinary)
+
+# 3. Crie o banco (PostgreSQL local)
+psql -U postgres -c "CREATE DATABASE braille_db;"
+
+# 4. Execute migrations e seed
+npm run db:migrate:dev
+npm run db:seed
+
+# 5. Inicie o servidor
+npm run start:dev
+```
+
+**Verifique:**
+- API: [http://localhost:3000/api](http://localhost:3000/api)
+- Swagger: [http://localhost:3000/docs](http://localhost:3000/docs)
+- Login: `username: admin` / `senha: SENHA_PADRAO_ADMIN` (do `.env`)
+
+> Documentação completa de setup em [`docs/backend/01-setup.md`](docs/backend/01-setup.md)
+
+---
+
+## Variáveis de Ambiente Obrigatórias
+
+| Variável | Descrição |
+|---|---|
+| `DATABASE_URL` | URL PostgreSQL com pooler (PgBouncer) |
+| `DIRECT_URL` | URL PostgreSQL direta (para migrations) |
+| `JWT_SECRET` | Segredo JWT (mínimo 32 chars em produção) |
+| `CLOUDINARY_CLOUD_NAME` | Nome do cloud no Cloudinary |
+| `CLOUDINARY_API_KEY` | Chave pública Cloudinary |
+| `CLOUDINARY_API_SECRET` | Chave secreta Cloudinary |
+| `SENHA_PADRAO_ADMIN` | Senha do admin criado pelo seed |
+
+> Referência completa em [`docs/backend/10-variaveis-ambiente.md`](docs/backend/10-variaveis-ambiente.md)
 
 ---
 
-## 🎓 FASE 4 — Expansão de Escopo: Certificados e Apoiadores (Semanas 8 e 9)
-> 21/04/2026 a 28/04/2026
+## Scripts Disponíveis
 
-| Sprint | Data | Tarefa / Entregável | Status |
-| :--: | :--- | :--- | :---: |
-| 4.1 | **21/04/2026** | **Motor de Certificados e Editor Visual**<br>- Tela de criação de Modelos (Editor Drag & Drop, upload de arte, escala de fontes)<br>- Motor de geração de PDFs vetorizados no backend (`pdf-lib`) | [ ] |
-| 4.2 | **28/04/2026** | **Apoiadores e Validação QR Code**<br>- Módulo de Apoiadores (Amigos do Braille)<br>- Botão "Emitir Certificado" no perfil do aluno/apoiador<br>- Motor de injeção de QR Code e Portal de Validação de Autenticidade | [ ] |
-
----
-
-## 🎨 FASE 5 — Refinamento Visual e Acessibilidade (Semanas 10 e 11)
-> 05/05/2026 a 12/05/2026
-
-| Sprint | Data | Tarefa / Entregável | Status |
-| :--: | :--- | :--- | :---: |
-| 5.1 | **05/05/2026** | **Design System e Acessibilidade Avançada**<br>- Padronizar formulários, botões e modais de exclusão<br>- Revisão de tags `aria-label`, contraste WCAG AA<br>- Testes práticos com leitor de tela (NVDA) e navegação por teclado | [ ] |
-| 5.2 | **12/05/2026** | **Relatórios e Exportação**<br>- Relatório de frequência por turma/período<br>- Relatório de beneficiários por tipo de deficiência<br>- Opção de exportação (PDF ou CSV) e filtros avançados | [ ] |
+| Script | Descrição |
+|---|---|
+| `npm run start:dev` | Servidor com hot-reload |
+| `npm run build` | Compila TypeScript para `dist/` |
+| `npm run start:prod` | Executa build de produção |
+| `npm run test` | Testes unitários (Jest) |
+| `npm run test:cov` | Cobertura de testes |
+| `npm run lint` | ESLint + auto-fix |
+| `npm run db:migrate:dev` | Nova migration em dev |
+| `npm run db:migrate:deploy` | Aplica migrations em produção |
+| `npm run db:seed` | Popula dados iniciais |
+| `npm run db:studio` | Prisma Studio (GUI do banco) |
 
 ---
 
-## 🚀 FASE 6 — Deploy, Manuais e Entrega Final (Semanas 12 e 13)
-> 19/05/2026 a 26/05/2026
+## Arquitetura
 
-| Sprint | Data | Tarefa / Entregável | Status |
-| :--: | :--- | :--- | :---: |
-| 6.1 | **19/05/2026** | **Hospedagem, Deploy e Auditoria**<br>- Backend no Render.com e Frontend na Vercel (com HTTPS e domínio)<br>- Rodar Axe-core / Lighthouse e resolver bugs críticos (Regressão) | [ ] |
-| 6.2 | **26/05/2026** | **Módulo de Ajuda e Documentação Final**<br>- Criação do módulo interno com manuais de uso para a secretaria<br>- Operação assistida (projeto rodando na instituição e feedbacks)<br>- **🏁 Code Freeze e Apresentação Final para a Banca Acadêmica** | [ ] |
+```
+Controller (HTTP) → Service (Regras de Negócio) → PrismaService → PostgreSQL
+         ↑                      ↑
+   Guards (Auth/Roles)    AuditLogService
+   Interceptors (Audit)
+   Filters (Prisma)
+```
+
+### Módulos de Negócio
+
+| Módulo | Rota | Descrição |
+|---|---|---|
+| `auth` | `/api/auth/*` | Login, JWT, Refresh Token, Perfil |
+| `users` | `/api/usuarios/*` | CRUD de funcionários |
+| `beneficiaries` | `/api/beneficiaries/*` | CRUD de alunos + importação Excel |
+| `turmas` | `/api/turmas/*` | Oficinas, grade horária, matrículas |
+| `frequencias` | `/api/frequencias/*` | Chamada, diário, fechamento |
+| `certificados` | `/api/certificados/*` | Geração de PDF + QR Code |
+| `apoiadores` | `/api/apoiadores/*` | CRM de parceiros |
+| `upload` | `/api/upload/*` | Upload Cloudinary CDN |
+| `audit-log` | `/api/audit-log/*` | Trilha de auditoria imutável |
+| `site-config` | `/api/site-config/*` | CMS do site público |
+| + 5 módulos | ... | comunicados, contatos, laudos, atestados, dashboard |
 
 ---
+
+## Documentação Técnica
+
+Toda a documentação está em `docs/backend/`:
+
+| Documento | Conteúdo |
+|---|---|
+| [`00-visao-geral.md`](docs/backend/00-visao-geral.md) | Arquitetura, stack, diagrama de módulos |
+| [`01-setup.md`](docs/backend/01-setup.md) | Setup local completo + troubleshooting |
+| [`02-banco-de-dados.md`](docs/backend/02-banco-de-dados.md) | Schema Prisma, modelos, decisões de design |
+| [`03-autenticacao.md`](docs/backend/03-autenticacao.md) | JWT, Refresh Token, Guards |
+| [`05-seguranca.md`](docs/backend/05-seguranca.md) | Medidas de segurança implementadas |
+| [`06-auditoria.md`](docs/backend/06-auditoria.md) | AuditInterceptor, AuditLog |
+| [`09-testes.md`](docs/backend/09-testes.md) | Estratégia e execução de testes |
+| [`10-variaveis-ambiente.md`](docs/backend/10-variaveis-ambiente.md) | Referência completa de env vars |
+| [`11-decisoes-tecnicas.md`](docs/backend/11-decisoes-tecnicas.md) | ADRs — "por quê" de cada decisão |
+| [`modulos/`](docs/backend/modulos/) | Documentação individual por módulo |
+
+---
+
+## Endpoints (Swagger)
+
+Disponível apenas em desenvolvimento: [http://localhost:3000/docs](http://localhost:3000/docs)
+
+Autenticação via Bearer Token. Primeiro, realize login em `POST /api/auth/login` e use o `access_token` retornado.
+
+---
+
+## Testes
+
+```bash
+npm run test        # Todos os testes unitários
+npm run test:watch  # Modo watch
+npm run test:cov    # Relatório de cobertura HTML
+npm run test:e2e    # Testes end-to-end
+```
+
+---
+
+## Deploy (Render.com)
+
+1. Conectar repositório ao Render (New Web Service)
+2. Configurar variáveis de ambiente no painel
+3. **Build Command:** `npm run build:prod`
+4. **Start Command:** `npm run start:prod`
+5. Rodar migrations: `npm run db:migrate:deploy` (pre-deploy hook)
+
+> Detalhe completo em [`docs/backend/01-setup.md#deploy`](docs/backend/01-setup.md)
+
+---
+
+## Contribuindo
+
+Leia [`CONTRIBUTING.md`](CONTRIBUTING.md) antes de abrir um PR.
+
+**Checklist rápido:**
+- [ ] `npm run lint` sem erros
+- [ ] Testes passando (`npm run test`)
+- [ ] Novo módulo adicionado ao `ENTIDADE_MAP` no audit interceptor
+- [ ] DTOs com validators (`class-validator`)
+- [ ] Nenhum campo sensível retornado sem select cirúrgico
+
+---
+
+## Segurança
+
+Reporte vulnerabilidades conforme [`SECURITY.md`](SECURITY.md).
+
+---
+
+## Licença
+
+Uso restrito — Instituto Luiz Braille. Não destinado à distribuição pública.
