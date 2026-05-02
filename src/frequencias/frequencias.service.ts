@@ -1,0 +1,530 @@
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
+import { CreateFrequenciaLoteDto } from './dto/create-frequencia-lote.dto';
+import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
+import { PrismaService } from '../prisma/prisma.service';
+import { QueryFrequenciaDto } from './dto/query-frequencia.dto';
+import { Role, AuditAcao, Prisma, StatusFrequencia } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { ConfigService } from '@nestjs/config';
+
+@Injectable()
+export class FrequenciasService {
+  private readonly logger = new Logger(FrequenciasService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditLogService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  /** Compara se dataAula é Hoje em UTC (ignora horário). */
+  private ehHoje(dataAula: Date): boolean {
+    const hoje = new Date();
+    return (
+      dataAula.getUTCFullYear() === hoje.getUTCFullYear() &&
+      dataAula.getUTCMonth() === hoje.getUTCMonth() &&
+      dataAula.getUTCDate() === hoje.getUTCDate()
+    );
+  }
+
+  /**
+   * Converte o campo legado `presente` para o enum oficial `status`.
+   * Enquanto `presente` existir por compatibilidade, toda escrita deve manter
+   * os dois campos sincronizados para evitar divergência silenciosa em relatórios.
+   */
+  private statusFromPresente(presente: boolean): StatusFrequencia {
+    return presente ? StatusFrequencia.PRESENTE : StatusFrequencia.FALTA;
+  }
+
+  /** Deriva o campo legado `presente` a partir do status oficial. */
+  private presenteFromStatus(status: StatusFrequencia): boolean {
+    return status === StatusFrequencia.PRESENTE;
+  }
+
+  /**
+   * Resolve o status oficial priorizando `status` e usando `presente` apenas como fallback legado.
+   */
+  private resolverStatus(status?: StatusFrequencia, presente?: boolean): StatusFrequencia {
+    if (status) return status;
+    if (typeof presente === 'boolean') return this.statusFromPresente(presente);
+    throw new BadRequestException('Informe o status da frequência ou o campo legado presente.');
+  }
+
+  /**
+   * Define se professores e secretaria podem operar chamadas fora do dia atual.
+   * O padrao continua permissivo para preservar a regra de implantacao atual.
+   */
+  private permiteFrequenciaRetroativa(): boolean {
+    const valor = this.configService.get<string>('FREQUENCIAS_PERMITIR_RETROATIVAS', 'true');
+    return valor !== 'false';
+  }
+
+  /**
+   * Garante que a chamada pertence ao dia atual quando a regra retroativa
+   * estiver bloqueada. ADMIN pode ignorar a trava para retificacao.
+   */
+  private validarDataHoje(dataAula: Date, bypass = false): void {
+    if (bypass || this.permiteFrequenciaRetroativa() || this.ehHoje(dataAula)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      'Lancamento retroativo de frequencia bloqueado para este perfil.',
+    );
+  }
+
+  /**
+   * Verifica se o diário (turma+data) está fechado.
+   * Se fechado e o usuário não for ADMIN → lança ForbiddenException.
+   */
+  private async verificarDiarioAberto(turmaId: string, dataAula: Date, role: Role): Promise<void> {
+    // Verifica se qualquer frequência dessa turma+data está marcada como fechado
+    const fechado = await this.prisma.frequencia.findFirst({
+      where: { turmaId, dataAula, fechado: true },
+      select: { id: true },
+    });
+
+    if (fechado && role !== Role.ADMIN) {
+      throw new ForbiddenException(
+        'O diário desta data está fechado. Somente um administrador pode reabri-lo para retificação.',
+      );
+    }
+  }
+
+  // ─── CRUD Principal ────────────────────────────────────────────────────────
+
+  async create(dto: CreateFrequenciaDto, auditUser?: AuditUser) {
+    const dataConvertida = new Date(dto.dataAula);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+    const statusResolvido = this.resolverStatus(dto.status, dto.presente);
+
+    // ADMIN pode lançar chamada retroativa; professor só no dia
+    this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
+
+    // Trava: diário fechado?
+    await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
+
+    const chamadaExistente = await this.prisma.frequencia.findFirst({
+      where: { alunoId: dto.alunoId, turmaId: dto.turmaId, dataAula: dataConvertida },
+    });
+
+    if (chamadaExistente) {
+      throw new ConflictException('A chamada para este aluno nesta oficina já foi registrada hoje.');
+    }
+
+    return this.prisma.frequencia.create({
+      data: {
+        dataAula: dataConvertida,
+        alunoId: dto.alunoId,
+        turmaId: dto.turmaId,
+        observacao: dto.observacao,
+        status: statusResolvido,
+        presente: this.presenteFromStatus(statusResolvido),
+      },
+    });
+  }
+
+  // ─── Lote Absoluto (Fase 23) ──────────────────────────────────────────────────
+  async salvarLote(dto: CreateFrequenciaLoteDto, auditUser?: AuditUser) {
+    const dataConvertida = new Date(dto.dataAula);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+
+    // Validações básicas (Bypass só pro Admin)
+    this.validarDataHoje(dataConvertida, requesterRole === Role.ADMIN);
+    await this.verificarDiarioAberto(dto.turmaId, dataConvertida, requesterRole);
+
+    const autorContext = auditUser
+      ? {
+          autorId: auditUser.sub,
+          autorNome: auditUser.nome,
+          autorRole: auditUser.role,
+          ip: auditUser.ip,
+          userAgent: auditUser.userAgent,
+        }
+      : {};
+
+    // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
+    try {
+      const auditPayloads: any[] = [];
+
+      await this.prisma.$transaction(
+        async (tx) => {
+          // Pré-carrega registros existentes para evitar buscas redundantes (O(1) query vs O(N) queries)
+          const alunosIds = dto.alunos.map((a) => a.alunoId);
+          const existentesDb = await tx.frequencia.findMany({
+            where: {
+              turmaId: dto.turmaId,
+              dataAula: dataConvertida,
+              alunoId: { in: alunosIds },
+            },
+          });
+          const mapaExistentes = new Map(existentesDb.map((f) => [f.alunoId, f]));
+
+          for (const aluno of dto.alunos) {
+            let frequenciaFinal: any;
+            let acaoAudit: AuditAcao;
+            let oldValue: any = undefined;
+            const statusResolvido = this.resolverStatus(aluno.status, aluno.presente);
+            const presenteLegado = this.presenteFromStatus(statusResolvido);
+
+            // Preferência para a busca no banco pré-carregada via turmaId + dataAula + alunoId
+            const existente = mapaExistentes.get(aluno.alunoId);
+
+            if (existente) {
+              oldValue = existente;
+
+              // Se já é FALTA_JUSTIFICADA, não sobrescreve o status (preserva o atestado)
+              if (existente.status === StatusFrequencia.FALTA_JUSTIFICADA) {
+                frequenciaFinal = existente; // não altera
+                acaoAudit = AuditAcao.ATUALIZAR;
+              } else {
+                frequenciaFinal = await tx.frequencia.update({
+                  where: { id: existente.id },
+                  data: {
+                    presente: presenteLegado,
+                    status: statusResolvido,
+                    justificativaId: null,
+                  },
+                });
+                acaoAudit = AuditAcao.ATUALIZAR;
+              }
+            } else {
+              frequenciaFinal = await tx.frequencia.create({
+                data: {
+                  turmaId: dto.turmaId,
+                  alunoId: aluno.alunoId,
+                  dataAula: dataConvertida,
+                  presente: presenteLegado,
+                  status: statusResolvido,
+                },
+              });
+              acaoAudit = AuditAcao.CRIAR;
+            }
+
+            // ── Auto-justificativa por Atestado Ativo ────────────────────────────
+            // Se o aluno foi marcado como FALTA, verificar se existe atestado cobrindo esse dia.
+            // Isso garante que faltas lançadas EM DATAS FUTURAS já cobertas por atestado sejam
+            // automaticamente justificadas sem precisar reemitir o atestado.
+            if (statusResolvido === StatusFrequencia.FALTA && frequenciaFinal.status !== StatusFrequencia.FALTA_JUSTIFICADA) {
+              const atestadoAtivo = await tx.atestado.findFirst({
+                where: {
+                  alunoId: aluno.alunoId,
+                  dataInicio: { lte: dataConvertida },
+                  dataFim: { gte: dataConvertida },
+                },
+                select: { id: true },
+              });
+
+              if (atestadoAtivo) {
+                frequenciaFinal = await tx.frequencia.update({
+                  where: { id: frequenciaFinal.id },
+                  data: {
+                    presente: false,
+                    status: StatusFrequencia.FALTA_JUSTIFICADA,
+                    justificativaId: atestadoAtivo.id,
+                  },
+                });
+              }
+            }
+
+            // Coleta o log em vez de disparar concorrência pesada no meio da transação
+            auditPayloads.push({
+              entidade: 'Frequencia',
+              registroId: frequenciaFinal.id,
+              acao: acaoAudit,
+              ...autorContext, // Usa a extração global unificada
+              oldValue,
+              newValue: frequenciaFinal,
+            });
+          }
+        },
+        {
+          maxWait: 10000,
+          timeout: 30000, // Previne "Transaction API error: Transaction not found."
+        },
+      );
+
+      // Dispara a auditoria de forma sequencial, no background, para não exaurir o Pool de Conexões do Prisma nem a transação.
+      Promise.resolve().then(async () => {
+        for (const payload of auditPayloads) {
+          await this.auditService.registrar(payload).catch((e: unknown) => {
+            this.logger.warn(
+              `Falha não bloqueante ao registrar log de lote de Frequencia. Aluno ID: ${payload.registroId}. Erro: ${(e as Error).message}`,
+            );
+          });
+        }
+      });
+
+      return {
+        sucesso: true,
+        processados: dto.alunos.length,
+        mensagem: 'Operação de lote efetivada com integridade atômica.',
+      };
+    } catch (error: any) {
+      this.logger.error('Erro Crítico Prisma Transação (Lote):', error);
+      // Data Leak Prevention: não repassa "error.message" técnico nativo do PGD.
+      throw new InternalServerErrorException(
+        'Falha ao processar o Lote de Chamadas. O banco de dados abortou a transação.',
+      );
+    }
+  }
+
+  async findAll(query: QueryFrequenciaDto) {
+    const { page = 1, limit = 20, turmaId, alunoId, dataAula, professorId } = query;
+    const skip = (page - 1) * limit;
+
+    const whereCondicao: Prisma.FrequenciaWhereInput = {};
+    if (turmaId) whereCondicao.turmaId = turmaId;
+    if (alunoId) whereCondicao.alunoId = alunoId;
+    if (dataAula) whereCondicao.dataAula = new Date(dataAula);
+    if (professorId) whereCondicao.turma = { professorId };
+
+    const [frequencias, total] = await Promise.all([
+      this.prisma.frequencia.findMany({
+        where: whereCondicao,
+        skip,
+        take: limit,
+        include: {
+          aluno: { select: { id: true, nomeCompleto: true } },
+          turma: { select: { id: true, nome: true } },
+        },
+        orderBy: { dataAula: 'desc' },
+      }),
+      this.prisma.frequencia.count({ where: whereCondicao }),
+    ]);
+
+    return {
+      data: frequencias,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
+  }
+
+  async findResumo(query: QueryFrequenciaDto) {
+    const { page = 1, limit = 20, turmaId, professorId } = query;
+    const skip = (page - 1) * limit;
+
+    const whereCondicao: Prisma.FrequenciaWhereInput = {};
+    if (turmaId) whereCondicao.turmaId = turmaId;
+    if (professorId) whereCondicao.turma = { professorId };
+
+    const grouped = await this.prisma.frequencia.groupBy({
+      by: ['dataAula', 'turmaId'],
+      where: whereCondicao,
+      _count: { _all: true },
+      orderBy: { dataAula: 'desc' },
+    });
+
+    const total = grouped.length;
+    if (total === 0) {
+      return { data: [], meta: { total: 0, page, lastPage: 0 } };
+    }
+
+    const paginatedGroup = grouped.slice(skip, skip + Number(limit));
+
+    // Despacho O(1) de Dicionários Memory Tree (Encerrou falha de N+1)
+    const turmasIds = [...new Set(paginatedGroup.map((g) => g.turmaId))];
+    const turmasDb = await this.prisma.turma.findMany({
+      where: { id: { in: turmasIds } },
+      select: { id: true, nome: true },
+    });
+    const mapaTurmas = new Map(turmasDb.map((t) => [t.id, t.nome]));
+
+    // Datas Min e Max para restringir a busca de presentes/diários
+    const maxDate = paginatedGroup[0].dataAula;
+    const minDate = paginatedGroup.at(-1)?.dataAula;
+
+    const [presentesGroup, diariosFechadosGroup] = await Promise.all([
+      this.prisma.frequencia.groupBy({
+        by: ['dataAula', 'turmaId'],
+        where: {
+          turmaId: { in: turmasIds },
+          dataAula: { gte: minDate, lte: maxDate },
+          status: StatusFrequencia.PRESENTE,
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.frequencia.findMany({
+        where: {
+          turmaId: { in: turmasIds },
+          dataAula: { gte: minDate, lte: maxDate },
+          fechado: true,
+        },
+        distinct: ['turmaId', 'dataAula'],
+        select: { turmaId: true, dataAula: true, fechadoEm: true },
+      }),
+    ]);
+
+    // Cache key maker de datas exatas
+    const cKey = (tId: string, dt: Date) => `${tId}_${dt.toISOString()}`;
+
+    const mapPresentes = new Map(presentesGroup.map((g) => [cKey(g.turmaId, g.dataAula), g._count._all]));
+    const mapFechados = new Map(diariosFechadosGroup.map((f) => [cKey(f.turmaId, f.dataAula), !!f.fechadoEm]));
+
+    const enrichedData = paginatedGroup.map((group) => {
+      const keyHash = cKey(group.turmaId, group.dataAula);
+      const presentes = mapPresentes.get(keyHash) || 0;
+      const isFechado = mapFechados.get(keyHash) || false;
+
+      return {
+        dataAula: group.dataAula,
+        turmaId: group.turmaId,
+        turmaNome: mapaTurmas.get(group.turmaId) || 'Desconhecido',
+        totalAlunos: group._count._all,
+        presentes,
+        faltas: group._count._all - presentes,
+        diarioFechado: isFechado,
+      };
+    });
+
+    return {
+      data: enrichedData,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
+  }
+
+  async getRelatorioAluno(turmaId: string, alunoId: string) {
+    const data = await this.prisma.frequencia.findMany({
+      where: { turmaId, alunoId },
+      orderBy: { dataAula: 'desc' },
+    });
+
+    const totais = data.reduce(
+      (acc, curr) => {
+        if (curr.status === StatusFrequencia.PRESENTE) {
+          acc.presentes++;
+        } else if (curr.status === StatusFrequencia.FALTA_JUSTIFICADA) {
+          acc.faltasJustificadas++;
+        } else {
+          acc.faltas++;
+        }
+        return acc;
+      },
+      { presentes: 0, faltas: 0, faltasJustificadas: 0 },
+    );
+
+    return {
+      estatisticas: {
+        totalAulas: data.length,
+        ...totais,
+        taxaPresenca: data.length > 0 ? Math.round((totais.presentes / data.length) * 100) : 0,
+      },
+      historico: data,
+    };
+  }
+
+  async findOne(id: string) {
+    const frequencia = await this.prisma.frequencia.findUnique({
+      where: { id },
+      include: { aluno: true, turma: true },
+    });
+    if (!frequencia) throw new NotFoundException('Registro de chamada não encontrado.');
+    return frequencia;
+  }
+
+  async update(id: string, dto: UpdateFrequenciaDto, auditUser?: AuditUser) {
+    const frequencia = await this.findOne(id);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+
+    // Professor só edita no dia; ADMIN pode retificar qualquer data
+    this.validarDataHoje(frequencia.dataAula, requesterRole === Role.ADMIN);
+
+    // Trava: diário fechado?
+    await this.verificarDiarioAberto(frequencia.turmaId, frequencia.dataAula, requesterRole);
+
+    const dadosParaAtualizar: any = { ...dto };
+    if (dto.dataAula) dadosParaAtualizar.dataAula = new Date(dto.dataAula);
+    if (dto.status || typeof dto.presente === 'boolean') {
+      const statusResolvido = this.resolverStatus(dto.status, dto.presente);
+      dadosParaAtualizar.status = statusResolvido;
+      dadosParaAtualizar.presente = this.presenteFromStatus(statusResolvido);
+      dadosParaAtualizar.justificativaId = statusResolvido === StatusFrequencia.FALTA_JUSTIFICADA ? dadosParaAtualizar.justificativaId : null;
+    }
+
+    return this.prisma.frequencia.update({ where: { id }, data: dadosParaAtualizar });
+  }
+
+  async remove(id: string, auditUser?: AuditUser) {
+    const frequencia = await this.findOne(id);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+    this.validarDataHoje(frequencia.dataAula, requesterRole === Role.ADMIN);
+    await this.verificarDiarioAberto(frequencia.turmaId, frequencia.dataAula, requesterRole);
+    return this.prisma.frequencia.delete({ where: { id } });
+  }
+
+  // ─── Fechamento de Diário ───────────────────────────────────────────────────
+
+  /**
+   * PROFESSOR fecha o diário de uma turma em uma data específica.
+   * Após fechar: só ADMIN pode reabrir/retificar.
+   * Regra: só pode fechar o diário do dia atual (professor), ou qualquer dia (admin).
+   */
+  async fecharDiario(turmaId: string, dataAula: string, auditUser?: AuditUser) {
+    const data = new Date(dataAula);
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+    const userId = auditUser?.sub || 'desconhecido';
+
+    // Professor só fecha o diário do dia atual
+    if (requesterRole !== Role.ADMIN && !this.ehHoje(data)) {
+      throw new ForbiddenException('Só é possível fechar o diário do dia atual.');
+    }
+
+    // Verifica se há registros para fechar
+    const registros = await this.prisma.frequencia.findMany({
+      where: { turmaId, dataAula: data },
+      select: { id: true, fechado: true },
+    });
+
+    if (registros.length === 0) {
+      throw new BadRequestException('Não há registros de chamada para fechar nesta data.');
+    }
+
+    const jaFechados = registros.filter((r) => r.fechado);
+    if (jaFechados.length === registros.length) {
+      throw new BadRequestException('O diário desta data já está fechado.');
+    }
+
+    // Fecha todos os registros da turma nessa data
+    await this.prisma.frequencia.updateMany({
+      where: { turmaId, dataAula: data },
+      data: { fechado: true, fechadoEm: new Date(), fechadoPor: userId },
+    });
+
+    return {
+      mensagem: `Diário fechado com sucesso. ${registros.length} registro(s) bloqueado(s).`,
+      turmaId,
+      dataAula,
+      totalRegistros: registros.length,
+    };
+  }
+
+  /**
+   * ADMIN reabre o diário para retificação. Volta fechado = false.
+   */
+  async reabrirDiario(turmaId: string, dataAula: string, auditUser?: AuditUser) {
+    const requesterRole = (auditUser?.role as Role) || Role.PROFESSOR;
+    if (requesterRole !== Role.ADMIN) {
+      throw new ForbiddenException('Somente administradores podem reabrir um diário fechado.');
+    }
+
+    const data = new Date(dataAula);
+
+    await this.prisma.frequencia.updateMany({
+      where: { turmaId, dataAula: data, fechado: true },
+      data: { fechado: false, fechadoEm: null, fechadoPor: null },
+    });
+
+    return { mensagem: 'Diário reaberto para retificação.', turmaId, dataAula };
+  }
+}

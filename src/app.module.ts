@@ -1,0 +1,97 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { CacheModule } from '@nestjs/cache-manager';
+import { APP_INTERCEPTOR, APP_GUARD, APP_FILTER } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { BeneficiariesModule } from './beneficiaries/beneficiaries.module';
+import { ComunicadosModule } from './comunicados/comunicados.module';
+import { TurmasModule } from './turmas/turmas.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { FrequenciasModule } from './frequencias/frequencias.module';
+import { ContatosModule } from './contatos/contatos.module';
+import { UploadModule } from './upload/upload.module';
+import { SiteConfigModule } from './site-config/site-config.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { AtestadosModule } from './atestados/atestados.module';
+import { LaudosModule } from './laudos/laudos.module';
+import { ApoiadoresModule } from './apoiadores/apoiadores.module';
+import { CertificadosModule } from './certificados/certificados.module';
+import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/prisma-exception.filter';
+import { validateEnv } from './common/config/env.validation';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateEnv,
+    }),
+    // Memória Cache (Fase 14) - Configurado Globalmente com vida natural padrão (via Config)
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => ({
+        ttl: configService.get<number>('CACHE_TTL', 300000),
+      }),
+    }),
+    // Bloqueia abusos de rede via configurações dinâmicas de ambiente
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => [
+        {
+          ttl: configService.get<number>('THROTTLER_TTL', 60000),
+          limit: configService.get<number>('THROTTLER_LIMIT', 30),
+        },
+      ],
+    }),
+    PrismaModule,
+    ScheduleModule.forRoot(), // Habilita @Cron, @Interval, @Timeout globalmente
+    AuthModule,
+    UsersModule,
+    BeneficiariesModule,
+    ComunicadosModule,
+    TurmasModule,
+    DashboardModule,
+    FrequenciasModule,
+    ContatosModule,
+    UploadModule,
+    SiteConfigModule,
+    AuditLogModule, // Fase 5
+    AtestadosModule, // Módulo de Justificativas de Falta
+    LaudosModule,
+    ApoiadoresModule,
+    CertificadosModule,
+  ],
+  controllers: [AppController],
+  providers: [
+    AppService,
+    // Guarda Global contra Força Bruta (Throttler)
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    // Interceptor global de auditoria — captura mutações em todas as rotas
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
+    },
+    // Filtros Globais de Exceção injetados na Árvore de Dependências IoC
+    {
+      provide: APP_FILTER,
+      useClass: PrismaExceptionFilter,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: PrismaValidationFilter,
+    },
+  ],
+})
+export class AppModule {}

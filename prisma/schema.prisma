@@ -1,0 +1,602 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator erd {
+  provider = "prisma-erd-generator"
+  output   = "../v1-erd.svg"
+  theme    = "neutral"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ================= ENUMS (Listas Padronizadas) =================
+enum Role {
+  ADMIN
+  SECRETARIA
+  PROFESSOR
+  COMUNICACAO
+}
+
+enum MatriculaStatus {
+  ATIVA
+  CONCLUIDA
+  EVADIDA
+  CANCELADA
+}
+
+enum DiaSemana {
+  SEG
+  TER
+  QUA
+  QUI
+  SEX
+  SAB
+  DOM
+}
+
+enum TurmaStatus {
+  PREVISTA // Turma criada, ainda não iniciou
+  ANDAMENTO // Turma em andamento (default ao criar)
+  CONCLUIDA // Turma encerrada com sucesso
+  CANCELADA // Turma cancelada
+}
+
+enum TipoDeficiencia {
+  CEGUEIRA_TOTAL
+  BAIXA_VISAO
+  VISAO_MONOCULAR
+}
+
+enum CausaDeficiencia {
+  CONGENITA
+  ADQUIRIDA
+}
+
+enum PreferenciaAcessibilidade {
+  BRAILLE
+  FONTE_AMPLIADA
+  ARQUIVO_DIGITAL
+  AUDIO
+}
+
+enum CategoriaComunicado {
+  NOTICIA
+  SERVICO
+  VAGA_EMPREGO
+  EVENTO_CULTURAL
+  LEGISLACAO
+  TRABALHO_PCD
+  GERAL
+}
+
+enum CorRaca {
+  BRANCA
+  PRETA
+  PARDA
+  AMARELA
+  INDIGENA
+  NAO_DECLARADO
+}
+
+enum StatusFrequencia {
+  PRESENTE
+  FALTA
+  FALTA_JUSTIFICADA
+}
+
+enum AuditAcao {
+  CRIAR
+  ATUALIZAR
+  EXCLUIR
+  ARQUIVAR
+  RESTAURAR
+  LOGIN
+  LOGOUT
+  MATRICULAR
+  DESMATRICULAR
+  FECHAR_DIARIO
+  REABRIR_DIARIO
+  MUDAR_STATUS
+}
+
+enum TipoApoiador {
+  VOLUNTARIO
+  EMPRESA
+  IMPRENSA
+  PROFISSIONAL_LIBERAL
+  ONG
+  OUTRO
+}
+
+// ── Certificados (Módulo 5) ───────────────────────────────────────
+enum TipoCertificado {
+  ACADEMICO
+  HONRARIA
+}
+
+// ================= MODELOS (Tabelas) =================
+
+model User {
+  id                   String    @id @default(uuid())
+  matricula            String?   @unique // Ex: P20260001
+  nome                 String
+  username             String    @unique
+  email                String?   @unique
+  cpf                  String?   @unique // CPF do funcionário (unicidade)
+  senha                String
+  precisaTrocarSenha   Boolean   @default(false)
+  role                 Role      @default(PROFESSOR)
+  fotoPerfil           String?
+  refreshToken         String? // Token longo de 7 dias para rotacionar sessões
+  refreshTokenExpiraEm DateTime?
+
+  // Contato e endereço opcionais
+  telefone    String?
+  cep         String?
+  rua         String?
+  numero      String?
+  complemento String?
+  bairro      String?
+  cidade      String?
+  uf          String?
+
+  statusAtivo  Boolean      @default(true)
+  excluido     Boolean      @default(false)
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+  turmas       Turma[]      @relation("TurmaProfessorPrincipal")
+  comunicados  Comunicado[]
+  sessoes      UserSession[]
+
+  @@index([statusAtivo, excluido])
+  @@index([role])
+  @@index([refreshTokenExpiraEm])
+  @@index([cpf])
+  @@index([email]) // Acelera buscas quando houver muitos usuários
+}
+
+model UserSession {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String
+  previousRefreshTokenHash String?
+  previousRotatedAt        DateTime?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  userAgent        String?
+  ip               String?
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+model Aluno {
+  id String @id @default(uuid())
+
+  // 0. Identificação institucional
+  matricula String? @unique // Ex: 20260001 (gerado automaticamente)
+
+  // 1. Dados identificadores
+  nomeCompleto   String
+  dataNascimento DateTime
+  fotoPerfil     String?
+  cpf            String?  @unique
+  rg             String?  @unique
+  genero         String?
+  estadoCivil    String?
+  corRaca        CorRaca?
+
+  // 2. Contato e localização
+  cep               String?
+  rua               String?
+  numero            String?
+  complemento       String?
+  bairro            String?
+  cidade            String?
+  uf                String?
+  pontoReferencia   String?
+  telefoneContato   String?
+  email             String?
+  contatoEmergencia String?
+
+  // 3. Perfil da deficiência
+  tipoDeficiencia  TipoDeficiencia?
+  causaDeficiencia CausaDeficiencia?
+  idadeOcorrencia  String?
+  possuiLaudo      Boolean           @default(false)
+  laudoUrl         String? // URL da imagem do laudo no Cloudinary
+  tecAssistivas    String? // Ex: Bengala, cão-guia, NVDA
+
+  // 3b. Documentos legais e compliance
+  termoLgpdAceito   Boolean   @default(false) // Aluno aceitou o termo LGPD?
+  termoLgpdAceitoEm DateTime? // Timestamp do aceite
+  termoLgpdUrl      String? // URL do PDF do termo LGPD assinado no Cloudinary
+  atestadoUrl       String? // URL do atestado médico em PDF no Cloudinary
+  atestadoEmitidoEm DateTime? // Data de emissão do atestado
+
+  // 4. Situação socioeconômica
+  escolaridade       String?
+  profissao          String?
+  rendaFamiliar      String?
+  beneficiosGov      String? // Ex: BPC/LOAS
+  composicaoFamiliar String?
+
+  // 5. Saúde e autonomia
+  precisaAcompanhante Boolean @default(false)
+  acompOftalmologico  Boolean @default(false)
+  outrasComorbidades  String?
+
+  // 6. Preferências de acessibilidade
+  prefAcessibilidade PreferenciaAcessibilidade?
+
+  // Controles do sistema
+  statusAtivo  Boolean  @default(true)
+  excluido     Boolean  @default(false)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  // Relacionamentos
+  matriculasOficina    MatriculaOficina[]
+  frequencias          Frequencia[]
+  atestados            Atestado[]
+  laudos               LaudoMedico[]
+  certificadosEmitidos CertificadoEmitido[]
+
+  @@index([statusAtivo, excluido]) // Listagem de alunos ativos/inativos
+  @@index([nomeCompleto]) // Busca por nome
+  @@index([matricula]) // Busca por número de matrícula
+  @@index([cpf]) // Busca numérica frequente
+  @@index([rg])
+  @@index([email]) // Otimiza recuperação de contatos
+}
+
+model Turma {
+  id               String      @id @default(uuid())
+  nome             String // Ex: Oficina de Braille, Oficina de Cerâmica
+  descricao        String?
+  horario          String? // Campo legado textual; a grade oficial fica em GradeHoraria
+  capacidadeMaxima Int?
+  statusAtivo      Boolean     @default(true)
+  excluido         Boolean     @default(false)
+  status           TurmaStatus @default(PREVISTA) // Status acadêmico da turma
+  criadoEm         DateTime    @default(now())
+  atualizadoEm     DateTime    @updatedAt
+
+  dataInicio   DateTime?
+  dataFim      DateTime?
+  cargaHoraria String?
+
+  // Relacionamentos
+  professorId         String
+  professor           User               @relation("TurmaProfessorPrincipal", fields: [professorId], references: [id])
+  professorAuxiliarId String? // Substituto ou co-professor opcional
+  matriculasOficina   MatriculaOficina[]
+  frequencias         Frequencia[]
+  gradeHoraria        GradeHoraria[] // Turnos estruturados da turma
+
+  // Certificados opcionais, ativados quando professor/admin configurar modelo
+  modeloCertificadoId  String?
+  modeloCertificado    ModeloCertificado?   @relation(fields: [modeloCertificadoId], references: [id])
+  certificadosEmitidos CertificadoEmitido[]
+
+  @@index([statusAtivo, excluido])
+  @@index([professorId])
+}
+
+model MatriculaOficina {
+  id               String          @id @default(uuid())
+  status           MatriculaStatus @default(ATIVA)
+  dataEntrada      DateTime        @default(now())
+  dataEncerramento DateTime? // Preenchida ao concluir, evadir ou cancelar
+  observacao       String? // Motivo do cancelamento/evasão etc.
+  criadoEm         DateTime        @default(now())
+  atualizadoEm     DateTime        @updatedAt
+
+  // Relacionamentos
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+  turmaId String
+  turma   Turma  @relation(fields: [turmaId], references: [id])
+
+  // ATENÇÃO: sem @@unique aqui. A validação de duplicidade simultânea
+  // fica no NestJS: "aluno já tem matrícula ATIVA nessa turma?".
+  // Isso permite que o aluno volte à mesma turma após cancelamento/evasão.
+  @@index([alunoId])
+  @@index([turmaId, status])
+}
+
+// ── Grade Horária estruturada ─────────────────────────────────────
+// horaInicio e horaFim em minutos desde meia-noite (ex: 840 = 14:00, 960 = 16:00).
+// Isso evita problemas de timezone e torna a comparação de sobreposição simples.
+model GradeHoraria {
+  id         String    @id @default(uuid())
+  dia        DiaSemana
+  horaInicio Int // Ex: 840 = 14:00
+  horaFim    Int // Ex: 960 = 16:00
+  criadoEm   DateTime  @default(now())
+
+  turmaId String
+  turma   Turma  @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+
+  // Múltiplos horários no mesmo dia são permitidos para a mesma turma, desde que
+  // não haja sobreposição validada na camada de serviço. Horários iguais em turmas
+  // diferentes também são permitidos; o bloqueio ocorre somente para conflito do professor.
+  @@index([turmaId])
+  @@index([turmaId, dia])
+  @@index([dia, horaInicio, horaFim])
+}
+
+// Tabela de Frequência (chamada)
+model Frequencia {
+  id         String           @id @default(uuid())
+  // @db.Date salva apenas a data (ex: 2026-03-11), sem horário.
+  // Isso garante que o @@unique funcione como "1 chamada por aluno por turma por dia",
+  // sem falsos negativos por milissegundos diferentes.
+  dataAula   DateTime         @db.Date
+  // TODO(2026-04): `presente` é um campo legado mantido apenas para compatibilidade
+  // temporária. O campo `status` (enum StatusFrequencia) é o substituto definitivo.
+  // Remover junto com a migração futura dos relatórios.
+  // Nunca atualizar `presente` sem sincronizar `status`.
+  presente   Boolean          @default(false)
+  status     StatusFrequencia @default(FALTA) // Substituto definitivo de `presente`
+  observacao String?
+  fechado    Boolean          @default(false) // true = diário encerrado; só ADMIN pode reabrir
+  fechadoEm  DateTime? // Quando foi encerrado
+  fechadoPor String? // userId de quem fechou
+
+  // Justificativa por atestado opcional
+  justificativaId String?
+  justificativa   Atestado? @relation(fields: [justificativaId], references: [id])
+
+  // Relacionamentos
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+  turmaId String
+  turma   Turma  @relation(fields: [turmaId], references: [id])
+
+  @@unique([dataAula, alunoId, turmaId]) // 1 registro por aluno por turma por dia
+  @@index([alunoId]) // Consultas de frequência por aluno
+  @@index([turmaId, dataAula]) // Consultas de chamada por turma e data
+  @@index([justificativaId]) // Busca de frequências por atestado
+}
+
+// ── Atestados / justificativas de falta ───────────────────────────
+model Atestado {
+  id              String   @id @default(uuid())
+  dataInicio      DateTime @db.Date // Primeiro dia coberto
+  dataFim         DateTime @db.Date // Último dia coberto
+  motivo          String // Ex: "Consulta médica"
+  arquivoUrl      String? // URL PDF/imagem no Cloudinary
+  registradoPorId String // userId da secretaria que cadastrou
+  criadoEm        DateTime @default(now())
+
+  // Relacionamentos
+  alunoId     String
+  aluno       Aluno        @relation(fields: [alunoId], references: [id])
+  frequencias Frequencia[] // Faltas justificadas por este atestado
+
+  @@index([alunoId])
+  @@index([dataInicio, dataFim])
+}
+
+model Comunicado {
+  id           String              @id @default(uuid())
+  titulo       String
+  conteudo     String
+  categoria    CategoriaComunicado @default(GERAL)
+  imagemCapa   String?
+  fixado       Boolean             @default(false)
+  criadoEm     DateTime            @default(now())
+  atualizadoEm DateTime            @updatedAt
+
+  autorId String
+  autor   User   @relation(fields: [autorId], references: [id])
+
+  @@index([categoria]) // Filtro por categoria
+  @@index([fixado, criadoEm]) // Listagem com fixados primeiro
+  @@index([autorId]) // Comunicados por autor
+}
+
+// Tabela para o "Fale Conosco" do site público
+model MensagemContato {
+  id       String   @id @default(uuid())
+  nome     String
+  email    String?
+  telefone String?
+  assunto  String
+  mensagem String
+  lida     Boolean  @default(false)
+  criadoEm DateTime @default(now())
+}
+
+// ── Laudos Médicos (histórico múltiplo) ───────────────────────────
+model LaudoMedico {
+  id                String    @id @default(uuid())
+  alunoId           String
+  aluno             Aluno     @relation(fields: [alunoId], references: [id])
+  dataEmissao       DateTime  @db.Date
+  medicoResponsavel String?
+  descricao         String?
+  arquivoUrl        String
+  registradoPorId   String? // ID do criador para auditoria posterior
+  criadoEm          DateTime  @default(now())
+  excluidoEm        DateTime?
+  excluidoPorId     String?
+
+  @@index([alunoId])
+  @@index([dataEmissao])
+  @@index([excluidoEm])
+}
+
+// ══════════════════ CMS — Configurações do site ══════════════════
+
+// Configurações gerais: cor primária, logo, nome, slogan, estatísticas etc.
+model SiteConfig {
+  chave        String   @id // "corPrimaria" | "logo" | "nomeInstituto" etc.
+  valor        String
+  tipo         String   @default("texto") // "texto" | "cor" | "url" | "numero"
+  descricao    String?
+  atualizadoEm DateTime @updatedAt
+}
+
+// Conteúdo editável das seções da home pública
+model ConteudoSecao {
+  secao String // "hero" | "missao" | "valores" | "oficinas" | "depoimentos" | "cta"
+  chave String // "titulo" | "descricao" | "card_0_titulo" etc.
+  valor String @db.Text
+
+  @@id([secao, chave])
+}
+
+// ─── Auditoria central ────────────────────────────────────────────
+
+/// Registro imutável de toda ação crítica no sistema.
+/// Nunca deve ser alterado ou deletado — apenas inserido.
+model AuditLog {
+  // NOTA: cuid() mantido intencionalmente, diferente dos demais modelos que usam uuid().
+  // A mudança para uuid() causaria drift de schema e reset destrutivo do banco.
+  // Padronização futura deve ser feita via migração de dados com script dedicado.
+  id         String    @id @default(cuid())
+  entidade   String // "Aluno" | "User" | "Turma" | "Frequencia" | "Auth" etc.
+  registroId String? // ID do registro afetado; null para LOGIN/LOGOUT
+  acao       AuditAcao
+  autorId    String? // ID do usuário que realizou a ação; null = sistema
+  autorNome  String? // Snapshot do nome, preserva histórico mesmo se usuário for excluído
+  autorRole  String? // Snapshot do cargo (ADMIN | SECRETARIA | PROFESSOR etc.)
+  ip         String? // IP da requisição
+  userAgent  String? // Browser/client da requisição
+  oldValue   Json? // Estado anterior do registro para ATUALIZAR/EXCLUIR
+  newValue   Json? // Estado novo do registro para CRIAR/ATUALIZAR
+  criadoEm   DateTime  @default(now())
+
+  @@index([entidade, registroId])
+  @@index([autorId])
+  @@index([criadoEm])
+  @@index([acao])
+}
+
+// ─── Módulo Apoiadores ────────────────────────────────────────────
+model Apoiador {
+  id              String       @id @default(uuid())
+  tipo            TipoApoiador
+  nomeRazaoSocial String
+  nomeFantasia    String?
+  cpfCnpj         String?
+
+  // Contato e localização
+  contatoPessoa String?
+  telefone      String?
+  email         String?
+
+  // Endereço estruturado e padronizado com CEP
+  cep         String?
+  rua         String?
+  numero      String?
+  complemento String?
+  bairro      String?
+  cidade      String?
+  uf          String?
+
+  // CRM e segmentação
+  atividadeEspecialidade String? // Ex: "Jornalista TV Gazeta", "Advogado"
+  observacoes            String? @db.Text
+
+  // Imagem e presença pública
+  logoUrl      String?
+  exibirNoSite Boolean @default(false)
+
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  acoes        AcaoApoiador[]
+  certificados CertificadoEmitido[]
+}
+
+model AcaoApoiador {
+  id            String   @id @default(uuid())
+  dataEvento    DateTime @db.Date
+  descricaoAcao String   @db.Text
+
+  apoiadorId String
+  apoiador   Apoiador @relation(fields: [apoiadorId], references: [id], onDelete: Cascade)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  certificadosEmitidos CertificadoEmitido[]
+
+  @@index([apoiadorId])
+  @@index([dataEvento])
+}
+
+// ══════════════════ CERTIFICADOS ══════════════════
+
+model ModeloCertificado {
+  id              String          @id @default(uuid())
+  nome            String // Nome interno, ex: "Certificado Braille 2026"
+  arteBaseUrl     String // Arte com background e bordas (PNG/JPG)
+  assinaturaUrl   String // PNG com fundo transparente do presidente
+  textoTemplate   String          @db.Text // Texto com {{ALUNO}}, {{CH}}, etc.
+  nomeAssinante   String // Ex: "João Silva"
+  cargoAssinante  String // Ex: "Presidente"
+  assinaturaUrl2  String?
+  nomeAssinante2  String?
+  cargoAssinante2 String?
+  layoutConfig    Json?
+  tipo            TipoCertificado @default(ACADEMICO)
+
+  // Relacionamentos ativos
+  turmas               Turma[]
+  certificadosEmitidos CertificadoEmitido[]
+
+  // Logs
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([tipo]) // Filtro frequente: ACADEMICO vs HONRARIA
+}
+
+model CertificadoEmitido {
+  id              String   @id @default(uuid())
+  codigoValidacao String   @unique // Hash único para verificação no portal público
+  dataEmissao     DateTime @default(now())
+  pdfUrl          String? // Opcional se for salvar estaticamente no S3/Cloudinary
+
+  // Relacionamentos diretos de certificados acadêmicos de turmas
+  alunoId String? // Null se for honraria a apoiador
+  aluno   Aluno?  @relation(fields: [alunoId], references: [id])
+  turmaId String?
+  turma   Turma?  @relation(fields: [turmaId], references: [id])
+
+  // Relacionamento para apoiadores: honraria "Amigo do Braille"
+  apoiadorId          String?
+  apoiador            Apoiador?     @relation(fields: [apoiadorId], references: [id])
+  acaoId              String? // Ação/evento que motivou a honraria
+  acao                AcaoApoiador? @relation(fields: [acaoId], references: [id])
+  motivoPersonalizado String?       @db.Text // Texto livre para a tag {{MOTIVO}}
+
+  // Relação estrutural
+  modeloId String
+  modelo   ModeloCertificado @relation(fields: [modeloId], references: [id])
+
+  // Índices individuais para buscas isoladas
+  @@index([alunoId])
+  @@index([apoiadorId])
+  @@index([acaoId])
+  @@index([codigoValidacao])
+  @@index([modeloId])
+  // Índice composto para a query mais frequente: certificados de um aluno em uma turma.
+  // PostgreSQL usa este índice para WHERE alunoId = X AND turmaId = Y de forma eficiente.
+  @@index([alunoId, turmaId])
+}
