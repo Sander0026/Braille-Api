@@ -796,7 +796,12 @@ export class BeneficiariesService {
     const rgsNaPlanilha = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+      // Normaliza as chaves removendo espaços em branco acidentais nos cabeçalhos (ex: "CPF " -> "CPF")
+      const row = Object.keys(rows[i]).reduce((acc, key) => {
+        acc[key.trim()] = rows[i][key];
+        return acc;
+      }, {} as Record<string, unknown>);
+
       const linha = Number(row['_linhaOriginal']) || (i + 1); // fallback para o batch
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
       const cpf = String(row['CPF'] ?? row['CPF_RG'] ?? '').trim();
