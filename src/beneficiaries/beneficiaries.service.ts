@@ -971,6 +971,7 @@ export class BeneficiariesService {
       }
     }
 
+    let importadosLote = paraInserir.length;
     if (paraInserir.length > 0) {
       const ano = new Date().getFullYear();
       const prefix = `${ano}`;
@@ -986,7 +987,8 @@ export class BeneficiariesService {
           for (const aluno of paraInserir) {
             aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
           }
-          await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: false });
+          const result = await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: true });
+          importadosLote = result.count;
         }, {
           maxWait: 10000, // 10 segundos para aguardar o PgBouncer
           timeout: 20000, // 20 segundos máximo de execução
@@ -998,6 +1000,16 @@ export class BeneficiariesService {
         throw new InternalServerErrorException(
           'Falha na importação dos dados. Tente novamente ou verifique o arquivo.',
         );
+      }
+
+      if (importadosLote < paraInserir.length) {
+         const ignoradosInvisiveis = paraInserir.length - importadosLote;
+         ignorados += ignoradosInvisiveis;
+         erros.push({
+           linha: 0,
+           documento: '—',
+           motivo: `${ignoradosInvisiveis} alunos ignorados no banco (documento duplicado detectado durante o commit do lote)`,
+         });
       }
 
       // Auditoria em background — não bloqueia a resposta ao cliente
@@ -1029,6 +1041,6 @@ export class BeneficiariesService {
       });
     }
 
-    return { importados: paraInserir.length, ignorados, erros };
+    return { importados: importadosLote, ignorados, erros };
   }
 }
