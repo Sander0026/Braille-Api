@@ -55,7 +55,7 @@ Gerenciar o cadastro completo dos alunos com deficiência visual do instituto: c
 5. Fecha workbook e finaliza stream
 ```
 
-## Importação de Planilha (`POST /api/beneficiaries/import`)
+## Importação de Planilha Legacy (`POST /api/beneficiaries/import`)
 ```
 1. Valida tamanho: máx. 5MB
 2. Valida linhas: máx. 5000
@@ -68,6 +68,15 @@ Gerenciar o cadastro completo dos alunos com deficiência visual do instituto: c
    d. Normaliza enums (PT-BR → valor do banco)
    e. Cria aluno ou registra erro na linha
 6. Retorna: {importados, ignorados, erros[]}
+```
+
+## Importação em Lotes via JSON (`POST /api/beneficiaries/import-batch`) - Recomendado
+```
+1. Recebe um Array JSON extraído e particionado pelo Frontend (Lotes de 200/500).
+2. Sem limite rígido de arquivo ou memória, pois delega o parseamento XLSX para o cliente.
+3. Processa cada lote de JSON (reaproveitando a inteligência e validação da importação legada).
+4. Garante estabilidade contra timeouts em instâncias de produção (ex: Render).
+5. Retorna o mesmo payload: {importados, ignorados, erros[]} para contabilização progressiva no UI.
 ```
 
 ---
@@ -90,7 +99,7 @@ Gerenciar o cadastro completo dos alunos com deficiência visual do instituto: c
 |---|---|---|
 | `MAX_CREATE_RETRIES` | 3 | Colisão de matrícula gerada |
 | `MAX_IMPORT_FILE_SIZE_BYTES` | 5MB | ReDoS/DoS por arquivo gigante |
-| `MAX_IMPORT_ROWS` | 5000 | Timeout de transação |
+| `MAX_IMPORT_ROWS` | 5000 | Timeout de transação (Aplicável apenas ao endpoint de `.xlsx` server-side) |
 | `MAX_IMPORT_COLUMNS` | 80 | Parse excessivo |
 
 ## Mapeamento de Enums da Importação
@@ -133,7 +142,8 @@ A planilha pode usar valores em português legível:
 | `DELETE` | `/api/beneficiaries/:id` | `AuthGuard` | `ADMIN, SECRETARIA` | Inativar (soft delete) |
 | `PATCH` | `/api/beneficiaries/:id/restaurar` | `AuthGuard` | `ADMIN` | Restaurar aluno inativo |
 | `DELETE` | `/api/beneficiaries/:id/hard` | `AuthGuard` | `ADMIN` | Arquivar permanentemente (LGPD) |
-| `POST` | `/api/beneficiaries/import` | `AuthGuard` | `ADMIN, SECRETARIA` | Importação via planilha |
+| `POST` | `/api/beneficiaries/import` | `AuthGuard` | `ADMIN, SECRETARIA` | Importação via planilha (Server-side Parse) |
+| `POST` | `/api/beneficiaries/import-batch` | `AuthGuard` | `ADMIN, SECRETARIA` | Importação rápida via Lotes JSON |
 
 ---
 
