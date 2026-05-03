@@ -75,8 +75,9 @@ Gerenciar o cadastro completo dos alunos com deficiência visual do instituto: c
 1. Recebe um Array JSON extraído e particionado pelo Frontend (Lotes de 200/500).
 2. Sem limite rígido de arquivo ou memória, pois delega o parseamento XLSX para o cliente.
 3. Processa cada lote de JSON (reaproveitando a inteligência e validação da importação legada).
-4. Garante estabilidade contra timeouts em instâncias de produção (ex: Render).
-5. Retorna o mesmo payload: {importados, ignorados, erros[]} para contabilização progressiva no UI.
+4. Utiliza transação Prisma extendida (`maxWait: 10000`, `timeout: 20000`) para suportar a latência de nuvem.
+5. Utiliza `skipDuplicates: true` no `createMany` para garantir resiliência contra violações de constraint (`CPF`/`RG` únicos) em operações massivas concorrentes.
+6. Retorna o payload: {importados, ignorados, erros[]} para contabilização progressiva no UI.
 ```
 
 ---
