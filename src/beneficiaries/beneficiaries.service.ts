@@ -987,6 +987,9 @@ export class BeneficiariesService {
             aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
           }
           await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: false });
+        }, {
+          maxWait: 10000, // 10 segundos para aguardar o PgBouncer
+          timeout: 20000, // 20 segundos máximo de execução
         });
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
