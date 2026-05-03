@@ -774,17 +774,30 @@ export class BeneficiariesService {
       headers.forEach((key, idx) => {
         obj[key] = row[idx] ?? '';
       });
+      // Tenta recuperar a linha original do Excel (começando em 3)
+      obj['_linhaOriginal'] = dataRows.indexOf(row) + 3;
       return obj;
     });
 
+    return this.importBatchData(rows, auditUser);
+  }
+
+  async importBatchData(
+    rows: Record<string, unknown>[],
+    auditUser?: AuditUser,
+  ): Promise<{
+    importados: number;
+    ignorados: number;
+    erros: { linha: number; documento: string; motivo: string }[];
+  }> {
     const erros: { linha: number; documento: string; motivo: string }[] = [];
     const validos: Record<string, unknown>[] = [];
     const cpfsNaPlanilha = new Set<string>();
     const rgsNaPlanilha = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const linha = i + 3;
       const row = rows[i];
+      const linha = Number(row['_linhaOriginal']) || (i + 1); // fallback para o batch
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
       const cpf = String(row['CPF'] ?? row['CPF_RG'] ?? '').trim();
       const rg = String(row['RG'] ?? '').trim();

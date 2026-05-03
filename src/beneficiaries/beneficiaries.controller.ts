@@ -22,7 +22,9 @@ import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
+import { ImportBatchDto } from './dto/import-batch.dto';
 import { AuthGuard } from '../auth/auth.guard';
+
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { getAuditUser } from '../common/helpers/audit.helper';
@@ -81,6 +83,18 @@ export class BeneficiariesController {
 
     await this.validarPlanilhaXlsx(file);
     return this.beneficiariesService.importFromSheet(file.buffer, getAuditUser(req));
+  }
+
+  @Post('import-batch')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Importar alunos em lotes (JSON) - Maior performance' })
+  @ApiResponse({ status: 201, description: 'Lote importado com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Payload inválido.' })
+  async importBatch(@Req() req: AuthenticatedRequest, @Body() dto: ImportBatchDto) {
+    if (!dto.data || !Array.isArray(dto.data) || dto.data.length === 0) {
+      throw new BadRequestException('O lote de dados está vazio ou inválido.');
+    }
+    return this.beneficiariesService.importBatchData(dto.data, getAuditUser(req));
   }
 
   @Get()
