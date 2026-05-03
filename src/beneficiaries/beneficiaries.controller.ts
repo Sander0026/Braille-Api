@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import * as ExcelJS from 'exceljs';
 import { BeneficiariesService } from './beneficiaries.service';
@@ -86,6 +87,7 @@ export class BeneficiariesController {
   }
 
   @Post('import-batch')
+  @SkipThrottle()
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Importar alunos em lotes (JSON) - Maior performance' })
   @ApiResponse({ status: 201, description: 'Lote importado com sucesso.' })
