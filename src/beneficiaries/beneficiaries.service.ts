@@ -774,17 +774,30 @@ export class BeneficiariesService {
       headers.forEach((key, idx) => {
         obj[key] = row[idx] ?? '';
       });
+      // Tenta recuperar a linha original do Excel (começando em 3)
+      obj['_linhaOriginal'] = dataRows.indexOf(row) + 3;
       return obj;
     });
 
+    return this.importBatchData(rows, auditUser);
+  }
+
+  async importBatchData(
+    rows: Record<string, unknown>[],
+    auditUser?: AuditUser,
+  ): Promise<{
+    importados: number;
+    ignorados: number;
+    erros: { linha: number; documento: string; motivo: string }[];
+  }> {
     const erros: { linha: number; documento: string; motivo: string }[] = [];
     const validos: Record<string, unknown>[] = [];
     const cpfsNaPlanilha = new Set<string>();
     const rgsNaPlanilha = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const linha = i + 3;
       const row = rows[i];
+      const linha = Number(row['_linhaOriginal']) || (i + 1); // fallback para o batch
       const nomeCompleto = String(row['NomeCompleto'] ?? '').trim();
       const cpf = String(row['CPF'] ?? row['CPF_RG'] ?? '').trim();
       const rg = String(row['RG'] ?? '').trim();
@@ -958,6 +971,7 @@ export class BeneficiariesService {
       }
     }
 
+    let importadosLote = paraInserir.length;
     if (paraInserir.length > 0) {
       const ano = new Date().getFullYear();
       const prefix = `${ano}`;
@@ -973,7 +987,11 @@ export class BeneficiariesService {
           for (const aluno of paraInserir) {
             aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
           }
-          await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: false });
+          const result = await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: true });
+          importadosLote = result.count;
+        }, {
+          maxWait: 10000, // 10 segundos para aguardar o PgBouncer
+          timeout: 20000, // 20 segundos máximo de execução
         });
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -982,6 +1000,16 @@ export class BeneficiariesService {
         throw new InternalServerErrorException(
           'Falha na importação dos dados. Tente novamente ou verifique o arquivo.',
         );
+      }
+
+      if (importadosLote < paraInserir.length) {
+         const ignoradosInvisiveis = paraInserir.length - importadosLote;
+         ignorados += ignoradosInvisiveis;
+         erros.push({
+           linha: 0,
+           documento: '—',
+           motivo: `${ignoradosInvisiveis} alunos ignorados no banco (documento duplicado detectado durante o commit do lote)`,
+         });
       }
 
       // Auditoria em background — não bloqueia a resposta ao cliente
@@ -1013,6 +1041,6 @@ export class BeneficiariesService {
       });
     }
 
-    return { importados: paraInserir.length, ignorados, erros };
+    return { importados: importadosLote, ignorados, erros };
   }
 }
