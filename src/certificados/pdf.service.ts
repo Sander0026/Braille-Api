@@ -276,20 +276,38 @@ export class PdfService {
     const naConf = config.nomeAluno as Record<string, unknown> | undefined;
     if (!naConf) return;
 
-    const naX = ((naConf.x as number) / 100) * width;
-    const naSize = (((naConf.fontSize as number) || 56) / CANVAS_REF_W) * width;
-    const naY = topPctToY(naConf.y as number, height, naSize);
-
     const fontNome = await this.carregarFonte(pdfDoc, naConf.fontFamily as string);
     const [naR, naG, naB] = this.extrairRgb(naConf.color as string);
+    const nomeLinhaUnica = nomeAluno.replace(/\s+/g, ' ').trim();
+    if (!nomeLinhaUnica) return;
 
-    page.drawText(nomeAluno, {
-      x: naX,
+    const naX = (((naConf.x as number) ?? 10) / 100) * width;
+    const naMaxW = Math.max(
+      1,
+      Math.min(((((naConf.maxWidth as number) || 80) / 100) * width), width - naX),
+    );
+    const tamanhoBase = (((naConf.fontSize as number) || 56) / CANVAS_REF_W) * width;
+    const larguraBase = fontNome.widthOfTextAtSize(nomeLinhaUnica, tamanhoBase);
+    const naSize =
+      larguraBase > naMaxW
+        ? Math.max(tamanhoBase * 0.45, tamanhoBase * (naMaxW / larguraBase))
+        : tamanhoBase;
+    const larguraFinal = fontNome.widthOfTextAtSize(nomeLinhaUnica, naSize);
+    const alinhamento = naConf.textAlign as string | undefined;
+    const ajusteX =
+      alinhamento === 'center'
+        ? Math.max(0, (naMaxW - larguraFinal) / 2)
+        : alinhamento === 'right'
+          ? Math.max(0, naMaxW - larguraFinal)
+          : 0;
+    const naY = topPctToY((naConf.y as number) ?? 45, height, naSize);
+
+    page.drawText(nomeLinhaUnica, {
+      x: naX + ajusteX,
       y: naY,
       size: naSize,
       font: fontNome,
       color: rgb(naR, naG, naB),
-      maxWidth: (((naConf.maxWidth as number) || 80) / 100) * width,
     });
   }
 

@@ -64,7 +64,7 @@ export class CertificadosController {
 
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
-  @ApiOperation({ summary: 'Emite (ou recupera do cache) o certificado acadêmico. Retorna { pdfUrl, codigoValidacao }.' })
+  @ApiOperation({ summary: 'Emite ou regenera o certificado acadêmico. Retorna { pdfUrl, codigoValidacao }.' })
   @ApiResponse({ status: 201, description: 'PDF do certificado gerado. Retorna { pdfUrl, codigoValidacao }.' })
   @ApiResponse({ status: 400, description: 'Dados inválidos ou aluno sem turma concluída.' })
   @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
@@ -72,7 +72,7 @@ export class CertificadosController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: EmitirAcademicoDto,
   ) {
-    // Retorna JSON — pdfUrl aponta para Cloudinary (cache); frontend abre diretamente no viewer
+    // Retorna JSON — pdfUrl aponta para Cloudinary; frontend abre diretamente no viewer
     return this.certificadosService.emitirAcademico(dto, getAuditUser(req));
   }
 
