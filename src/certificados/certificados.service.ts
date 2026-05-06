@@ -293,15 +293,14 @@ export class CertificadosService {
 
     await this.verificarFrequencia(dto.turmaId, dto.alunoId);
 
-    // CACHE CHECK: certificado já emitido com PDF salvo?
+    // Reutiliza o codigo de validacao se ja existir, mas gera um PDF novo.
     const certExistente = await this.prisma.certificadoEmitido.findFirst({
       where: { alunoId: dto.alunoId, turmaId: dto.turmaId },
       select: { id: true, pdfUrl: true, codigoValidacao: true },
     });
     if (certExistente?.pdfUrl) {
-      // CACHE HIT — sem gerar PDF, sem I/O pesado
-      this.logger.log(`[CertificadoEmitido] CACHE HIT para aluno=${dto.alunoId} turma=${dto.turmaId}`);
-      return { pdfUrl: certExistente.pdfUrl, codigoValidacao: certExistente.codigoValidacao };
+      // Certificado existente: regenera e sobrescreve o PDF mantendo o codigo.
+      this.logger.log(`[CertificadoEmitido] Regenerando PDF existente para aluno=${dto.alunoId} turma=${dto.turmaId}`);
     }
 
     // Select cirúrgico — sem CPF, RG, laudos ou outros dados sensíveis desnecessários

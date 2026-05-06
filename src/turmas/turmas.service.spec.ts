@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AuditAcao, MatriculaStatus, Role, TurmaStatus } from '@prisma/client';
 import { TurmasService } from './turmas.service';
 
@@ -25,10 +25,14 @@ describe('TurmasService', () => {
         findMany: jest.fn(),
       },
       turma: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue({
           id: 'turma-1',
           nome: 'Braille Basico',
           status: TurmaStatus.ANDAMENTO,
+          professorId: 'prof-1',
+          professorAuxiliarId: null,
         }),
       },
       $transaction: jest.fn((callback) => callback(tx)),
@@ -56,6 +60,49 @@ describe('TurmasService', () => {
           excluido: false,
         }),
       }),
+    );
+  });
+
+  it('limita a listagem do perfil PROFESSOR as turmas em que ele esta vinculado', async () => {
+    const { service, prisma } = criarService();
+
+    await service.findAll(
+      { page: 1, limit: 10, professorId: 'outro-prof' },
+      { sub: 'prof-1', role: Role.PROFESSOR } as never,
+    );
+
+    expect(prisma.turma.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ professorId: 'prof-1' }, { professorAuxiliarId: 'prof-1' }],
+        }),
+      }),
+    );
+    expect(prisma.turma.findMany).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        where: expect.objectContaining({ professorId: 'outro-prof' }),
+      }),
+    );
+    expect(prisma.turma.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        OR: [{ professorId: 'prof-1' }, { professorAuxiliarId: 'prof-1' }],
+      }),
+    });
+  });
+
+  it('bloqueia detalhe de turma nao vinculada ao PROFESSOR', async () => {
+    const { service, prisma } = criarService();
+    prisma.turma.findUnique.mockResolvedValueOnce({
+      id: 'turma-2',
+      nome: 'Mobilidade',
+      professorId: 'prof-2',
+      professorAuxiliarId: null,
+      matriculasOficina: [],
+      gradeHoraria: [],
+    });
+
+    await expect(service.findOne('turma-2', { sub: 'prof-1', role: Role.PROFESSOR } as never)).rejects.toBeInstanceOf(
+      NotFoundException,
     );
   });
 

@@ -52,13 +52,11 @@ export class TurmasController {
 
   @Get()
   @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30000)
   @ApiOperation({ summary: 'Listar turmas. Use statusAtivo=false para arquivadas.' })
   @ApiResponse({ status: 200, description: 'Lista de turmas retornada.' })
   @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
-  findAll(@Query() query: QueryTurmaDto) {
-    return this.turmasService.findAll(query);
+  findAll(@Query() query: QueryTurmaDto, @Req() req: AuthenticatedRequest) {
+    return this.turmasService.findAll(query, req.user);
   }
 
   @Get('professores-ativos')
@@ -84,14 +82,12 @@ export class TurmasController {
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30000)
   @ApiOperation({ summary: 'Buscar uma turma específica e ver seus alunos' })
   @ApiParam({ name: 'id', description: 'UUID da turma' })
   @ApiResponse({ status: 200, description: 'Turma encontrada.' })
   @ApiResponse({ status: 404, description: 'Turma não encontrada.' })
-  findOne(@Param('id') id: string) {
-    return this.turmasService.findOne(id);
+  findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.turmasService.findOne(id, req.user);
   }
 
   @Patch(':id')

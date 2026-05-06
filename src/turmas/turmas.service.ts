@@ -12,6 +12,7 @@ import { QueryTurmaDto } from './dto/query-turma.dto';
 import { AuditAcao, DiaSemana, MatriculaStatus, Role, TurmaStatus } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { AuthenticatedUser } from '../common/interfaces/authenticated-request.interface';
 import { calcularCargaHorariaTotal } from '../common/helpers/data.helper';
 
 // Transições permitidas de status
@@ -111,7 +112,7 @@ export class TurmasService {
     }
   }
 
-  async findAll(query: QueryTurmaDto) {
+  async findAll(query: QueryTurmaDto, requester?: AuthenticatedUser) {
     const { page = 1, limit = 10, nome, professorId } = query;
     const skip = (page - 1) * limit;
 
@@ -129,7 +130,11 @@ export class TurmasService {
     }
 
     if (nome) whereCondicao.nome = { contains: nome, mode: 'insensitive' };
-    if (professorId) whereCondicao.professorId = professorId;
+    if (requester?.role === Role.PROFESSOR) {
+      whereCondicao.OR = [{ professorId: requester.sub }, { professorAuxiliarId: requester.sub }];
+    } else if (professorId) {
+      whereCondicao.professorId = professorId;
+    }
     if (query.status) whereCondicao.status = query.status;
 
     const [turmas, total] = await Promise.all([
@@ -159,13 +164,8 @@ export class TurmasService {
         role: Role.PROFESSOR,
         statusAtivo: true,
         excluido: false,
-        turmas: {
-          some: {
-            excluido: false,
-          },
-        },
       },
-      select: { id: true, nome: true },
+      select: { id: true, nome: true, role: true },
       orderBy: { nome: 'asc' },
     });
   }
@@ -447,7 +447,7 @@ export class TurmasService {
     }
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, requester?: AuthenticatedUser) {
     const turma = await this.prisma.turma.findUnique({
       where: { id },
       include: {
@@ -466,6 +466,13 @@ export class TurmasService {
     });
 
     if (!turma) throw new NotFoundException('Turma não encontrada.');
+    if (
+      requester?.role === Role.PROFESSOR &&
+      turma.professorId !== requester.sub &&
+      turma.professorAuxiliarId !== requester.sub
+    ) {
+      throw new NotFoundException('Turma não encontrada.');
+    }
     return turma;
   }
 
