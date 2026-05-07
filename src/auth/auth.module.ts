@@ -5,6 +5,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadModule } from '../upload/upload.module';
+import type { StringValue } from 'ms';
 
 export function obterJwtSecretObrigatorio(configService: ConfigService): string {
   const secret = configService.get<string>('JWT_SECRET')?.trim();
@@ -12,6 +13,10 @@ export function obterJwtSecretObrigatorio(configService: ConfigService): string 
     throw new Error('Variavel de ambiente JWT_SECRET e obrigatoria para iniciar a aplicacao.');
   }
   return secret;
+}
+
+export function obterJwtExpiresIn(configService: ConfigService): StringValue {
+  return (configService.get<string>('JWT_EXPIRES_IN')?.trim() || '12h') as StringValue;
 }
 
 @Module({
@@ -23,7 +28,7 @@ export function obterJwtSecretObrigatorio(configService: ConfigService): string 
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: obterJwtSecretObrigatorio(configService),
-        signOptions: { expiresIn: '8h' }, // Token longo (8h) para evitar expiração durante formulários
+        signOptions: { expiresIn: obterJwtExpiresIn(configService) },
       }),
     }),
   ],

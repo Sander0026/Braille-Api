@@ -34,7 +34,12 @@ const PERFIL_SELECT = {
   criadoEm: true,
 } as const;
 
-const REFRESH_TOKEN_TTL_DIAS = 7;
+function obterRefreshTokenTtlDias(): number {
+  const ttlConfig = Number(process.env.REFRESH_TOKEN_TTL_DIAS);
+  return Number.isFinite(ttlConfig) && ttlConfig > 0 ? ttlConfig : 30;
+}
+
+const REFRESH_TOKEN_TTL_DIAS = obterRefreshTokenTtlDias();
 const REFRESH_TOKEN_TTL_MS = REFRESH_TOKEN_TTL_DIAS * 24 * 60 * 60 * 1000;
 
 interface SessionMetadata {
