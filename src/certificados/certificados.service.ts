@@ -142,7 +142,6 @@ export class CertificadosService {
   }
 
   private validarLayoutElements(elements: unknown, contexto: string): void {
-    if (elements === undefined || elements === null) return;
     if (!Array.isArray(elements)) {
       throw new BadRequestException(`layoutConfig.elements (${contexto}) deve ser uma lista.`);
     }
@@ -199,24 +198,6 @@ export class CertificadosService {
     }
 
     const config = layout as Record<string, unknown>;
-    const campos = ['textoPronto', 'nomeAluno', 'assinatura1', 'assinatura2', 'qrCode'];
-
-    campos.forEach((campo) => {
-      const elemento = config[campo];
-      if (elemento === undefined || elemento === null) return;
-      if (typeof elemento !== 'object' || Array.isArray(elemento)) {
-        throw new BadRequestException(`layoutConfig.${campo} deve ser um objeto.`);
-      }
-
-      const item = elemento as Record<string, unknown>;
-      this.validarNumeroPercentual(item.x, `layoutConfig.${campo}.x`);
-      this.validarNumeroPercentual(item.y, `layoutConfig.${campo}.y`);
-      this.validarNumeroPercentual(item.width, `layoutConfig.${campo}.width`);
-      this.validarNumeroPercentual(item.maxWidth, `layoutConfig.${campo}.maxWidth`);
-      this.validarNumeroPercentual(item.size, `layoutConfig.${campo}.size`);
-      this.validarNumeroPositivo(item.fontSize, `layoutConfig.${campo}.fontSize`);
-    });
-
     this.validarLayoutElements(config.elements, contexto);
 
     return layout as Prisma.InputJsonValue;

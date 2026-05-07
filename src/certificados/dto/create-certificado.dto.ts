@@ -7,7 +7,7 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.replaceAll('\0', '').trim() : value;
 
 export class CreateCertificadoDto {
-  @ApiProperty({ description: 'Nome descritivo do Modelo de Certificado', example: 'Diploma de Cerâmica' })
+  @ApiProperty({ description: 'Nome descritivo do modelo de certificado', example: 'Diploma de Ceramica' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
@@ -15,7 +15,7 @@ export class CreateCertificadoDto {
   nome: string;
 
   @ApiProperty({
-    description: 'Corpo do certificado em texto com variáveis padrão',
+    description: 'Corpo do certificado em texto com variaveis padrao',
     example: 'Certificamos que {{ALUNO}} completou a oficina.',
   })
   @IsString()
@@ -24,7 +24,7 @@ export class CreateCertificadoDto {
   @Transform(trim)
   textoTemplate: string;
 
-  @ApiProperty({ description: 'Nome completo do assinante principal', example: 'Lurdinha Bragança' })
+  @ApiProperty({ description: 'Nome completo do assinante principal', example: 'Lurdinha Braganca' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
@@ -53,7 +53,9 @@ export class CreateCertificadoDto {
   cargoAssinante2?: string;
 
   @ApiProperty({
-    description: 'Configuração do posicionamento visual drag and drop (JSON serializado)',
+    description: 'Layout visual oficial em JSON serializado. Deve conter somente { "elements": [...] } com coordenadas percentuais.',
+    example:
+      '{"elements":[{"id":"nome-aluno","type":"TEXT","label":"Nome do aluno","content":"{{ALUNO}}","x":10,"y":45,"width":80,"height":8,"fontFamily":"Great Vibes","fontSize":60,"textAlign":"center","color":"#000000","zIndex":1,"visible":true}]}',
     required: false,
   })
   @IsOptional()

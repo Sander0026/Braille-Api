@@ -89,7 +89,7 @@ describe('CertificadosService', () => {
         cargoAssinante: 'Diretora',
         layoutConfig: '{"textoPronto":{"x":120}}',
       }),
-    ).rejects.toThrow('layoutConfig.textoPronto.x deve ser um numero entre 0 e 100.');
+    ).rejects.toThrow('layoutConfig.elements (Create) deve ser uma lista.');
 
     expect(prisma.modeloCertificado.create).not.toHaveBeenCalled();
   });

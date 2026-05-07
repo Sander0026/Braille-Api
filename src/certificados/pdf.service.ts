@@ -81,7 +81,6 @@ type AssinaturaContext = {
   nome?: string | null;
   cargo?: string | null;
   assinaturaUrl2: string | null;
-  assinatura1?: Record<string, unknown>;
 };
 
 type CertificadoPdfElementType =
@@ -110,7 +109,6 @@ type CertificadoPdfElement = {
   lineHeight?: number;
   zIndex?: number;
   visible?: boolean;
-  legacyField?: 'textoPronto' | 'nomeAluno' | 'assinatura1' | 'assinatura2' | 'qrCode';
 };
 
 type PdfRenderData = {
@@ -348,64 +346,6 @@ export class PdfService {
     return { page, width, height };
   }
 
-  private async desenharCorpoTexto(
-    pdfDoc: PDFDocument,
-    page: PDFPage,
-    width: number,
-    height: number,
-    config: Record<string, unknown>,
-    textoFormatado: string,
-  ): Promise<void> {
-    const textConf = (config.textoPronto as Record<string, unknown>) || {};
-    const tXPct = (textConf.x as number) ?? 10;
-    const tYPct = (textConf.y as number) ?? 20;
-    const tX = (tXPct / 100) * width;
-    const tMaxW = textConf.maxWidth ? ((textConf.maxWidth as number) / 100) * width : width - tX - 50;
-
-    const tSize = (((textConf.fontSize as number) || 32) / CANVAS_REF_W) * width;
-    const tY = topPctToY(tYPct, height, tSize);
-    const fontCorpo = await this.carregarFonte(pdfDoc, textConf.fontFamily as string);
-    const [r, g, b] = this.extrairRgb(textConf.color as string);
-
-    page.drawText(textoFormatado, {
-      x: tX,
-      y: tY,
-      size: tSize,
-      font: fontCorpo,
-      color: rgb(r, g, b),
-      maxWidth: tMaxW,
-      lineHeight: tSize * 1.4,
-    });
-  }
-
-  private async desenharNomeAluno(
-    pdfDoc: PDFDocument,
-    page: PDFPage,
-    width: number,
-    height: number,
-    config: Record<string, unknown>,
-    nomeAluno: string,
-  ): Promise<void> {
-    const naConf = config.nomeAluno as Record<string, unknown> | undefined;
-    if (!naConf) return;
-
-    const naX = ((naConf.x as number) / 100) * width;
-    const naSize = (((naConf.fontSize as number) || 56) / CANVAS_REF_W) * width;
-    const naY = topPctToY(naConf.y as number, height, naSize);
-
-    const fontNome = await this.carregarFonte(pdfDoc, naConf.fontFamily as string);
-    const [naR, naG, naB] = this.extrairRgb(naConf.color as string);
-
-    page.drawText(nomeAluno, {
-      x: naX,
-      y: naY,
-      size: naSize,
-      font: fontNome,
-      color: rgb(naR, naG, naB),
-      maxWidth: (((naConf.maxWidth as number) || 80) / 100) * width,
-    });
-  }
-
   private async injetarAssinaturaUrl(
     pc: PageCtx,
     width: number,
@@ -426,8 +366,7 @@ export class PdfService {
     // Extraído de nested ternary — SonarQube: Extract this nested ternary operation
     const defaultXPrimaria = ctx.assinaturaUrl2 ? 20 : 40;
     const defaultX = isSecondary ? 60 : defaultXPrimaria;
-    const defaultWpct = isSecondary ? ((ctx.assinatura1?.width as number) ?? 20) : 20;
-    const wpct = (conf.width as number) || defaultWpct;
+    const wpct = (conf.width as number) || 20;
     const drawW = (wpct / 100) * width;
     const xpct = (conf.x as number) ?? defaultX;
     const yTopPct = (conf.y as number) ?? 70;
@@ -577,6 +516,11 @@ export class PdfService {
     });
   }
 
+  private isSecondSignatureElement(element: CertificadoPdfElement): boolean {
+    const marker = `${element.id ?? ''} ${element.label ?? ''}`.toLowerCase();
+    return marker.includes('assinatura-2') || marker.includes('assinatura 2') || marker.includes('segunda');
+  }
+
   private async desenharElementoAssinatura(
     pc: PageCtx,
     pageWidth: number,
@@ -584,7 +528,7 @@ export class PdfService {
     element: CertificadoPdfElement,
     data: PdfRenderData,
   ): Promise<void> {
-    const isSecondary = element.legacyField === 'assinatura2';
+    const isSecondary = this.isSecondSignatureElement(element);
     const signatureUrl = isSecondary ? data.modelo.assinaturaUrl2 : data.modelo.assinaturaUrl;
     const nome = isSecondary ? data.modelo.nomeAssinante2 : data.modelo.nomeAssinante;
     const cargo = isSecondary ? data.modelo.cargoAssinante2 : data.modelo.cargoAssinante;
@@ -604,14 +548,11 @@ export class PdfService {
           nome,
           cargo,
           assinaturaUrl2: data.modelo.assinaturaUrl2,
-          assinatura1: { width: element.width },
         },
         isSecondary,
       );
       return;
     }
-
-    if (element.legacyField) return;
 
     const x = this.pctToX(element.x, pageWidth);
     const y = topPctToY(element.y ?? 0, pageHeight);
@@ -694,66 +635,6 @@ export class PdfService {
     }
   }
 
-  private async desenharLayoutLegado(
-    pc: PageCtx,
-    width: number,
-    height: number,
-    config: Record<string, unknown>,
-    data: PdfRenderData,
-  ): Promise<void> {
-    await this.desenharCorpoTexto(pc.pdfDoc, pc.page, width, height, config, data.textoFormatado);
-
-    if (data.nomeAluno) {
-      await this.desenharNomeAluno(pc.pdfDoc, pc.page, width, height, config, data.nomeAluno);
-    }
-
-    const assinatura1Conf = (config.assinatura1 as Record<string, unknown> | undefined) ?? {};
-    const assinatura2Conf = (config.assinatura2 as Record<string, unknown> | undefined) ?? {};
-
-    if (data.modelo.assinaturaUrl) {
-      await this.injetarAssinaturaUrl(
-        pc,
-        width,
-        height,
-        data.modelo.assinaturaUrl,
-        {
-          config: assinatura1Conf,
-          nome: data.modelo.nomeAssinante,
-          cargo: data.modelo.cargoAssinante,
-          assinaturaUrl2: data.modelo.assinaturaUrl2,
-          assinatura1: assinatura1Conf,
-        },
-        false,
-      );
-    }
-
-    if (data.modelo.assinaturaUrl2) {
-      await this.injetarAssinaturaUrl(
-        pc,
-        width,
-        height,
-        data.modelo.assinaturaUrl2,
-        {
-          config: assinatura2Conf,
-          nome: data.modelo.nomeAssinante2,
-          cargo: data.modelo.cargoAssinante2,
-          assinaturaUrl2: data.modelo.assinaturaUrl2,
-          assinatura1: assinatura1Conf,
-        },
-        true,
-      );
-    }
-
-    await this.desenharQrCode(
-      pc.pdfDoc,
-      pc.page,
-      width,
-      height,
-      config.qrCode as Record<string, unknown> | undefined,
-      data.codigoValidacao,
-    );
-  }
-
   // ── Engine Principal ───────────────────────────────────────────────────────
 
   async construirPdfBase(
@@ -777,11 +658,7 @@ export class PdfService {
       const renderData: PdfRenderData = { textoFormatado, codigoValidacao, nomeAluno, variables, modelo };
       const elements = this.extrairElementosLayout(config);
 
-      if (elements.length > 0) {
-        await this.desenharElementosDinamicos(pc, width, height, elements, renderData);
-      } else {
-        await this.desenharLayoutLegado(pc, width, height, config, renderData);
-      }
+      await this.desenharElementosDinamicos(pc, width, height, elements, renderData);
 
       const pdfBytes = await pdfDoc.save();
       return Buffer.from(pdfBytes);

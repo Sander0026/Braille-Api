@@ -33,7 +33,6 @@ describe('PdfService', () => {
   it('renderiza layout dinamico quando elements esta presente', async () => {
     const service = criarService();
     const dynamicSpy = jest.spyOn(service as never, 'desenharElementosDinamicos');
-    const legacySpy = jest.spyOn(service as never, 'desenharLayoutLegado');
     const modelo: ModeloPdf = {
       arteBaseUrl: 'https://res.cloudinary.com/demo/arte.png',
       assinaturaUrl: '',
@@ -80,30 +79,5 @@ describe('PdfService', () => {
 
     expect(pdf.length).toBeGreaterThan(0);
     expect(dynamicSpy).toHaveBeenCalledTimes(1);
-    expect(legacySpy).not.toHaveBeenCalled();
-  });
-
-  it('mantem renderizacao legada quando elements nao existe', async () => {
-    const service = criarService();
-    const dynamicSpy = jest.spyOn(service as never, 'desenharElementosDinamicos');
-    const legacySpy = jest.spyOn(service as never, 'desenharLayoutLegado');
-    const modelo: ModeloPdf = {
-      arteBaseUrl: 'https://res.cloudinary.com/demo/arte.png',
-      assinaturaUrl: '',
-      assinaturaUrl2: null,
-      nomeAssinante: 'Diretoria',
-      cargoAssinante: 'Diretora',
-      layoutConfig: {
-        textoPronto: { x: 10, y: 20, fontSize: 16, maxWidth: 80 },
-        nomeAluno: { x: 10, y: 40, fontSize: 24, maxWidth: 80 },
-        qrCode: { x: 80, y: 80, size: 10 },
-      },
-    };
-
-    const pdf = await service.construirPdfBase(modelo, 'Texto principal renderizado', 'ABC12345', 'Aluno Teste');
-
-    expect(pdf.length).toBeGreaterThan(0);
-    expect(dynamicSpy).not.toHaveBeenCalled();
-    expect(legacySpy).toHaveBeenCalledTimes(1);
   });
 });

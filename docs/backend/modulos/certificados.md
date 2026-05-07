@@ -10,14 +10,14 @@ Gerenciar modelos de certificados, emissao de certificados academicos e honraria
 
 ## Estado arquitetural atual
 
-O modulo esta em estado hibrido:
+O modulo esta em estado de transicao controlada:
 
 - Fluxo funcional atual: `ModeloCertificado` e `CertificadoEmitido`.
-- Layout novo: `layoutConfig.elements`, usado pelo editor visual e pelo PDF dinamico.
-- Compatibilidade legada: `layoutConfig.textoPronto`, `nomeAluno`, `assinatura1`, `assinatura2`, `qrCode` e `legacyField`.
+- Layout oficial: `layoutConfig.elements`, usado pelo editor visual, validacao backend e PDF.
+- Compatibilidade de banco: `ModeloCertificado` e `CertificadoEmitido` continuam sendo as tabelas funcionais.
 - Base futura V2 no Prisma: `CertificateTemplate`, `CertificateLayout`, `CertificateSignature`, `Certificate`, `CertificateHistory` e `CertificateBatch`.
 
-> Importante: as tabelas V2 ja existem no schema, mas o fluxo real de CRUD/emissao ainda usa `ModeloCertificado` e `CertificadoEmitido`. Nao remover legado sem uma migracao de layout e de relacoes academicas.
+> Importante: as tabelas V2 ja existem no schema, mas o fluxo real de CRUD/emissao ainda usa `ModeloCertificado` e `CertificadoEmitido`. A limpeza feita nesta fase removeu o legado do `layoutConfig`, nao migrou as relacoes academicas para V2.
 
 ---
 
@@ -106,25 +106,15 @@ As imagens e PDFs sao enviados para o storage pelo `UploadService`.
 
 # 7. Layout do certificado
 
-## 7.1 Estrutura legada preservada
+## 7.1 Estrutura oficial com elements
 
-`ModeloCertificado.layoutConfig` ainda pode conter:
+`ModeloCertificado.layoutConfig` deve conter somente `elements`.
 
 ```ts
 {
-  textoPronto: { x, y, fontSize, color, maxWidth, fontFamily, textAlign },
-  nomeAluno: { x, y, fontSize, color, maxWidth, fontFamily, textAlign },
-  assinatura1: { x, y, width },
-  assinatura2: { x, y, width },
-  qrCode: { x, y, size }
+  elements: CertificadoLayoutElement[]
 }
 ```
-
-Esses campos continuam sendo usados para compatibilidade com modelos antigos e com parte do editor.
-
-## 7.2 Estrutura nova com elements
-
-Novos layouts devem usar `layoutConfig.elements`.
 
 Tipos suportados:
 
@@ -138,26 +128,22 @@ Tipos suportados:
 
 Campos validados:
 
+- `id`, `type`, `label`
 - `x`, `y`, `width`, `height`
 - `fontFamily`, `fontSize`, `fontWeight`
 - `color`, `textAlign`, `lineHeight`
-- `zIndex`, `visible`, `content`, `legacyField`
+- `zIndex`, `visible`, `content`
 
 As coordenadas sao percentuais em relacao ao tamanho do template.
 
-## 7.3 `legacyField`
+Campos removidos do contrato de layout:
 
-`legacyField` liga elementos novos aos campos antigos:
-
-| `legacyField` | Campo legado |
-|---|---|
-| `textoPronto` | Texto principal |
-| `nomeAluno` | Nome do aluno/apoiador |
-| `assinatura1` | Primeira assinatura |
-| `assinatura2` | Segunda assinatura |
-| `qrCode` | QR Code |
-
-Nao remover `legacyField` enquanto o editor ainda sincronizar campos legados.
+- `textoPronto`
+- `nomeAluno`
+- `assinatura1`
+- `assinatura2`
+- `qrCode`
+- `legacyField`
 
 ---
 
@@ -242,11 +228,10 @@ O `PdfService`:
 1. Cria o PDF com `pdf-lib`.
 2. Registra `fontkit` para fontes customizadas.
 3. Embute a arte base.
-4. Renderiza `layoutConfig.elements` quando existir.
-5. Mantem renderizacao legada como fallback.
-6. Gera QR Code com `qrcode`.
-7. Desenha assinaturas, textos, linhas e codigo de validacao.
-8. Retorna buffer para upload ou resposta `application/pdf`.
+4. Renderiza exclusivamente `layoutConfig.elements`.
+5. Gera QR Code com `qrcode`.
+6. Desenha assinaturas, textos, linhas e codigo de validacao.
+7. Retorna buffer para upload ou resposta `application/pdf`.
 
 Quando `elements` existe, o PDF renderiza:
 
@@ -372,24 +357,20 @@ Fluxos manuais recomendados:
 
 # 16. Decisoes e proximos passos
 
-## Manter legado por enquanto
-
-Nao remover ainda:
+## Mantido por enquanto
 
 - `ModeloCertificado`
 - `CertificadoEmitido`
-- Campos fixos de `layoutConfig`
-- `legacyField`
-- Renderizacao legada no PDF
+- Relacoes academicas atuais, como `Turma.modeloCertificadoId`
+- Fluxos de emissao academica, manual e honraria baseados no service atual
 
 ## Caminho recomendado
 
-1. Fazer modelos novos dependerem primariamente de `layoutConfig.elements`.
-2. Criar migracao de layouts antigos para `elements`.
-3. Parar de sincronizar campos legados no editor.
-4. Decidir entre evoluir o legado atual ou migrar de fato para as tabelas V2.
-5. Remover legado apenas depois de migracao e validacao de PDFs antigos.
+1. Validar criacao/edicao de modelos novos apenas com `layoutConfig.elements`.
+2. Testar PDF academico e honraria com layouts por elementos.
+3. Decidir entre evoluir `ModeloCertificado`/`CertificadoEmitido` ou migrar de fato para as tabelas V2.
+4. Migrar relacoes academicas apenas em uma fase propria.
 
 **Criticidade:** Importante  
 **Complexidade:** Alta  
-**Status:** Fase 1 estabilizada em arquitetura hibrida
+**Status:** Layout consolidado em `elements`; banco funcional ainda usa `ModeloCertificado` e `CertificadoEmitido`
