@@ -1,96 +1,395 @@
-# Módulo: Certificados
+# Modulo: Certificados
 
 ---
 
-# 1. Visão Geral
+# 1. Visao Geral
 
 ## Objetivo
-Gerenciar templates de certificados (ModeloCertificado) e emissão de certificados em PDF (CertificadoEmitido) com código de validação público via QR Code.
 
-## Responsabilidade
-Geração programática de PDFs compondo arte de fundo, texto com variáveis, assinaturas digitalizadas e QR Code de validação — tudo em memória, sem dependência de servidor de renderização externo.
+Gerenciar modelos de certificados, emissao de certificados academicos e honrarias em PDF, QR Code de validacao publica, cancelamento, reemissao e a base de transicao para layouts flexiveis.
+
+## Estado arquitetural atual
+
+O modulo esta em estado hibrido:
+
+- Fluxo funcional atual: `ModeloCertificado` e `CertificadoEmitido`.
+- Layout novo: `layoutConfig.elements`, usado pelo editor visual e pelo PDF dinamico.
+- Compatibilidade legada: `layoutConfig.textoPronto`, `nomeAluno`, `assinatura1`, `assinatura2`, `qrCode` e `legacyField`.
+- Base futura V2 no Prisma: `CertificateTemplate`, `CertificateLayout`, `CertificateSignature`, `Certificate`, `CertificateHistory` e `CertificateBatch`.
+
+> Importante: as tabelas V2 ja existem no schema, mas o fluxo real de CRUD/emissao ainda usa `ModeloCertificado` e `CertificadoEmitido`. Nao remover legado sem uma migracao de layout e de relacoes academicas.
 
 ---
 
-# 2. Tipos de Certificado
+# 2. Arquivos principais
 
-| Tipo | Destinatário | Emissão |
+| Arquivo | Responsabilidade |
+|---|---|
+| `src/certificados/certificados.controller.ts` | Rotas administrativas de modelos, emissao, cancelamento e reemissao |
+| `src/certificados/certificados-publico.controller.ts` | Validacao publica por codigo |
+| `src/certificados/certificados.service.ts` | Regras de negocio, emissao, historico/auditoria e validacao |
+| `src/certificados/pdf.service.ts` | Motor de PDF com `pdf-lib`, fontes, QR Code e renderizacao de layout |
+| `src/certificados/image-processing.service.ts` | Processamento de imagens usadas no PDF |
+| `src/certificados/dto/*` | DTOs de CRUD, emissao, cancelamento e honraria |
+
+---
+
+# 3. Tipos de certificado
+
+| Tipo | Destinatario | Fluxo |
 |---|---|---|
-| `ACADEMICO` | Alunos matriculados em turmas | Automática/manual para alunos da turma |
-| `HONRARIA` | Apoiadores e parceiros | Manual com dados específicos |
+| `ACADEMICO` | Alunos cadastrados em turmas | Automatico pela turma concluida ou manual por aluno/turma |
+| `HONRARIA` | Apoiadores cadastrados | Manual por apoiador com titulo da acao e data do evento |
 
 ---
 
-# 3. Tags de Template
+# 4. Endpoints administrativos
 
+Base: `/api/modelos-certificados`
+
+| Metodo | Rota | Roles | Descricao | Swagger |
+|---|---|---|---|---|
+| `POST` | `/` | `ADMIN`, `SECRETARIA` | Cria modelo com `multipart/form-data` (`arteBase`, `assinatura`, `assinatura2`) | Sim |
+| `GET` | `/` | `ADMIN`, `SECRETARIA`, `PROFESSOR`, `COMUNICACAO` | Lista modelos de certificados | Sim |
+| `GET` | `/:id` | `ADMIN`, `SECRETARIA`, `PROFESSOR`, `COMUNICACAO` | Busca modelo por ID | Sim |
+| `PATCH` | `/:id` | `ADMIN`, `SECRETARIA` | Atualiza texto, layout e/ou imagens do modelo | Sim |
+| `DELETE` | `/:id` | `ADMIN`, `SECRETARIA` | Remove modelo e arquivos relacionados | Sim |
+| `POST` | `/emitir-academico` | `ADMIN`, `SECRETARIA`, `PROFESSOR` | Emite ou recupera certificado academico de aluno/turma | Sim |
+| `POST` | `/emitir-manual-academico` | `ADMIN`, `SECRETARIA` | Emite certificado academico manual para aluno e turma cadastrados | Sim |
+| `POST` | `/emitir-honraria` | `ADMIN`, `SECRETARIA` | Emite PDF de honraria para apoiador cadastrado | Sim |
+| `PATCH` | `/certificados/:id/cancelar` | `ADMIN`, `SECRETARIA` | Cancela certificado valido e invalida consulta publica | Sim |
+| `POST` | `/certificados/:id/reemitir` | `ADMIN`, `SECRETARIA` | Cria nova versao academica e marca a anterior como `REISSUED` | Sim |
+
+O controller contem `@ApiOperation` nas rotas e, nas rotas novas de ciclo de vida, `@ApiResponse` e `@ApiParam` quando aplicavel.
+
+---
+
+# 5. Endpoint publico
+
+Base: `/api/certificados`
+
+| Metodo | Rota | Auth | Descricao | Swagger |
+|---|---|---|---|---|
+| `GET` | `/validar/:codigo` | Publico | Valida autenticidade/status pelo codigo unico | Sim |
+
+O QR Code gerado pelo PDF aponta para o frontend publico:
+
+```text
+{FRONTEND_URL}/validar-certificado?codigo={codigoValidacao}
 ```
-{{ALUNO}}         → Nome do destinatário
-{{NOME}}          → Alias de {{ALUNO}}
-{{APOIADOR}}      → Alias de {{ALUNO}}
-{{PARCEIRO}}      → Alias de {{ALUNO}}
-{{NOME_APOIADOR}} → Alias de {{ALUNO}}
-{{NOME_EVENTO}}   → Nome do evento/ação
-{{MOTIVO}}        → Alias legado de {{NOME_EVENTO}}
-{{DATA_EVENTO}}   → Data do evento (DD/MM/AAAA)
-{{DATA}}          → Alias legado de {{DATA_EVENTO}}
-{{DATA_EMISSAO}}  → Data de emissão (gerada automaticamente)
-{{CH}}            → Carga horária da turma
+
+---
+
+# 6. Uploads e seguranca
+
+Uploads de modelos usam `FileFieldsInterceptor` com `memoryStorage`.
+
+Campos aceitos:
+
+- `arteBase` obrigatorio na criacao.
+- `assinatura` obrigatorio na criacao.
+- `assinatura2` opcional.
+
+Formatos aceitos:
+
+- `image/jpeg`
+- `image/png`
+- `image/webp`
+
+Limite:
+
+- 10 MB por arquivo.
+
+As imagens e PDFs sao enviados para o storage pelo `UploadService`.
+
+---
+
+# 7. Layout do certificado
+
+## 7.1 Estrutura legada preservada
+
+`ModeloCertificado.layoutConfig` ainda pode conter:
+
+```ts
+{
+  textoPronto: { x, y, fontSize, color, maxWidth, fontFamily, textAlign },
+  nomeAluno: { x, y, fontSize, color, maxWidth, fontFamily, textAlign },
+  assinatura1: { x, y, width },
+  assinatura2: { x, y, width },
+  qrCode: { x, y, size }
+}
 ```
 
+Esses campos continuam sendo usados para compatibilidade com modelos antigos e com parte do editor.
+
+## 7.2 Estrutura nova com elements
+
+Novos layouts devem usar `layoutConfig.elements`.
+
+Tipos suportados:
+
+- `TEXT`
+- `DYNAMIC_TEXT`
+- `SIGNATURE_IMAGE`
+- `SIGNATURE_BLOCK`
+- `QR_CODE`
+- `VALIDATION_CODE`
+- `LINE`
+
+Campos validados:
+
+- `x`, `y`, `width`, `height`
+- `fontFamily`, `fontSize`, `fontWeight`
+- `color`, `textAlign`, `lineHeight`
+- `zIndex`, `visible`, `content`, `legacyField`
+
+As coordenadas sao percentuais em relacao ao tamanho do template.
+
+## 7.3 `legacyField`
+
+`legacyField` liga elementos novos aos campos antigos:
+
+| `legacyField` | Campo legado |
+|---|---|
+| `textoPronto` | Texto principal |
+| `nomeAluno` | Nome do aluno/apoiador |
+| `assinatura1` | Primeira assinatura |
+| `assinatura2` | Segunda assinatura |
+| `qrCode` | QR Code |
+
+Nao remover `legacyField` enquanto o editor ainda sincronizar campos legados.
+
 ---
 
-# 4. Fluxo de Geração de PDF
+# 8. Variaveis de template
 
+O backend substitui variaveis nos textos e elementos dinamicos. Principais aliases:
+
+## Academico
+
+- `{{ALUNO}}`
+- `{{NOME_ALUNO}}`
+- `{{TURMA}}`
+- `{{CURSO}}`
+- `{{NOME_CURSO}}`
+- `{{OFICINA}}`
+- `{{CARGA_HORARIA}}`
+- `{{CH}}`
+- `{{DATA_INICIO}}`
+- `{{DATA_FIM}}`
+- `{{DATA_EMISSAO}}`
+- `{{CODIGO_CERTIFICADO}}`
+- `{{CODIGO_VALIDACAO}}`
+- `{{NOME_INSTITUICAO}}`
+- `{{NOME_RESPONSAVEL}}`
+- `{{CARGO_RESPONSAVEL}}`
+
+## Honraria/apoiador
+
+- `{{PARCEIRO}}`
+- `{{APOIADOR}}`
+- `{{NOME_APOIADOR}}`
+- `{{NOME_ALUNO}}`
+- `{{TITULO_ACAO}}`
+- `{{MOTIVO}}`
+- `{{DATA_EVENTO}}`
+- `{{DATA}}`
+- `{{DATA_EMISSAO}}`
+- `{{CODIGO_CERTIFICADO}}`
+- `{{CODIGO_VALIDACAO}}`
+
+Para honrarias manuais, o DTO novo usa `dataEvento`. O campo `dataEmissao` e mantido apenas como legado de entrada.
+
+---
+
+# 9. Fontes
+
+O PDF suporta fontes padrao e fontes customizadas.
+
+Fontes padrao:
+
+- `Helvetica`
+- `TimesRoman`
+- `Courier`
+
+Fontes customizadas:
+
+- `Roboto`
+- `Open Sans`
+- `Montserrat`
+- `Merriweather`
+- `Cinzel`
+- `Playfair Display`
+- `Great Vibes`
+- `Parisienne`
+- `Dancing Script`
+- `Pacifico`
+
+As fontes customizadas sao carregadas de URLs fixas do catalogo Google Fonts no GitHub e armazenadas em cache. O diretorio pode ser configurado por:
+
+```text
+CERTIFICADOS_FONT_CACHE_DIR
 ```
-1. Carrega ModeloCertificado (imagem de fundo base64, texto, assinaturas)
-2. pdf-lib: cria novo PDF na dimensão da arte base
-3. image-processing.service: redimensiona e converte imagens
-4. Incorpora arte de fundo como JPG/PNG no PDF
-5. Posiciona texto do template (preenchido com vars do aluno)
-6. Adiciona assinaturas posicionadas
-7. Gera QR Code (URL de validação pública)
-8. uploadPdfBuffer() → Cloudinary (pasta braille_certificados)
-9. Cria CertificadoEmitido com codigoValidacao único
-10. Retorna URL do PDF gerado
+
+O renderizador dinamico sempre preserva `fontFamily`. `fontWeight: bold` nao troca mais a fonte por `HelveticaBold`; por enquanto ele nao carrega uma variante bold real da fonte customizada.
+
+---
+
+# 10. Geracao de PDF
+
+O `PdfService`:
+
+1. Cria o PDF com `pdf-lib`.
+2. Registra `fontkit` para fontes customizadas.
+3. Embute a arte base.
+4. Renderiza `layoutConfig.elements` quando existir.
+5. Mantem renderizacao legada como fallback.
+6. Gera QR Code com `qrcode`.
+7. Desenha assinaturas, textos, linhas e codigo de validacao.
+8. Retorna buffer para upload ou resposta `application/pdf`.
+
+Quando `elements` existe, o PDF renderiza:
+
+- Texto fixo e dinamico.
+- Codigo de validacao.
+- QR Code.
+- Bloco de assinatura.
+- Imagem de assinatura.
+- Linha decorativa.
+
+---
+
+# 11. Emissao academica
+
+## Automatica por turma/aluno
+
+`POST /api/modelos-certificados/emitir-academico`
+
+Regras:
+
+- Turma deve estar concluida quando aplicavel ao fluxo.
+- Aluno deve estar matriculado/concluido.
+- Frequencia minima e validada no fluxo academico.
+- Se ja existir certificado valido com PDF, o sistema pode reaproveitar.
+
+## Manual academico
+
+`POST /api/modelos-certificados/emitir-manual-academico`
+
+Regras:
+
+- Recebe `modeloId`, `alunoId`, `turmaId` e `dataEmissao` opcional.
+- Usa aluno e turma cadastrados.
+- Cria ou completa historico de matricula para que o certificado apareca no perfil do aluno.
+- Gera `CertificadoEmitido` vinculado a aluno, turma e modelo.
+
+---
+
+# 12. Honraria manual
+
+`POST /api/modelos-certificados/emitir-honraria`
+
+Regras:
+
+- Recebe `modeloId`, `apoiadorId`, `tituloAcao`, `motivo` opcional e `dataEvento`.
+- Busca o apoiador cadastrado e ativo.
+- Cria `AcaoApoiador` vinculada ao apoiador.
+- Gera `CertificadoEmitido` com `status: VALID`, `apoiadorId`, `acaoId`, `nomeImpresso`, `cursoImpresso` e `dadosManuais`.
+- Retorna PDF inline e o header `X-Codigo-Validacao`.
+
+---
+
+# 13. Ciclo de vida
+
+`CertificadoEmitido` foi reforcado com:
+
+- `status`
+- `version`
+- `previousCertificadoId`
+- `nomeImpresso`
+- `cursoImpresso`
+- `cargaHorariaImpresso`
+- `dadosManuais`
+- `canceledAt`
+- `canceledBy`
+- `cancelReason`
+
+Status usados:
+
+- `VALID`
+- `CANCELED`
+- `REISSUED`
+- `EXPIRED`
+- `DRAFT`
+
+Cancelamento:
+
+- So certificado `VALID` pode ser cancelado.
+- A validacao publica passa a retornar invalido.
+
+Reemissao:
+
+- Disponivel para certificados academicos vinculados a aluno/turma.
+- Cria nova versao `VALID`.
+- Marca a anterior como `REISSUED`.
+
+---
+
+# 14. Auditoria
+
+O modulo usa `AuditLogService` manualmente em eventos sensiveis:
+
+- Criacao/atualizacao/remocao de modelo.
+- Emissao de certificado.
+- Criacao de matricula historica por emissao manual.
+- Cancelamento.
+- Reemissao.
+
+---
+
+# 15. Testes e validacao tecnica
+
+Testes relevantes:
+
+```bash
+npm run build
+npm test -- certificados.service.spec.ts certificados.controller.spec.ts pdf.service.spec.ts --runInBand
 ```
 
----
+Fluxos manuais recomendados:
 
-# 5. Endpoints da API
-
-| Método | Rota | Roles | Descrição |
-|---|---|---|---|
-| `POST` | `/api/modelos-certificados` | `ADMIN` | Criar template |
-| `GET` | `/api/modelos-certificados` | Todos | Listar templates |
-| `POST` | `/api/certificados/emitir` | `ADMIN, SECRETARIA` | Emitir certificado |
-| `POST` | `/api/certificados/emitir-lote/:turmaId` | `ADMIN, SECRETARIA` | Emitir para toda a turma |
-| `GET` | `/api/certificados/validar/:codigo` | **Público** | Validar certificado (QR Code) |
-| `GET` | `/api/certificados/aluno/:alunoId` | Todos | Certificados emitidos por aluno |
-
----
-
-# 6. Validação Pública
-
-O endpoint `GET /api/certificados/validar/:codigo` é **público** (sem `AuthGuard`). É a URL embutida no QR Code do certificado físico/digital. Retorna:
-- Nome do destinatário
-- Tipo e data de emissão
-- Nome do evento/turma
-- Confirmação de autenticidade
+1. Criar modelo academico com arte e assinatura.
+2. Editar layout com `elements`.
+3. Testar fontes `Great Vibes`, `Parisienne`, `Dancing Script`, `Pacifico`, `Cinzel`.
+4. Emitir certificado academico automatico.
+5. Emitir certificado academico manual.
+6. Emitir honraria manual para apoiador.
+7. Validar QR Code publicamente.
+8. Cancelar certificado e confirmar status invalido.
+9. Reemitir certificado academico e conferir versoes.
 
 ---
 
-# 7. Regeneração por Invalidação de Nome
+# 16. Decisoes e proximos passos
 
-Quando o nome de um aluno é atualizado (`BeneficiariesService.update()`), os certificados emitidos com o nome antigo são **regenerados automaticamente em background** via `setImmediate()`. O PDF no Cloudinary é sobrescrito (`overwrite: true`) mantendo a mesma URL.
+## Manter legado por enquanto
 
----
+Nao remover ainda:
 
-# 8. Pontos de Atenção
+- `ModeloCertificado`
+- `CertificadoEmitido`
+- Campos fixos de `layoutConfig`
+- `legacyField`
+- Renderizacao legada no PDF
 
-> [!WARNING]
-> **pdf-lib + jimp em Render:** Geração de PDF consome CPU. Em emissão de lote para turmas grandes, pode causar timeout. Considerar fila assíncrona (Bull/BullMQ) no futuro.
+## Caminho recomendado
 
-> [!NOTE]
-> **Código de validação único:** `codigoValidacao` é um UUID gerado na emissão. Não é o ID do banco — pode ser exposto publicamente no QR Code sem expor estrutura interna.
+1. Fazer modelos novos dependerem primariamente de `layoutConfig.elements`.
+2. Criar migracao de layouts antigos para `elements`.
+3. Parar de sincronizar campos legados no editor.
+4. Decidir entre evoluir o legado atual ou migrar de fato para as tabelas V2.
+5. Remover legado apenas depois de migracao e validacao de PDFs antigos.
 
-**Criticidade:** 🟡 Importante | **Complexidade:** Alta | **Testes:** `certificados.service.spec.ts`
+**Criticidade:** Importante  
+**Complexidade:** Alta  
+**Status:** Fase 1 estabilizada em arquitetura hibrida

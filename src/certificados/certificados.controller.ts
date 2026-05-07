@@ -17,7 +17,7 @@ import {
 import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { CertificadosService } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
@@ -66,6 +66,7 @@ export class CertificadosController {
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
   @ApiOperation({ summary: 'Emite (ou recupera do cache) o certificado acadêmico. Retorna { pdfUrl, codigoValidacao }.' })
+  @ApiResponse({ status: 201, description: 'Certificado academico emitido ou recuperado com sucesso.' })
   async gerarAcademico(
     @Req() req: AuthenticatedRequest,
     @Body() dto: EmitirAcademicoDto,
@@ -77,6 +78,7 @@ export class CertificadosController {
   @Post('emitir-manual-academico')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Emite certificado academico manual com dados informados pelo usuario.' })
+  @ApiResponse({ status: 201, description: 'Certificado academico manual emitido e vinculado ao aluno/turma.' })
   gerarManualAcademico(
     @Req() req: AuthenticatedRequest,
     @Body() dto: EmitirManualAcademicoDto,
@@ -148,6 +150,8 @@ export class CertificadosController {
   @Patch('certificados/:id/cancelar')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Cancela um certificado emitido e torna a validacao publica invalida' })
+  @ApiParam({ name: 'id', description: 'UUID do certificado emitido a cancelar' })
+  @ApiResponse({ status: 200, description: 'Certificado cancelado com historico/auditoria.' })
   cancelarCertificado(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -159,6 +163,8 @@ export class CertificadosController {
   @Post('certificados/:id/reemitir')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Reemite um certificado academico, criando nova versao e invalidando a anterior' })
+  @ApiParam({ name: 'id', description: 'UUID do certificado emitido a reemitir' })
+  @ApiResponse({ status: 201, description: 'Nova versao do certificado criada e versao anterior marcada como REISSUED.' })
   reemitirCertificado(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.certificadosService.reemitirCertificado(id, getAuditUser(req));
   }
