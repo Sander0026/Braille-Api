@@ -976,13 +976,16 @@ export class BeneficiariesService {
        * baseCount e gerariam matrículas duplicadas.
        */
       try {
-        await this.prisma.$transaction(async (tx) => {
-          let baseCount = await tx.aluno.count({ where: { matricula: { startsWith: prefix } } });
-          for (const aluno of paraInserir) {
-            aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
-          }
-          await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: false });
-        });
+        await this.prisma.$transaction(
+          async (tx) => {
+            let baseCount = await tx.aluno.count({ where: { matricula: { startsWith: prefix } } });
+            for (const aluno of paraInserir) {
+              aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
+            }
+            await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: false });
+          },
+          { maxWait: 30000, timeout: 60000 },
+        );
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         this.logger.error(`ERRO NO IMPORT createMany: ${errorMsg}`);
@@ -1002,6 +1005,18 @@ export class BeneficiariesService {
             })
           : [];
       const idPorMatricula = new Map(alunosCriados.map((aluno) => [aluno.matricula, aluno.id]));
+
+      if (paraInserir.length > 50) {
+        this.logger.warn(`Auditoria detalhada ignorada para importacao em lote com ${paraInserir.length} alunos.`);
+        void this.auditService.registrar({
+          ...this.toAuditMeta(auditUser),
+          entidade: 'Aluno',
+          registroId: 'importacao-planilha',
+          acao: AuditAcao.CRIAR,
+          newValue: { origem: 'importacao-planilha', quantidade: paraInserir.length },
+        });
+        return { importados: paraInserir.length, ignorados, erros };
+      }
 
       Promise.resolve().then(async () => {
         for (const aluno of paraInserir) {
