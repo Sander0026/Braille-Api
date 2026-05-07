@@ -59,7 +59,7 @@ export class TurmasController {
   @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
-  @ApiOperation({ summary: 'Listar apenas professores vinculados a pelo menos uma turma ativa.' })
+  @ApiOperation({ summary: 'Listar professores ativos disponiveis para vinculo em turmas.' })
   findProfessoresAtivos() {
     return this.turmasService.findProfessoresAtivos();
   }

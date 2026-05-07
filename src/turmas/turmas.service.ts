@@ -159,11 +159,6 @@ export class TurmasService {
         role: Role.PROFESSOR,
         statusAtivo: true,
         excluido: false,
-        turmas: {
-          some: {
-            excluido: false,
-          },
-        },
       },
       select: { id: true, nome: true },
       orderBy: { nome: 'asc' },
