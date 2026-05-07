@@ -23,7 +23,7 @@ export function obterJwtSecretObrigatorio(configService: ConfigService): string 
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: obterJwtSecretObrigatorio(configService),
-        signOptions: { expiresIn: '15m' }, // Token curto. Refresh Token age por 7 dias
+        signOptions: { expiresIn: '8h' }, // Token longo (8h) para evitar expiração durante formulários
       }),
     }),
   ],

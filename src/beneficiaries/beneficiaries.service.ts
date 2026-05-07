@@ -69,6 +69,14 @@ const ALUNO_EXPORT_SELECT = {
 /** Include para o endpoint público GET /:id — mantém contrato com Frontend */
 const ALUNO_DETALHE_INCLUDE = {
   matriculasOficina: { include: { turma: true } },
+  certificadosEmitidos: {
+    where: { status: 'VALID', pdfUrl: { not: null } },
+    include: {
+      turma: { select: { id: true, nome: true, cargaHoraria: true } },
+      modelo: { select: { id: true, nome: true, tipo: true } },
+    },
+    orderBy: { dataEmissao: 'desc' },
+  },
 } as const;
 
 /** Select mínimo para verificar existência antes de mutações */

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsUUID, MaxLength, IsDateString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsDateString, IsNotEmpty, IsOptional, IsUUID, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -7,23 +7,34 @@ const trim = ({ value }: { value: unknown }): unknown =>
 
 export class EmitirHonrariaDto {
   @ApiProperty({ description: 'ID do Modelo de Certificado do tipo HONRARIA (UUID)' })
-  @IsUUID('4', { message: 'modeloId deve ser um UUID válido.' })
+  @IsUUID('4', { message: 'modeloId deve ser um UUID valido.' })
   @IsNotEmpty()
   modeloId: string;
 
-  @ApiProperty({ description: 'Nome do parceiro, evento ou pessoa homenageada' })
+  @ApiProperty({ description: 'ID do apoiador cadastrado que recebera a honraria' })
+  @IsUUID('4', { message: 'apoiadorId deve ser um UUID valido.' })
+  @IsNotEmpty()
+  apoiadorId: string;
+
+  @ApiProperty({ description: 'Titulo/descricao da acao que motivou a honraria' })
   @IsNotEmpty()
   @MaxLength(200)
   @Transform(trim)
-  nomeParceiro: string;
+  tituloAcao: string;
 
-  @ApiProperty({ description: 'Motivo da congratulação para o corpo do certificado' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ description: 'Motivo complementar para o corpo do certificado' })
+  @IsOptional()
   @MaxLength(1000)
   @Transform(trim)
-  motivo: string;
+  motivo?: string;
 
-  @ApiProperty({ description: 'Data do evento ou emissão (ISO 8601, ex: 2024-06-15)' })
+  @ApiPropertyOptional({ description: 'Campo legado; o nome oficial vem do apoiador cadastrado' })
+  @IsOptional()
+  @MaxLength(200)
+  @Transform(trim)
+  nomeParceiro?: string;
+
+  @ApiProperty({ description: 'Data do evento ou emissao (ISO 8601, ex: 2024-06-15)' })
   @IsDateString({}, { message: 'dataEmissao deve estar no formato ISO 8601 (YYYY-MM-DD).' })
   @IsNotEmpty()
   dataEmissao: string;

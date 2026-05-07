@@ -24,6 +24,8 @@ import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
 import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
 import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
+import { CancelarCertificadoDto } from './dto/cancelar-certificado.dto';
+import { EmitirManualAcademicoDto } from './dto/emitir-manual-academico.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -71,6 +73,16 @@ export class CertificadosController {
   ) {
     // Retorna JSON — pdfUrl aponta para Cloudinary (cache); frontend abre diretamente no viewer
     return this.certificadosService.emitirAcademico(dto, getAuditUser(req));
+  }
+
+  @Post('emitir-manual-academico')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Emite certificado academico manual com dados informados pelo usuario.' })
+  gerarManualAcademico(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: EmitirManualAcademicoDto,
+  ) {
+    return this.certificadosService.emitirManualAcademico(dto, getAuditUser(req));
   }
 
   @Post('emitir-honraria')
@@ -134,6 +146,24 @@ export class CertificadosController {
   @ApiOperation({ summary: 'Lista todos os modelos de certificados' })
   findAll() {
     return this.certificadosService.findAll();
+  }
+
+  @Patch('certificados/:id/cancelar')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Cancela um certificado emitido e torna a validacao publica invalida' })
+  cancelarCertificado(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: CancelarCertificadoDto,
+  ) {
+    return this.certificadosService.cancelarCertificado(id, dto, getAuditUser(req));
+  }
+
+  @Post('certificados/:id/reemitir')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Reemite um certificado academico, criando nova versao e invalidando a anterior' })
+  reemitirCertificado(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.certificadosService.reemitirCertificado(id, getAuditUser(req));
   }
 
   @Get(':id')
