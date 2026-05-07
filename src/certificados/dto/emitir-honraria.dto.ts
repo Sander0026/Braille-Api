@@ -34,8 +34,13 @@ export class EmitirHonrariaDto {
   @Transform(trim)
   nomeParceiro?: string;
 
-  @ApiProperty({ description: 'Data do evento ou emissao (ISO 8601, ex: 2024-06-15)' })
+  @ApiPropertyOptional({ description: 'Data do evento ou acao (ISO 8601, ex: 2024-06-15)' })
+  @IsOptional()
+  @IsDateString({}, { message: 'dataEvento deve estar no formato ISO 8601 (YYYY-MM-DD).' })
+  dataEvento?: string;
+
+  @ApiPropertyOptional({ description: 'Campo legado; use dataEvento em novas integracoes' })
+  @IsOptional()
   @IsDateString({}, { message: 'dataEmissao deve estar no formato ISO 8601 (YYYY-MM-DD).' })
-  @IsNotEmpty()
-  dataEmissao: string;
+  dataEmissao?: string;
 }

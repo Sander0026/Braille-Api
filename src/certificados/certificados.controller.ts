@@ -18,7 +18,6 @@ import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse } from '@nestjs/swagger';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { CertificadosService } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
@@ -140,8 +139,6 @@ export class CertificadosController {
   }
 
   @Get()
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30000)
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
   @ApiOperation({ summary: 'Lista todos os modelos de certificados' })
   findAll() {
@@ -167,8 +164,6 @@ export class CertificadosController {
   }
 
   @Get(':id')
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30000)
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
   @ApiOperation({ summary: 'Retorna um modelo de certificado pelo ID' })
   findOne(@Param('id') id: string) {

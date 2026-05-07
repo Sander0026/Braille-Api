@@ -515,9 +515,7 @@ export class PdfService {
     const texto = this.normalizarTextoVariavel(content, data);
     if (!texto) return;
 
-    const font = element.fontWeight === 'bold'
-      ? pc.fontBold
-      : await this.carregarFonte(pc.pdfDoc, element.fontFamily);
+    const font = await this.carregarFonte(pc.pdfDoc, element.fontFamily);
     const fontSize = this.tamanhoFontePdf(element.fontSize, pageWidth);
     const lineHeight = fontSize * (element.lineHeight ?? 1.4);
     const boxX = this.pctToX(element.x, pageWidth);

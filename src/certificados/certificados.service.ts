@@ -794,11 +794,14 @@ export class CertificadosService {
     const hashUnique = randomBytes(4).toString('hex').toUpperCase();
     const nomeParceiro = apoiador.nomeFantasia || apoiador.nomeRazaoSocial;
     const motivo = dto.motivo || dto.tituloAcao;
+    const dataEvento = dto.dataEvento ?? dto.dataEmissao;
+    if (!dataEvento) throw new BadRequestException('Informe a data do evento da honraria.');
+
     const acao = await this.prisma.acaoApoiador.create({
       data: {
         apoiadorId: apoiador.id,
         descricaoAcao: dto.tituloAcao,
-        dataEvento: new Date(dto.dataEmissao),
+        dataEvento: new Date(dataEvento),
       },
     });
     const templateVars = {
@@ -809,8 +812,9 @@ export class CertificadosService {
       CARGO_RESPONSAVEL: modelo.cargoAssinante,
       TITULO_ACAO: dto.tituloAcao,
       MOTIVO: motivo,
-      DATA: dto.dataEmissao,
-      DATA_EMISSAO: dto.dataEmissao,
+      DATA: dataEvento,
+      DATA_EVENTO: dataEvento,
+      DATA_EMISSAO: this.dataPtBr(new Date()),
       CODIGO_CERTIFICADO: hashUnique,
       CODIGO_VALIDACAO: hashUnique,
       NOME_INSTITUICAO: 'Instituto Luiz Braille',
@@ -832,7 +836,7 @@ export class CertificadosService {
           origem: 'CERTIFICADO_MANUAL_HONRARIA',
           tituloAcao: dto.tituloAcao,
           motivo,
-          dataEmissao: dto.dataEmissao,
+          dataEvento,
         },
       },
     } as never);
