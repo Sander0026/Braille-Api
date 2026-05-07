@@ -245,6 +245,7 @@ export class UploadService {
           use_filename: false,
           unique_filename: false,
           overwrite: true,
+          invalidate: true,
         },
         (error, result) => {
           if (error) return reject(new Error(error.message || 'Erro no Cloudinary'));

@@ -281,18 +281,19 @@ export class PdfService {
     const nomeLinhaUnica = nomeAluno.replace(/\s+/g, ' ').trim();
     if (!nomeLinhaUnica) return;
 
+    const palavras = nomeLinhaUnica.split(' ');
     const naX = (((naConf.x as number) ?? 10) / 100) * width;
-    const naMaxW = Math.max(
-      1,
-      Math.min(((((naConf.maxWidth as number) || 80) / 100) * width), width - naX),
-    );
+    const naMaxW = Math.max(1, Math.min(((((naConf.maxWidth as number) || 80) / 100) * width), width - naX));
+    const larguraNome = (size: number): number => {
+      const espacoEntrePalavras = size * 0.28;
+      const larguraPalavras = palavras.reduce((total, palavra) => total + fontNome.widthOfTextAtSize(palavra, size), 0);
+      return larguraPalavras + espacoEntrePalavras * Math.max(0, palavras.length - 1);
+    };
+
     const tamanhoBase = (((naConf.fontSize as number) || 56) / CANVAS_REF_W) * width;
-    const larguraBase = fontNome.widthOfTextAtSize(nomeLinhaUnica, tamanhoBase);
-    const naSize =
-      larguraBase > naMaxW
-        ? Math.max(tamanhoBase * 0.45, tamanhoBase * (naMaxW / larguraBase))
-        : tamanhoBase;
-    const larguraFinal = fontNome.widthOfTextAtSize(nomeLinhaUnica, naSize);
+    const larguraBase = larguraNome(tamanhoBase);
+    const naSize = larguraBase > naMaxW ? Math.max(tamanhoBase * 0.45, tamanhoBase * (naMaxW / larguraBase)) : tamanhoBase;
+    const larguraFinal = larguraNome(naSize);
     const alinhamento = naConf.textAlign as string | undefined;
     const ajusteX =
       alinhamento === 'center'
@@ -302,12 +303,17 @@ export class PdfService {
           : 0;
     const naY = topPctToY((naConf.y as number) ?? 45, height, naSize);
 
-    page.drawText(nomeLinhaUnica, {
-      x: naX + ajusteX,
-      y: naY,
-      size: naSize,
-      font: fontNome,
-      color: rgb(naR, naG, naB),
+    let cursorX = naX + ajusteX;
+    const espacoEntrePalavras = naSize * 0.28;
+    palavras.forEach((palavra) => {
+      page.drawText(palavra, {
+        x: cursorX,
+        y: naY,
+        size: naSize,
+        font: fontNome,
+        color: rgb(naR, naG, naB),
+      });
+      cursorX += fontNome.widthOfTextAtSize(palavra, naSize) + espacoEntrePalavras;
     });
   }
 

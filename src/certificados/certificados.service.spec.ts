@@ -102,4 +102,67 @@ describe('CertificadosService', () => {
       }),
     );
   });
+
+  it('emite certificado academico usando o nome completo do aluno no texto', async () => {
+    const modeloAcademico = {
+      ...modeloHonraria,
+      id: 'modelo-academico',
+      tipo: 'ACADEMICO',
+      textoTemplate: 'O Instituto certifica que {{ nome_aluno }} concluiu {{ curso }}.',
+    };
+    const prisma = {
+      turma: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          nome: 'Braille nivel 1',
+          status: 'CONCLUIDA',
+          cargaHoraria: 20,
+          dataInicio: new Date('2026-01-01T00:00:00.000Z'),
+          dataFim: new Date('2026-02-01T00:00:00.000Z'),
+          modeloCertificadoId: modeloAcademico.id,
+          modeloCertificado: modeloAcademico,
+          matriculasOficina: [{ status: 'CONCLUIDA' }],
+        }),
+      },
+      frequencia: {
+        count: jest.fn().mockResolvedValue(0),
+      },
+      certificadoEmitido: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'cert-acad-1', codigoValidacao: 'ABC12345' }),
+      },
+      aluno: {
+        findUnique: jest.fn().mockResolvedValue({ id: '22222222-2222-4222-8222-222222222222', nomeCompleto: 'Agatha Abreu' }),
+      },
+    };
+    const uploadService = {
+      uploadPdfBuffer: jest.fn().mockResolvedValue({ url: 'https://res.cloudinary.com/demo/cert.pdf' }),
+    };
+    const pdfService = {
+      construirPdfBase: jest.fn().mockResolvedValue(Buffer.from('pdf')),
+    };
+    const service = new CertificadosService(
+      prisma as never,
+      uploadService as never,
+      pdfService as never,
+      { removerFundoBrancoAssinatura: jest.fn() } as never,
+      { registrar: jest.fn() } as never,
+    );
+
+    await service.emitirAcademico({
+      turmaId: '11111111-1111-4111-8111-111111111111',
+      alunoId: '22222222-2222-4222-8222-222222222222',
+    });
+
+    expect(prisma.aluno.findUnique).toHaveBeenCalledWith({
+      where: { id: '22222222-2222-4222-8222-222222222222' },
+      select: { id: true, nomeCompleto: true },
+    });
+    expect(pdfService.construirPdfBase).toHaveBeenCalledWith(
+      modeloAcademico,
+      'O Instituto certifica que Agatha Abreu concluiu Braille nivel 1.',
+      expect.stringMatching(/^[A-F0-9]{8}$/),
+      'Agatha Abreu',
+    );
+  });
 });

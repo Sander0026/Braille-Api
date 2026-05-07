@@ -94,7 +94,35 @@ export class CertificadosService {
    * Método privado — única fonte de verdade para substituição de variáveis.
    */
   private substituirTags(template: string, vars: Record<string, string>): string {
-    return Object.entries(vars).reduce((acc, [tag, valor]) => acc.replaceAll(`{{${tag}}}`, valor), template);
+    return Object.entries(vars).reduce((acc, [tag, valor]) => {
+      const tagEscapada = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return acc.replace(new RegExp(`{{\\s*${tagEscapada}\\s*}}`, 'gi'), valor);
+    }, template);
+  }
+
+  private preencherTemplateAcademico(
+    template: string,
+    alunoNome: string,
+    vars: Record<string, string>,
+  ): string {
+    const textoComTags = this.substituirTags(template, {
+      ...vars,
+      ALUNO: alunoNome,
+      NOME_ALUNO: alunoNome,
+      NOME: alunoNome,
+      NOME_COMPLETO: alunoNome,
+      PARTICIPANTE: alunoNome,
+      BENEFICIARIO: alunoNome,
+      BENEFICIARIO_NOME: alunoNome,
+    });
+
+    if (textoComTags !== template) return textoComTags;
+
+    return textoComTags.replace(/\bo\(a\)\s+participante\b/i, `o(a) ${alunoNome}`);
+  }
+
+  private dataPtBr(data: Date = new Date()): string {
+    return data.toLocaleDateString('pt-BR');
   }
 
   /**
@@ -296,7 +324,7 @@ export class CertificadosService {
     // Reutiliza o codigo de validacao se ja existir, mas gera um PDF novo.
     const certExistente = await this.prisma.certificadoEmitido.findFirst({
       where: { alunoId: dto.alunoId, turmaId: dto.turmaId },
-      select: { id: true, pdfUrl: true, codigoValidacao: true },
+      select: { id: true, pdfUrl: true, codigoValidacao: true, dataEmissao: true },
     });
     if (certExistente?.pdfUrl) {
       // Certificado existente: regenera e sobrescreve o PDF mantendo o codigo.
@@ -314,16 +342,27 @@ export class CertificadosService {
     const dataInic = turma.dataInicio ? turma.dataInicio.toLocaleDateString('pt-BR') : 'Data Indefinida';
     const dataFim = turma.dataFim ? turma.dataFim.toLocaleDateString('pt-BR') : 'Data Indefinida';
 
-    const textoPronto = this.substituirTags(turma.modeloCertificado.textoTemplate, {
-      ALUNO: aluno.nomeCompleto,
+    const hashUnique = certExistente?.codigoValidacao ?? randomBytes(4).toString('hex').toUpperCase();
+    const dataEmissao = this.dataPtBr(certExistente?.dataEmissao ?? new Date());
+
+    const textoPronto = this.preencherTemplateAcademico(turma.modeloCertificado.textoTemplate, aluno.nomeCompleto, {
       TURMA: turma.nome,
+      CURSO: turma.nome,
+      NOME_CURSO: turma.nome,
+      OFICINA: turma.nome,
       CARGA_HORARIA: cargaHr,
+      CH: cargaHr,
       DATA_INICIO: dataInic,
       DATA_FIM: dataFim,
+      DATA_EMISSAO: dataEmissao,
+      CODIGO_CERTIFICADO: hashUnique,
+      CODIGO_VALIDACAO: hashUnique,
+      NOME_INSTITUICAO: 'Instituto Luiz Braille',
+      NOME_RESPONSAVEL: turma.modeloCertificado.nomeAssinante,
+      CARGO_RESPONSAVEL: turma.modeloCertificado.cargoAssinante,
     });
 
     // Usa codigoValidacao existente (se já havia registro sem URL) ou gera novo
-    const hashUnique = certExistente?.codigoValidacao ?? randomBytes(4).toString('hex').toUpperCase();
     const pdfBuffer = await this.pdfService.construirPdfBase(
       turma.modeloCertificado as ModeloPdf,
       textoPronto,
@@ -376,13 +415,21 @@ export class CertificadosService {
     if (!modelo) throw new NotFoundException('Modelo de certificado não encontrado.');
     if (modelo.tipo !== 'HONRARIA') throw new BadRequestException('O Modelo informado não é do tipo HONRARIA.');
 
+    const hashUnique = randomBytes(4).toString('hex').toUpperCase();
     const textoPronto = this.substituirTags(modelo.textoTemplate, {
       PARCEIRO: dto.nomeParceiro,
+      NOME_ALUNO: dto.nomeParceiro,
+      NOME: dto.nomeParceiro,
+      NOME_RESPONSAVEL: modelo.nomeAssinante,
+      CARGO_RESPONSAVEL: modelo.cargoAssinante,
       MOTIVO: dto.motivo,
       DATA: dto.dataEmissao,
+      DATA_EMISSAO: dto.dataEmissao,
+      CODIGO_CERTIFICADO: hashUnique,
+      CODIGO_VALIDACAO: hashUnique,
+      NOME_INSTITUICAO: 'Instituto Luiz Braille',
     });
 
-    const hashUnique = randomBytes(4).toString('hex').toUpperCase();
     const emissao = await this.prisma.certificadoEmitido.create({
       data: { codigoValidacao: hashUnique, modeloId: modelo.id },
     });
@@ -421,12 +468,21 @@ export class CertificadosService {
       
       const modeloCert = turma.modeloCertificado;
       try {
-        const textoPronto = this.substituirTags(modeloCert.textoTemplate, {
-          ALUNO: aluno.nomeCompleto,
+        const textoPronto = this.preencherTemplateAcademico(modeloCert.textoTemplate, aluno.nomeCompleto, {
           TURMA: turma.nome,
+          CURSO: turma.nome,
+          NOME_CURSO: turma.nome,
+          OFICINA: turma.nome,
+          CH: turma.cargaHoraria ?? 'Não informada',
           CARGA_HORARIA: turma.cargaHoraria ?? 'Não informada',
           DATA_INICIO: turma.dataInicio ? turma.dataInicio.toLocaleDateString('pt-BR') : 'Data Indefinida',
           DATA_FIM: turma.dataFim ? turma.dataFim.toLocaleDateString('pt-BR') : 'Data Indefinida',
+          DATA_EMISSAO: this.dataPtBr(cert.dataEmissao),
+          CODIGO_CERTIFICADO: cert.codigoValidacao,
+          CODIGO_VALIDACAO: cert.codigoValidacao,
+          NOME_INSTITUICAO: 'Instituto Luiz Braille',
+          NOME_RESPONSAVEL: modeloCert.nomeAssinante,
+          CARGO_RESPONSAVEL: modeloCert.cargoAssinante,
         });
 
         const pdfBuffer = await this.pdfService.construirPdfBase(
@@ -460,7 +516,7 @@ export class CertificadosService {
       where: { codigoValidacao: codigo },
       include: {
         aluno: { select: { nomeCompleto: true } },
-        turma: { select: { nome: true } },
+        turma: { select: { nome: true, cargaHoraria: true } },
         modelo: { select: { nome: true, tipo: true } },
       },
     });
@@ -474,6 +530,10 @@ export class CertificadosService {
       nome: isAcademico ? (emissao.aluno?.nomeCompleto ?? 'Desconhecido') : 'Parceiro Institucional / Apoiador',
       curso: isAcademico ? (emissao.turma?.nome ?? emissao.modelo.nome) : emissao.modelo.nome,
       data: emissao.dataEmissao.toLocaleDateString('pt-BR'),
+      dataEmissao: emissao.dataEmissao.toLocaleDateString('pt-BR'),
+      cargaHoraria: isAcademico ? (emissao.turma?.cargaHoraria ?? 'Não informada') : 'Não se aplica',
+      codigoValidacao: emissao.codigoValidacao,
+      status: 'VALIDO',
       tipo: emissao.modelo.tipo,
     };
   }
