@@ -108,6 +108,24 @@ export class CertificadosController {
     return new StreamableFile(pdfBuffer);
   }
 
+  @Post(':id/preview-pdf')
+  @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
+  @ApiOperation({ summary: 'Gera uma prévia PDF real do modelo sem emitir certificado.' })
+  @ApiProduces('application/pdf')
+  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
+  @ApiResponse({ status: 201, description: 'PDF de prévia gerado pelo mesmo motor da emissão final.' })
+  async previewPdf(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfBuffer = await this.certificadosService.gerarPreviewPdfModelo(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline; filename="preview-certificado.pdf"',
+    });
+    return new StreamableFile(pdfBuffer);
+  }
+
   @Post()
   @Roles('ADMIN', 'SECRETARIA')
   @UseInterceptors(

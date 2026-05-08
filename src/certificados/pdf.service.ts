@@ -184,6 +184,19 @@ export class PdfService {
     return (((fontSize ?? fallback) / CANVAS_REF_W) * pageWidth);
   }
 
+  private normalizarTextoPdf(texto: string): string {
+    return (texto || '')
+      .normalize('NFC')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[–—]/g, '-')
+      .replace(/…/g, '...')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[^\S\r\n]+/g, ' ')
+      .replace(/([,.;:!?])(?=\S)/g, '$1 ')
+      .trim();
+  }
+
   private normalizarTextoVariavel(texto: string, data: PdfRenderData): string {
     const variables = {
       ...data.variables,
@@ -200,10 +213,12 @@ export class PdfService {
       CARGO_RESPONSAVEL_2: data.modelo.cargoAssinante2 ?? '',
     };
 
-    return Object.entries(variables).reduce((acc, [tag, valor]) => {
+    const textoComVariaveis = Object.entries(variables).reduce((acc, [tag, valor]) => {
       const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return acc.replace(new RegExp(`{{\\s*${escapedTag}\\s*}}`, 'gi'), valor ?? '');
     }, texto);
+
+    return this.normalizarTextoPdf(textoComVariaveis);
   }
 
   private extrairElementosLayout(config: Record<string, unknown>): CertificadoPdfElement[] {

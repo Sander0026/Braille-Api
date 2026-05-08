@@ -305,6 +305,78 @@ export class CertificadosService {
     return modelo;
   }
 
+  async gerarPreviewPdfModelo(id: string): Promise<Buffer> {
+    const modelo = await this.findOne(id);
+    const codigoPreview = 'PREVIEW123';
+    const dataPreview = this.dataPtBr(new Date());
+
+    if (modelo.tipo === 'HONRARIA') {
+      const nomeParceiro = 'Empresa Solidária LTDA';
+      const tituloAcao = 'Apoio contínuo à inclusão';
+      const templateVars = {
+        PARCEIRO: nomeParceiro,
+        APOIADOR: nomeParceiro,
+        NOME_APOIADOR: nomeParceiro,
+        NOME_ALUNO: nomeParceiro,
+        NOME: nomeParceiro,
+        TITULO_ACAO: tituloAcao,
+        MOTIVO: tituloAcao,
+        DATA: dataPreview,
+        DATA_EVENTO: dataPreview,
+        DATA_EMISSAO: dataPreview,
+        CODIGO_CERTIFICADO: codigoPreview,
+        CODIGO_VALIDACAO: codigoPreview,
+        NOME_INSTITUICAO: 'Instituto Luiz Braille',
+        NOME_RESPONSAVEL: modelo.nomeAssinante,
+        CARGO_RESPONSAVEL: modelo.cargoAssinante,
+        NOME_RESPONSAVEL_2: modelo.nomeAssinante2 ?? '',
+        CARGO_RESPONSAVEL_2: modelo.cargoAssinante2 ?? '',
+      };
+      const textoPronto = this.substituirTags(modelo.textoTemplate, templateVars);
+      return this.pdfService.construirPdfBase(
+        modelo as ModeloPdf,
+        textoPronto,
+        codigoPreview,
+        nomeParceiro,
+        templateVars,
+      );
+    }
+
+    const nomeAluno = 'Maria da Silva Santos';
+    const nomeCurso = 'Braille Nível I';
+    const templateVars = {
+      ALUNO: nomeAluno,
+      NOME_ALUNO: nomeAluno,
+      NOME: nomeAluno,
+      NOME_COMPLETO: nomeAluno,
+      MATRICULA: '202600001',
+      TURMA: nomeCurso,
+      CURSO: nomeCurso,
+      NOME_CURSO: nomeCurso,
+      OFICINA: nomeCurso,
+      CARGA_HORARIA: '40 horas',
+      CH: '40 horas',
+      DATA_INICIO: '03/01/2025',
+      DATA_FIM: '28/03/2025',
+      DATA_EMISSAO: dataPreview,
+      CODIGO_CERTIFICADO: codigoPreview,
+      CODIGO_VALIDACAO: codigoPreview,
+      NOME_INSTITUICAO: 'Instituto Luiz Braille',
+      NOME_RESPONSAVEL: modelo.nomeAssinante,
+      CARGO_RESPONSAVEL: modelo.cargoAssinante,
+      NOME_RESPONSAVEL_2: modelo.nomeAssinante2 ?? '',
+      CARGO_RESPONSAVEL_2: modelo.cargoAssinante2 ?? '',
+    };
+    const textoPronto = this.preencherTemplateAcademico(modelo.textoTemplate, nomeAluno, templateVars);
+    return this.pdfService.construirPdfBase(
+      modelo as ModeloPdf,
+      textoPronto,
+      codigoPreview,
+      nomeAluno,
+      templateVars,
+    );
+  }
+
   async update(
     id: string,
     updateDto: UpdateCertificadoDto,
