@@ -12,9 +12,8 @@ export class CertificadosPublicoController {
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(60000)
   @ApiOperation({ summary: 'Valida a autenticidade de um certificado pelo código único' })
-  @ApiParam({ name: 'codigo', description: 'Código alfanumérico do certificado (ex: ABC12345)' })
-  @ApiResponse({ status: 200, description: 'Certificado válido — dados do aluno e turma retornados.' })
-  @ApiResponse({ status: 404, description: 'Código de validação não encontrado ou certificado inválido.' })
+  @ApiParam({ name: 'codigo', description: 'Codigo unico de validacao impresso no certificado ou lido via QR Code' })
+  @ApiResponse({ status: 200, description: 'Resultado publico da validacao do certificado.' })
   async validar(@Param('codigo') codigo: string) {
     return this.certificadosService.validarPublico(codigo);
   }

@@ -17,13 +17,15 @@ import {
 import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { CertificadosService } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
 import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
 import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
+import { CancelarCertificadoDto } from './dto/cancelar-certificado.dto';
+import { EmitirManualAcademicoDto } from './dto/emitir-manual-academico.dto';
+import { PreviewCertificadoPdfDto } from './dto/preview-certificado-pdf.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -32,7 +34,7 @@ import { SkipAudit } from '../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 
 @ApiTags('Modelos de Certificados')
-@ApiBearerAuth('access-token')
+@ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
 @SkipAudit()
 @Controller('modelos-certificados')
@@ -64,16 +66,25 @@ export class CertificadosController {
 
   @Post('emitir-academico')
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR')
-  @ApiOperation({ summary: 'Emite ou regenera o certificado acadêmico. Retorna { pdfUrl, codigoValidacao }.' })
-  @ApiResponse({ status: 201, description: 'PDF do certificado gerado. Retorna { pdfUrl, codigoValidacao }.' })
-  @ApiResponse({ status: 400, description: 'Dados inválidos ou aluno sem turma concluída.' })
-  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
+  @ApiOperation({ summary: 'Emite (ou recupera do cache) o certificado acadêmico. Retorna { pdfUrl, codigoValidacao }.' })
+  @ApiResponse({ status: 201, description: 'Certificado academico emitido ou recuperado com sucesso.' })
   async gerarAcademico(
     @Req() req: AuthenticatedRequest,
     @Body() dto: EmitirAcademicoDto,
   ) {
-    // Retorna JSON — pdfUrl aponta para Cloudinary; frontend abre diretamente no viewer
+    // Retorna JSON — pdfUrl aponta para Cloudinary (cache); frontend abre diretamente no viewer
     return this.certificadosService.emitirAcademico(dto, getAuditUser(req));
+  }
+
+  @Post('emitir-manual-academico')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Emite certificado academico manual com dados informados pelo usuario.' })
+  @ApiResponse({ status: 201, description: 'Certificado academico manual emitido e vinculado ao aluno/turma.' })
+  gerarManualAcademico(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: EmitirManualAcademicoDto,
+  ) {
+    return this.certificadosService.emitirManualAcademico(dto, getAuditUser(req));
   }
 
   @Post('emitir-honraria')
@@ -98,6 +109,26 @@ export class CertificadosController {
     return new StreamableFile(pdfBuffer);
   }
 
+  @Post(':id/preview-pdf')
+  @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
+  @ApiOperation({ summary: 'Gera uma prévia PDF real do modelo sem emitir certificado.' })
+  @ApiProduces('application/pdf')
+  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
+  @ApiBody({ type: PreviewCertificadoPdfDto, required: false })
+  @ApiResponse({ status: 201, description: 'PDF de prévia gerado pelo mesmo motor da emissão final.' })
+  async previewPdf(
+    @Param('id') id: string,
+    @Body() dto: PreviewCertificadoPdfDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfBuffer = await this.certificadosService.gerarPreviewPdfModelo(id, dto);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline; filename="preview-certificado.pdf"',
+    });
+    return new StreamableFile(pdfBuffer);
+  }
+
   @Post()
   @Roles('ADMIN', 'SECRETARIA')
   @UseInterceptors(
@@ -109,9 +140,6 @@ export class CertificadosController {
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Cria um novo modelo de certificado' })
-  @ApiResponse({ status: 201, description: 'Modelo criado com sucesso.' })
-  @ApiResponse({ status: 400, description: 'Imagens obrigatórias ausentes ou tipo de arquivo inválido.' })
-  @ApiResponse({ status: 413, description: 'Arquivo excede 10 MB.' })
   create(
     @Req() req: AuthenticatedRequest,
     @Body() createDto: CreateCertificadoDto,
@@ -134,24 +162,37 @@ export class CertificadosController {
   }
 
   @Get()
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30000)
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
   @ApiOperation({ summary: 'Lista todos os modelos de certificados' })
-  @ApiResponse({ status: 200, description: 'Lista de modelos retornada.' })
-  @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
   findAll() {
     return this.certificadosService.findAll();
   }
 
+  @Patch('certificados/:id/cancelar')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Cancela um certificado emitido e torna a validacao publica invalida' })
+  @ApiParam({ name: 'id', description: 'UUID do certificado emitido a cancelar' })
+  @ApiResponse({ status: 200, description: 'Certificado cancelado com historico/auditoria.' })
+  cancelarCertificado(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: CancelarCertificadoDto,
+  ) {
+    return this.certificadosService.cancelarCertificado(id, dto, getAuditUser(req));
+  }
+
+  @Post('certificados/:id/reemitir')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Reemite um certificado academico, criando nova versao e invalidando a anterior' })
+  @ApiParam({ name: 'id', description: 'UUID do certificado emitido a reemitir' })
+  @ApiResponse({ status: 201, description: 'Nova versao do certificado criada e versao anterior marcada como REISSUED.' })
+  reemitirCertificado(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.certificadosService.reemitirCertificado(id, getAuditUser(req));
+  }
+
   @Get(':id')
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30000)
   @Roles('ADMIN', 'SECRETARIA', 'PROFESSOR', 'COMUNICACAO')
   @ApiOperation({ summary: 'Retorna um modelo de certificado pelo ID' })
-  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
-  @ApiResponse({ status: 200, description: 'Modelo encontrado.' })
-  @ApiResponse({ status: 404, description: 'Modelo não encontrado.' })
   findOne(@Param('id') id: string) {
     return this.certificadosService.findOne(id);
   }
@@ -167,10 +208,6 @@ export class CertificadosController {
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Atualiza um modelo de certificado (texto e/ou imagens)' })
-  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
-  @ApiResponse({ status: 200, description: 'Modelo atualizado com sucesso.' })
-  @ApiResponse({ status: 400, description: 'Tipo de arquivo inválido.' })
-  @ApiResponse({ status: 404, description: 'Modelo não encontrado.' })
   update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -199,9 +236,6 @@ export class CertificadosController {
   @Delete(':id')
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Deleta um modelo e remove os arquivos do Cloudinary' })
-  @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
-  @ApiResponse({ status: 200, description: 'Modelo deletado com sucesso.' })
-  @ApiResponse({ status: 404, description: 'Modelo não encontrado.' })
   remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.certificadosService.remove(id, getAuditUser(req));
   }
