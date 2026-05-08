@@ -17,13 +17,13 @@ import {
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import * as ExcelJS from 'exceljs';
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
+import { ImportBeneficiariesBatchDto } from './dto/import-beneficiaries-batch.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
-import { ImportBatchDto } from './dto/import-batch.dto';
 import { AuthGuard } from '../auth/auth.guard';
 
 import { RolesGuard } from '../auth/roles.guard';
@@ -89,14 +89,21 @@ export class BeneficiariesController {
   @Post('import-batch')
   @SkipThrottle()
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Importar alunos em lotes (JSON) - Maior performance' })
+  @ApiOperation({ summary: 'Importar alunos em lote a partir de linhas JSON da planilha' })
+  @ApiBody({ type: ImportBeneficiariesBatchDto })
   @ApiResponse({ status: 201, description: 'Lote importado com sucesso.' })
   @ApiResponse({ status: 400, description: 'Payload inválido.' })
-  async importBatch(@Req() req: AuthenticatedRequest, @Body() dto: ImportBatchDto) {
-    if (!dto.data || !Array.isArray(dto.data) || dto.data.length === 0) {
-      throw new BadRequestException('O lote de dados está vazio ou inválido.');
+  async importBatch(@Req() req: AuthenticatedRequest, @Body() dto: ImportBeneficiariesBatchDto) {
+    if (!dto.data?.length) {
+      return {
+        importados: 0,
+        ignorados: 0,
+        erros: [{ linha: 0, documento: '---', motivo: 'Lote vazio ou sem dados.' }],
+      };
     }
-    return this.beneficiariesService.importBatchData(dto.data, getAuditUser(req));
+
+    const buffer = await this.criarPlanilhaTemporaria(dto.data);
+    return this.beneficiariesService.importFromSheet(buffer, getAuditUser(req));
   }
 
   @Get()
@@ -210,5 +217,28 @@ export class BeneficiariesController {
     if (!workbook.worksheets[0]) {
       throw new BadRequestException(INVALID_XLSX_MESSAGE);
     }
+  }
+
+  private async criarPlanilhaTemporaria(rows: Record<string, unknown>[]): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Alunos');
+
+    const headers = Array.from(
+      new Set(rows.flatMap((row) => Object.keys(row).filter((key) => key !== '_linhaOriginal'))),
+    );
+
+    if (headers.length === 0) {
+      throw new BadRequestException('Lote sem colunas validas para importacao.');
+    }
+
+    worksheet.addRow(headers);
+    worksheet.addRow(headers);
+
+    for (const row of rows) {
+      worksheet.addRow(headers.map((header) => row[header] ?? ''));
+    }
+
+    const workbookBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.isBuffer(workbookBuffer) ? workbookBuffer : Buffer.from(workbookBuffer as ArrayBuffer);
   }
 }

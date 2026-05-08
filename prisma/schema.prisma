@@ -119,6 +119,38 @@ enum TipoCertificado {
   HONRARIA
 }
 
+enum CertificateOrientation {
+  LANDSCAPE
+  PORTRAIT
+}
+
+enum CertificatePageSize {
+  A4
+  LETTER
+  CUSTOM
+}
+
+enum CertificateTemplateMode {
+  AUTOMATICO
+  EDITOR_VISUAL
+  HIBRIDO
+}
+
+enum CertificateStatus {
+  VALID
+  DRAFT
+  CANCELED
+  REISSUED
+  EXPIRED
+}
+
+enum CertificateBatchStatus {
+  PENDING
+  PROCESSING
+  FINISHED
+  FAILED
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -145,11 +177,11 @@ model User {
   cidade      String?
   uf          String?
 
-  statusAtivo  Boolean      @default(true)
-  excluido     Boolean      @default(false)
-  criadoEm     DateTime     @default(now())
-  atualizadoEm DateTime     @updatedAt
-  turmas       Turma[]      @relation("TurmaProfessorPrincipal")
+  statusAtivo  Boolean       @default(true)
+  excluido     Boolean       @default(false)
+  criadoEm     DateTime      @default(now())
+  atualizadoEm DateTime      @updatedAt
+  turmas       Turma[]       @relation("TurmaProfessorPrincipal")
   comunicados  Comunicado[]
   sessoes      UserSession[]
 
@@ -161,17 +193,17 @@ model User {
 }
 
 model UserSession {
-  id               String    @id @default(uuid())
-  userId           String
-  refreshTokenHash String
+  id                       String    @id @default(uuid())
+  userId                   String
+  refreshTokenHash         String
   previousRefreshTokenHash String?
   previousRotatedAt        DateTime?
-  expiresAt        DateTime
-  revokedAt        DateTime?
-  userAgent        String?
-  ip               String?
-  criadoEm         DateTime  @default(now())
-  atualizadoEm     DateTime  @default(now()) @updatedAt
+  expiresAt                DateTime
+  revokedAt                DateTime?
+  userAgent                String?
+  ip                       String?
+  criadoEm                 DateTime  @default(now())
+  atualizadoEm             DateTime  @default(now()) @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -568,10 +600,20 @@ model ModeloCertificado {
 }
 
 model CertificadoEmitido {
-  id              String   @id @default(uuid())
-  codigoValidacao String   @unique // Hash único para verificação no portal público
-  dataEmissao     DateTime @default(now())
-  pdfUrl          String? // Opcional se for salvar estaticamente no S3/Cloudinary
+  id                   String            @id @default(uuid())
+  codigoValidacao      String            @unique // Hash único para verificação no portal público
+  dataEmissao          DateTime          @default(now())
+  pdfUrl               String? // Opcional se for salvar estaticamente no S3/Cloudinary
+  status               CertificateStatus @default(VALID)
+  version              Int               @default(1)
+  matriculaImpresso    String?
+  nomeImpresso         String?
+  cursoImpresso        String?
+  cargaHorariaImpresso String?
+  dadosManuais         Json?
+  canceledAt           DateTime?
+  canceledBy           String?
+  cancelReason         String?           @db.Text
 
   // Relacionamentos diretos de certificados acadêmicos de turmas
   alunoId String? // Null se for honraria a apoiador
@@ -590,13 +632,157 @@ model CertificadoEmitido {
   modeloId String
   modelo   ModeloCertificado @relation(fields: [modeloId], references: [id])
 
+  previousCertificadoId String?
+  previousCertificado   CertificadoEmitido?  @relation("CertificadoEmitidoReissue", fields: [previousCertificadoId], references: [id])
+  reissuedCertificados  CertificadoEmitido[] @relation("CertificadoEmitidoReissue")
+
   // Índices individuais para buscas isoladas
   @@index([alunoId])
   @@index([apoiadorId])
   @@index([acaoId])
   @@index([codigoValidacao])
   @@index([modeloId])
+  @@index([status])
+  @@index([previousCertificadoId])
   // Índice composto para a query mais frequente: certificados de um aluno em uma turma.
   // PostgreSQL usa este índice para WHERE alunoId = X AND turmaId = Y de forma eficiente.
   @@index([alunoId, turmaId])
+}
+
+// Fase 2 - Certificados V2
+// Novas tabelas criadas em paralelo ao modulo legado para separar template,
+// layout, emissao, assinaturas, historico e lote sem quebrar o fluxo atual.
+
+model CertificateTemplate {
+  id                 String                  @id @default(uuid())
+  name               String
+  description        String?                 @db.Text
+  backgroundImageUrl String
+  backgroundMimeType String?
+  orientation        CertificateOrientation  @default(LANDSCAPE)
+  pageSize           CertificatePageSize     @default(A4)
+  mode               CertificateTemplateMode @default(HIBRIDO)
+  width              Float?
+  height             Float?
+  isActive           Boolean                 @default(true)
+  createdBy          String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  layouts      CertificateLayout[]
+  certificates Certificate[]
+
+  @@index([isActive])
+  @@index([orientation])
+  @@index([pageSize])
+  @@index([createdAt])
+}
+
+model CertificateLayout {
+  id          String   @id @default(uuid())
+  templateId  String
+  name        String
+  description String?  @db.Text
+  elements    Json
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  version     Int      @default(1)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  template     CertificateTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  certificates Certificate[]
+
+  @@index([templateId])
+  @@index([templateId, isActive])
+  @@index([templateId, isDefault])
+}
+
+model CertificateSignature {
+  id                String   @id @default(uuid())
+  responsibleName   String
+  role              String
+  signatureImageUrl String?
+  isActive          Boolean  @default(true)
+  createdBy         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([responsibleName])
+}
+
+model Certificate {
+  id                    String            @id @default(uuid())
+  studentName           String
+  studentDocument       String?
+  courseName            String
+  workload              String
+  startDate             DateTime?
+  endDate               DateTime?
+  issueDate             DateTime          @default(now())
+  validationCode        String            @unique
+  validationUrl         String
+  status                CertificateStatus @default(VALID)
+  pdfUrl                String?
+  imageUrl              String?
+  templateId            String
+  layoutId              String?
+  dataJson              Json
+  renderedElements      Json?
+  version               Int               @default(1)
+  previousCertificateId String?
+  canceledAt            DateTime?
+  canceledBy            String?
+  cancelReason          String?           @db.Text
+  createdBy             String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  template             CertificateTemplate  @relation(fields: [templateId], references: [id])
+  layout               CertificateLayout?   @relation(fields: [layoutId], references: [id])
+  previousCertificate  Certificate?         @relation("CertificateReissue", fields: [previousCertificateId], references: [id])
+  reissuedCertificates Certificate[]        @relation("CertificateReissue")
+  history              CertificateHistory[]
+
+  @@index([studentName])
+  @@index([courseName])
+  @@index([status])
+  @@index([templateId])
+  @@index([layoutId])
+  @@index([createdAt])
+}
+
+model CertificateHistory {
+  id            String   @id @default(uuid())
+  certificateId String
+  action        String
+  description   String?  @db.Text
+  oldData       Json?
+  newData       Json?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+
+  certificate Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+
+  @@index([certificateId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model CertificateBatch {
+  id             String                 @id @default(uuid())
+  fileUrl        String?
+  totalRecords   Int                    @default(0)
+  successCount   Int                    @default(0)
+  errorCount     Int                    @default(0)
+  status         CertificateBatchStatus @default(PENDING)
+  errorReportUrl String?
+  createdBy      String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }
