@@ -16,6 +16,7 @@ export class UploadService {
     'braille_atestados',
     'braille_laudos',
     'braille_certificados',
+    'braille_atendimentos',
   ];
 
   constructor(
@@ -152,7 +153,7 @@ export class UploadService {
   // ─── Upload de PDF ou Imagem (Laudo Médico / Termo LGPD / Atestado) ────────
   uploadPdf(
     file: Express.Multer.File,
-    folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos',
+    folder: 'braille_lgpd' | 'braille_atestados' | 'braille_laudos' | 'braille_atendimentos',
     auditUser?: AuditUser,
   ): Promise<{ url: string }> {
     return new Promise((resolve, reject) => {
@@ -222,6 +223,10 @@ export class UploadService {
 
       streamifier.createReadStream(file.buffer).pipe(uploadStream);
     });
+  }
+
+  uploadArquivoAtendimento(file: Express.Multer.File, auditUser?: AuditUser): Promise<{ url: string }> {
+    return this.uploadPdf(file, 'braille_atendimentos', auditUser);
   }
 
   /**

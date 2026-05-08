@@ -151,6 +151,27 @@ enum CertificateBatchStatus {
   FAILED
 }
 
+enum StatusAcompanhamentoIndividual {
+  EM_ANDAMENTO
+  FINALIZADO
+  ARQUIVADO
+}
+
+enum TipoRegistroAtendimentoIndividual {
+  ATENDIMENTO_REALIZADO
+  FALTA_JUSTIFICADA
+  FALTA_NAO_JUSTIFICADA
+  CANCELADO
+}
+
+enum CategoriaArquivoAtendimentoIndividual {
+  ATESTADO
+  LAUDO
+  MATERIAL_PEDAGOGICO
+  DOCUMENTO
+  OUTRO
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -184,6 +205,10 @@ model User {
   turmas       Turma[]       @relation("TurmaProfessorPrincipal")
   comunicados  Comunicado[]
   sessoes      UserSession[]
+  acompanhamentosIndividuaisProfessor AcompanhamentoIndividual[]      @relation("AcompanhamentoIndividualProfessor")
+  atendimentosIndividuaisProfessor    AtendimentoIndividual[]          @relation("AtendimentoIndividualProfessor")
+  arquivosAtendimentoIndividual       ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoCriadoPor")
+  historicosAssuntoAcompanhamento     HistoricoAssuntoAcompanhamento[] @relation("HistoricoAssuntoAlteradoPor")
 
   @@index([statusAtivo, excluido])
   @@index([role])
@@ -283,6 +308,8 @@ model Aluno {
   atestados            Atestado[]
   laudos               LaudoMedico[]
   certificadosEmitidos CertificadoEmitido[]
+  acompanhamentosIndividuais AcompanhamentoIndividual[]
+  atendimentosIndividuais    AtendimentoIndividual[]
 
   @@index([statusAtivo, excluido]) // Listagem de alunos ativos/inativos
   @@index([nomeCompleto]) // Busca por nome
@@ -647,6 +674,98 @@ model CertificadoEmitido {
   // Índice composto para a query mais frequente: certificados de um aluno em uma turma.
   // PostgreSQL usa este índice para WHERE alunoId = X AND turmaId = Y de forma eficiente.
   @@index([alunoId, turmaId])
+}
+
+model AcompanhamentoIndividual {
+  id              String                         @id @default(uuid())
+  alunoId         String
+  professorId     String
+  assuntoAtual    String
+  descricao       String?
+  status          StatusAcompanhamentoIndividual @default(EM_ANDAMENTO)
+  dataInicio      DateTime                       @default(now()) @db.Date
+  dataFinalizacao DateTime?                      @db.Date
+  resultadoFinal  String?
+  resumoFinal     String?
+  criadoEm        DateTime                       @default(now())
+  atualizadoEm    DateTime                       @updatedAt
+  excluidoEm      DateTime?
+
+  aluno            Aluno                            @relation(fields: [alunoId], references: [id])
+  professor        User                             @relation("AcompanhamentoIndividualProfessor", fields: [professorId], references: [id])
+  atendimentos     AtendimentoIndividual[]
+  historicoAssuntos HistoricoAssuntoAcompanhamento[]
+
+  @@index([alunoId, status])
+  @@index([professorId, status])
+  @@index([dataInicio])
+  @@index([excluidoEm])
+}
+
+model AtendimentoIndividual {
+  id               String                          @id @default(uuid())
+  acompanhamentoId String
+  alunoId          String
+  professorId      String
+  dataAtendimento  DateTime                        @db.Date
+  tipoRegistro     TipoRegistroAtendimentoIndividual
+  assuntoDoDia     String?
+  observacao       String?
+  evolucao         String?
+  dificuldades     String?
+  pendencias       String?
+  recomendacoes    String?
+  criadoEm         DateTime                        @default(now())
+  atualizadoEm     DateTime                        @updatedAt
+  excluidoEm       DateTime?
+
+  acompanhamento AcompanhamentoIndividual       @relation(fields: [acompanhamentoId], references: [id])
+  aluno          Aluno                          @relation(fields: [alunoId], references: [id])
+  professor      User                           @relation("AtendimentoIndividualProfessor", fields: [professorId], references: [id])
+  arquivos       ArquivoAtendimentoIndividual[]
+
+  @@index([acompanhamentoId, dataAtendimento])
+  @@index([alunoId, dataAtendimento])
+  @@index([professorId, dataAtendimento])
+  @@index([tipoRegistro])
+  @@index([excluidoEm])
+}
+
+model ArquivoAtendimentoIndividual {
+  id            String                               @id @default(uuid())
+  atendimentoId String
+  nomeOriginal  String
+  nomeArquivo   String
+  urlArquivo    String
+  tipoArquivo   String
+  tamanho       Int
+  categoria     CategoriaArquivoAtendimentoIndividual @default(OUTRO)
+  criadoPorId   String?
+  criadoEm      DateTime                             @default(now())
+
+  atendimento AtendimentoIndividual @relation(fields: [atendimentoId], references: [id])
+  criadoPor   User?                 @relation("ArquivoAtendimentoCriadoPor", fields: [criadoPorId], references: [id])
+
+  @@index([atendimentoId])
+  @@index([categoria])
+  @@index([criadoPorId])
+}
+
+model HistoricoAssuntoAcompanhamento {
+  id               String   @id @default(uuid())
+  acompanhamentoId String
+  assuntoAnterior  String
+  assuntoNovo      String
+  motivoAlteracao  String?
+  alteradoPorId    String?
+  criadoEm         DateTime @default(now())
+
+  acompanhamento AcompanhamentoIndividual @relation(fields: [acompanhamentoId], references: [id])
+  alteradoPor     User?                    @relation("HistoricoAssuntoAlteradoPor", fields: [alteradoPorId], references: [id])
+
+  @@index([acompanhamentoId])
+  @@index([alteradoPorId])
+  @@index([criadoEm])
 }
 
 // Fase 2 - Certificados V2
