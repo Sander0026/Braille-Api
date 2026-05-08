@@ -56,12 +56,12 @@ export class CreateCertificadoDto {
     description: 'Layout visual oficial em JSON serializado. Deve conter somente { "elements": [...] } com coordenadas percentuais.',
     example:
       '{"elements":[{"id":"nome-aluno","type":"TEXT","label":"Nome do aluno","content":"{{ALUNO}}","x":10,"y":45,"width":80,"height":8,"fontFamily":"Great Vibes","fontSize":60,"textAlign":"center","color":"#000000","zIndex":1,"visible":true}]}',
-    required: false,
+    required: true,
   })
-  @IsOptional()
   @IsString()
+  @IsNotEmpty()
   @MaxLength(10000)
-  layoutConfig?: string;
+  layoutConfig: string;
 
   @ApiProperty({
     enum: TipoCertificado,

@@ -22,6 +22,21 @@ export interface HonrariaPdfResult {
 @Injectable()
 export class CertificadosService {
   private readonly logger = new Logger(CertificadosService.name);
+  private readonly fontesPermitidas = new Set([
+    'Helvetica',
+    'TimesRoman',
+    'Courier',
+    'Roboto',
+    'Open Sans',
+    'Montserrat',
+    'Merriweather',
+    'Cinzel',
+    'Playfair Display',
+    'Great Vibes',
+    'Parisienne',
+    'Dancing Script',
+    'Pacifico',
+  ]);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -141,9 +156,40 @@ export class CertificadosService {
     }
   }
 
+  private validarPropriedadesVisuais(item: Record<string, unknown>, prefixo: string): void {
+    if (item.textAlign !== undefined && item.textAlign !== null) {
+      const alinhamentosPermitidos = new Set(['left', 'center', 'right']);
+      if (typeof item.textAlign !== 'string' || !alinhamentosPermitidos.has(item.textAlign)) {
+        throw new BadRequestException(`${prefixo}.textAlign deve ser left, center ou right.`);
+      }
+    }
+
+    if (item.fontWeight !== undefined && item.fontWeight !== null) {
+      const pesosPermitidos = new Set(['normal', 'bold']);
+      if (typeof item.fontWeight !== 'string' || !pesosPermitidos.has(item.fontWeight)) {
+        throw new BadRequestException(`${prefixo}.fontWeight deve ser normal ou bold.`);
+      }
+    }
+
+    if (item.color !== undefined && item.color !== null) {
+      if (typeof item.color !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(item.color)) {
+        throw new BadRequestException(`${prefixo}.color deve ser uma cor hexadecimal no formato #RRGGBB.`);
+      }
+    }
+
+    if (item.fontFamily !== undefined && item.fontFamily !== null) {
+      if (typeof item.fontFamily !== 'string' || !this.fontesPermitidas.has(item.fontFamily)) {
+        throw new BadRequestException(`${prefixo}.fontFamily deve ser uma fonte permitida.`);
+      }
+    }
+  }
+
   private validarLayoutElements(elements: unknown, contexto: string): void {
     if (!Array.isArray(elements)) {
       throw new BadRequestException(`layoutConfig.elements (${contexto}) deve ser uma lista.`);
+    }
+    if (elements.length === 0) {
+      throw new BadRequestException('layoutConfig.elements deve ter pelo menos um elemento.');
     }
     if (elements.length > 100) {
       throw new BadRequestException('layoutConfig.elements deve ter no maximo 100 elementos.');
@@ -190,6 +236,7 @@ export class CertificadosService {
       this.validarNumeroPositivo(item.fontSize, `${prefixo}.fontSize`);
       this.validarNumeroPositivo(item.lineHeight, `${prefixo}.lineHeight`, 10);
       this.validarNumeroPositivo(item.zIndex, `${prefixo}.zIndex`, 1000);
+      this.validarPropriedadesVisuais(item, prefixo);
     });
   }
 

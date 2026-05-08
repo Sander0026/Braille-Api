@@ -106,7 +106,7 @@ type CertificadoPdfElement = {
   fontSize?: number;
   fontWeight?: string;
   color?: string;
-  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  textAlign?: 'left' | 'center' | 'right';
   lineHeight?: number;
   zIndex?: number;
   visible?: boolean;
