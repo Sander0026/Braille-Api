@@ -8,6 +8,7 @@ import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
 import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
 import { CancelarCertificadoDto } from './dto/cancelar-certificado.dto';
 import { EmitirManualAcademicoDto } from './dto/emitir-manual-academico.dto';
+import { PreviewCertificadoPdfDto } from './dto/preview-certificado-pdf.dto';
 import { PdfService, ModeloPdf } from './pdf.service';
 import { ImageProcessingService } from './image-processing.service';
 import { randomBytes } from 'node:crypto';
@@ -182,9 +183,42 @@ export class CertificadosService {
         throw new BadRequestException(`${prefixo}.fontFamily deve ser uma fonte permitida.`);
       }
     }
+
+    if (item.signatureSlot !== undefined && item.signatureSlot !== null) {
+      if (
+        typeof item.signatureSlot !== 'number' ||
+        ![1, 2].includes(item.signatureSlot) ||
+        !['SIGNATURE_BLOCK', 'SIGNATURE_IMAGE'].includes(String(item.type))
+      ) {
+        throw new BadRequestException(`${prefixo}.signatureSlot deve ser 1 ou 2 em elementos de assinatura.`);
+      }
+    }
   }
 
-  private validarLayoutElements(elements: unknown, contexto: string): void {
+  private validarElementosObrigatorios(elements: Record<string, unknown>[], textoTemplate = ''): void {
+    const elementosVisiveis = elements.filter((item) => item.visible !== false);
+    const possuiTexto = elementosVisiveis.some((item) => item.type === 'TEXT' || item.type === 'DYNAMIC_TEXT');
+    const possuiQrCode = elementosVisiveis.some((item) => item.type === 'QR_CODE');
+    const possuiCodigo =
+      elementosVisiveis.some((item) => item.type === 'VALIDATION_CODE') ||
+      elementosVisiveis.some((item) => (
+        typeof item.content === 'string' &&
+        /\{\{\s*(CODIGO_CERTIFICADO|CODIGO_VALIDACAO)\s*\}\}/i.test(item.content)
+      )) ||
+      /\{\{\s*(CODIGO_CERTIFICADO|CODIGO_VALIDACAO)\s*\}\}/i.test(textoTemplate);
+
+    if (!possuiTexto) {
+      throw new BadRequestException('layoutConfig.elements deve conter pelo menos um elemento TEXT ou DYNAMIC_TEXT.');
+    }
+    if (!possuiQrCode) {
+      throw new BadRequestException('layoutConfig.elements deve conter pelo menos um elemento QR_CODE.');
+    }
+    if (!possuiCodigo) {
+      throw new BadRequestException('layoutConfig.elements deve conter VALIDATION_CODE ou a tag {{CODIGO_CERTIFICADO}}.');
+    }
+  }
+
+  private validarLayoutElements(elements: unknown, contexto: string, textoTemplate = ''): void {
     if (!Array.isArray(elements)) {
       throw new BadRequestException(`layoutConfig.elements (${contexto}) deve ser uma lista.`);
     }
@@ -205,6 +239,8 @@ export class CertificadosService {
       'LINE',
       'RECTANGLE',
     ]);
+
+    const elementosValidados: Record<string, unknown>[] = [];
 
     elements.forEach((elemento, index) => {
       const prefixo = `layoutConfig.elements[${index}]`;
@@ -237,16 +273,19 @@ export class CertificadosService {
       this.validarNumeroPositivo(item.lineHeight, `${prefixo}.lineHeight`, 10);
       this.validarNumeroPositivo(item.zIndex, `${prefixo}.zIndex`, 1000);
       this.validarPropriedadesVisuais(item, prefixo);
+      elementosValidados.push(item);
     });
+
+    this.validarElementosObrigatorios(elementosValidados, textoTemplate);
   }
 
-  private validarLayoutConfig(layout: unknown, contexto: string): Prisma.InputJsonValue {
+  private validarLayoutConfig(layout: unknown, contexto: string, textoTemplate = ''): Prisma.InputJsonValue {
     if (!layout || typeof layout !== 'object' || Array.isArray(layout)) {
       throw new BadRequestException(`layoutConfig (${contexto}) deve ser um objeto JSON valido.`);
     }
 
     const config = layout as Record<string, unknown>;
-    this.validarLayoutElements(config.elements, contexto);
+    this.validarLayoutElements(config.elements, contexto, textoTemplate);
 
     return layout as Prisma.InputJsonValue;
   }
@@ -286,11 +325,12 @@ export class CertificadosService {
   private parseLayoutConfig(
     raw: string | undefined | null,
     contexto: string,
+    textoTemplate = '',
   ): Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue | undefined {
     if (raw === '') return Prisma.JsonNull; // string vazia = apagar o campo (Prisma.JsonNull)
     if (!raw) return undefined; // undefined = não alterar o campo
     try {
-      return this.validarLayoutConfig(JSON.parse(raw), contexto);
+      return this.validarLayoutConfig(JSON.parse(raw), contexto, textoTemplate);
     } catch (e: unknown) {
       if (e instanceof BadRequestException) throw e;
       const msg = e instanceof Error ? e.message : 'Erro genérico';
@@ -309,7 +349,7 @@ export class CertificadosService {
     auditUser?: AuditUser,
   ) {
     // Upload paralelo dos 3 arquivos — sem dependência entre eles
-    const parsedLayout = this.parseLayoutConfig(createDto.layoutConfig, 'Create');
+    const parsedLayout = this.parseLayoutConfig(createDto.layoutConfig, 'Create', createDto.textoTemplate);
 
     const [arteBaseUrlRaw, assinaturaUrlRaw, assinaturaUrl2] = await Promise.all([
       arteBaseFile ? this.uploadService.uploadImage(arteBaseFile).then((r) => r.url) : Promise.resolve(''),
@@ -352,14 +392,15 @@ export class CertificadosService {
     return modelo;
   }
 
-  async gerarPreviewPdfModelo(id: string): Promise<Buffer> {
+  async gerarPreviewPdfModelo(id: string, dto: PreviewCertificadoPdfDto = {}): Promise<Buffer> {
     const modelo = await this.findOne(id);
     const codigoPreview = 'PREVIEW123';
-    const dataPreview = this.dataPtBr(new Date());
+    const dataPreview = dto.dataEmissao || this.dataPtBr(new Date());
 
     if (modelo.tipo === 'HONRARIA') {
-      const nomeParceiro = 'Empresa Solidária LTDA';
-      const tituloAcao = 'Apoio contínuo à inclusão';
+      const nomeParceiro = dto.nomeApoiador || 'Empresa Solidária LTDA';
+      const tituloAcao = dto.tituloAcao || 'Apoio contínuo à inclusão';
+      const motivo = dto.motivo || tituloAcao;
       const templateVars = {
         PARCEIRO: nomeParceiro,
         APOIADOR: nomeParceiro,
@@ -367,7 +408,7 @@ export class CertificadosService {
         NOME_ALUNO: nomeParceiro,
         NOME: nomeParceiro,
         TITULO_ACAO: tituloAcao,
-        MOTIVO: tituloAcao,
+        MOTIVO: motivo,
         DATA: dataPreview,
         DATA_EVENTO: dataPreview,
         DATA_EMISSAO: dataPreview,
@@ -389,8 +430,9 @@ export class CertificadosService {
       );
     }
 
-    const nomeAluno = 'Maria da Silva Santos';
-    const nomeCurso = 'Braille Nível I';
+    const nomeAluno = dto.nomeAluno || 'Maria da Silva Santos';
+    const nomeCurso = dto.nomeCurso || 'Braille Nível I';
+    const cargaHoraria = dto.cargaHoraria || '40 horas';
     const templateVars = {
       ALUNO: nomeAluno,
       NOME_ALUNO: nomeAluno,
@@ -401,10 +443,10 @@ export class CertificadosService {
       CURSO: nomeCurso,
       NOME_CURSO: nomeCurso,
       OFICINA: nomeCurso,
-      CARGA_HORARIA: '40 horas',
-      CH: '40 horas',
-      DATA_INICIO: '03/01/2025',
-      DATA_FIM: '28/03/2025',
+      CARGA_HORARIA: cargaHoraria,
+      CH: cargaHoraria,
+      DATA_INICIO: dto.dataInicio || '03/01/2025',
+      DATA_FIM: dto.dataFim || '28/03/2025',
       DATA_EMISSAO: dataPreview,
       CODIGO_CERTIFICADO: codigoPreview,
       CODIGO_VALIDACAO: codigoPreview,
@@ -433,7 +475,11 @@ export class CertificadosService {
     auditUser?: AuditUser,
   ) {
     const modelo = await this.findOne(id);
-    const parsedLayout = this.parseLayoutConfig(updateDto.layoutConfig, 'Update');
+    const parsedLayout = this.parseLayoutConfig(
+      updateDto.layoutConfig,
+      'Update',
+      updateDto.textoTemplate ?? modelo.textoTemplate,
+    );
 
     // Troca paralela dos 3 arquivos — delete antigo + upload novo (se enviado)
     const [arteBaseUrl, assinaturaUrl, assinaturaUrl2] = await Promise.all([

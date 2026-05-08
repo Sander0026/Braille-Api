@@ -17,7 +17,7 @@ import {
 import type { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiProduces, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { CertificadosService } from './certificados.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
 import { UpdateCertificadoDto } from './dto/update-certificado.dto';
@@ -25,6 +25,7 @@ import { EmitirAcademicoDto } from './dto/emitir-academico.dto';
 import { EmitirHonrariaDto } from './dto/emitir-honraria.dto';
 import { CancelarCertificadoDto } from './dto/cancelar-certificado.dto';
 import { EmitirManualAcademicoDto } from './dto/emitir-manual-academico.dto';
+import { PreviewCertificadoPdfDto } from './dto/preview-certificado-pdf.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -113,12 +114,14 @@ export class CertificadosController {
   @ApiOperation({ summary: 'Gera uma prévia PDF real do modelo sem emitir certificado.' })
   @ApiProduces('application/pdf')
   @ApiParam({ name: 'id', description: 'UUID do modelo de certificado' })
+  @ApiBody({ type: PreviewCertificadoPdfDto, required: false })
   @ApiResponse({ status: 201, description: 'PDF de prévia gerado pelo mesmo motor da emissão final.' })
   async previewPdf(
     @Param('id') id: string,
+    @Body() dto: PreviewCertificadoPdfDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const pdfBuffer = await this.certificadosService.gerarPreviewPdfModelo(id);
+    const pdfBuffer = await this.certificadosService.gerarPreviewPdfModelo(id, dto);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline; filename="preview-certificado.pdf"',

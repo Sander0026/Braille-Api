@@ -108,6 +108,7 @@ type CertificadoPdfElement = {
   color?: string;
   textAlign?: 'left' | 'center' | 'right';
   lineHeight?: number;
+  signatureSlot?: 1 | 2;
   zIndex?: number;
   visible?: boolean;
 };
@@ -187,10 +188,10 @@ export class PdfService {
   private normalizarTextoPdf(texto: string): string {
     return (texto || '')
       .normalize('NFC')
-      .replace(/[“”]/g, '"')
-      .replace(/[‘’]/g, "'")
-      .replace(/[–—]/g, '-')
-      .replace(/…/g, '...')
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\u2026/g, '...')
       .replace(/\u00A0/g, ' ')
       .replace(/[^\S\r\n]+/g, ' ')
       .replace(/([,.;:!?])(?=\S)/g, '$1 ')
@@ -557,6 +558,9 @@ export class PdfService {
   }
 
   private isSecondSignatureElement(element: CertificadoPdfElement): boolean {
+    if (element.signatureSlot === 2) return true;
+    if (element.signatureSlot === 1) return false;
+
     const marker = `${element.id ?? ''} ${element.label ?? ''} ${element.content ?? ''}`.toLowerCase();
     return marker.includes('assinatura-2') || marker.includes('assinatura 2') || marker.includes('segunda');
   }
