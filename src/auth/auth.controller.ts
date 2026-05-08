@@ -46,7 +46,7 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Renovar Token Expirado (Refresh Silencioso)' })
-  @SwaggerResponse({ status: 201, description: 'Sessão validada e Novo Token de 15m Emitido' })
+  @SwaggerResponse({ status: 201, description: 'Sessao validada e novo token emitido' })
   @SwaggerResponse({ status: 401, description: 'Refresh Token Inválido ou Sessão Encerrada' })
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refreshToken(dto.refreshToken);

@@ -69,6 +69,14 @@ const ALUNO_EXPORT_SELECT = {
 /** Include para o endpoint público GET /:id — mantém contrato com Frontend */
 const ALUNO_DETALHE_INCLUDE = {
   matriculasOficina: { include: { turma: true } },
+  certificadosEmitidos: {
+    where: { status: 'VALID', pdfUrl: { not: null } },
+    include: {
+      turma: { select: { id: true, nome: true, cargaHoraria: true } },
+      modelo: { select: { id: true, nome: true, tipo: true } },
+    },
+    orderBy: { dataEmissao: 'desc' },
+  },
 } as const;
 
 /** Select mínimo para verificar existência antes de mutações */
@@ -987,17 +995,20 @@ export class BeneficiariesService {
        * baseCount e gerariam matrículas duplicadas.
        */
       try {
-        await this.prisma.$transaction(async (tx) => {
-          let baseCount = await tx.aluno.count({ where: { matricula: { startsWith: prefix } } });
-          for (const aluno of paraInserir) {
-            aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
-          }
-          const result = await tx.aluno.createMany({ data: paraInserir as Prisma.AlunoCreateManyInput[], skipDuplicates: true });
-          importadosLote = result.count;
-        }, {
-          maxWait: 10000, // 10 segundos para aguardar o PgBouncer
-          timeout: 20000, // 20 segundos máximo de execução
-        });
+        await this.prisma.$transaction(
+          async (tx) => {
+            let baseCount = await tx.aluno.count({ where: { matricula: { startsWith: prefix } } });
+            for (const aluno of paraInserir) {
+              aluno.matricula = `${prefix}${String(++baseCount).padStart(5, '0')}`;
+            }
+            const result = await tx.aluno.createMany({
+              data: paraInserir as Prisma.AlunoCreateManyInput[],
+              skipDuplicates: true,
+            });
+            importadosLote = result.count;
+          },
+          { maxWait: 30000, timeout: 60000 },
+        );
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         this.logger.error(`ERRO NO IMPORT createMany: ${errorMsg}`);
@@ -1027,6 +1038,18 @@ export class BeneficiariesService {
             })
           : [];
       const idPorMatricula = new Map(alunosCriados.map((aluno) => [aluno.matricula, aluno.id]));
+
+      if (paraInserir.length > 50) {
+        this.logger.warn(`Auditoria detalhada ignorada para importacao em lote com ${paraInserir.length} alunos.`);
+        void this.auditService.registrar({
+          ...this.toAuditMeta(auditUser),
+          entidade: 'Aluno',
+          registroId: 'importacao-planilha',
+          acao: AuditAcao.CRIAR,
+          newValue: { origem: 'importacao-planilha', quantidade: paraInserir.length },
+        });
+        return { importados: paraInserir.length, ignorados, erros };
+      }
 
       Promise.resolve().then(async () => {
         for (const aluno of paraInserir) {

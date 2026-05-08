@@ -81,7 +81,44 @@ type AssinaturaContext = {
   nome?: string | null;
   cargo?: string | null;
   assinaturaUrl2: string | null;
-  assinatura1?: Record<string, unknown>;
+};
+
+type CertificadoPdfElementType =
+  | 'TEXT'
+  | 'DYNAMIC_TEXT'
+  | 'SIGNATURE_IMAGE'
+  | 'SIGNATURE_BLOCK'
+  | 'QR_CODE'
+  | 'VALIDATION_CODE'
+  | 'LINE'
+  | 'RECTANGLE';
+
+type CertificadoPdfElement = {
+  id?: string;
+  type?: CertificadoPdfElementType;
+  label?: string;
+  content?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  color?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  lineHeight?: number;
+  signatureSlot?: 1 | 2;
+  zIndex?: number;
+  visible?: boolean;
+};
+
+type PdfRenderData = {
+  textoFormatado: string;
+  codigoValidacao: string;
+  nomeAluno?: string;
+  variables: Record<string, string>;
+  modelo: ModeloPdf;
 };
 
 @Injectable()
@@ -125,11 +162,102 @@ export class PdfService {
 
   private extrairRgb(hexColor?: string): [number, number, number] {
     if (!hexColor) return [0, 0, 0];
-    const hex = hexColor.replace('#', '');
+    const hex = /^#[0-9a-fA-F]{6}$/.test(hexColor) ? hexColor.replace('#', '') : '000000';
     const r = Number.parseInt(hex.substring(0, 2), 16) / 255;
     const g = Number.parseInt(hex.substring(2, 4), 16) / 255;
     const b = Number.parseInt(hex.substring(4, 6), 16) / 255;
     return [r, g, b];
+  }
+
+  private pctToX(xPct: number | undefined, pageWidth: number): number {
+    return (((xPct ?? 0) / 100) * pageWidth);
+  }
+
+  private pctToWidth(widthPct: number | undefined, pageWidth: number, fallbackPct: number): number {
+    return (((widthPct ?? fallbackPct) / 100) * pageWidth);
+  }
+
+  private pctToHeight(heightPct: number | undefined, pageHeight: number, fallbackPct: number): number {
+    return (((heightPct ?? fallbackPct) / 100) * pageHeight);
+  }
+
+  private tamanhoFontePdf(fontSize: number | undefined, pageWidth: number, fallback = 16): number {
+    return (((fontSize ?? fallback) / CANVAS_REF_W) * pageWidth);
+  }
+
+  private normalizarTextoPdf(texto: string): string {
+    return (texto || '')
+      .normalize('NFC')
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\u2026/g, '...')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[^\S\r\n]+/g, ' ')
+      .replace(/([,.;:!?])(?=\S)/g, '$1 ')
+      .trim();
+  }
+
+  private normalizarTextoVariavel(texto: string, data: PdfRenderData): string {
+    const variables = {
+      ...data.variables,
+      TEXTO_CERTIFICADO: data.textoFormatado,
+      TEXTO_PRINCIPAL: data.textoFormatado,
+      ALUNO: data.nomeAluno ?? '',
+      NOME_ALUNO: data.nomeAluno ?? '',
+      NOME: data.nomeAluno ?? '',
+      CODIGO_CERTIFICADO: data.codigoValidacao,
+      CODIGO_VALIDACAO: data.codigoValidacao,
+      NOME_RESPONSAVEL: data.modelo.nomeAssinante,
+      CARGO_RESPONSAVEL: data.modelo.cargoAssinante,
+      NOME_RESPONSAVEL_2: data.modelo.nomeAssinante2 ?? '',
+      CARGO_RESPONSAVEL_2: data.modelo.cargoAssinante2 ?? '',
+    };
+
+    const textoComVariaveis = Object.entries(variables).reduce((acc, [tag, valor]) => {
+      const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return acc.replace(new RegExp(`{{\\s*${escapedTag}\\s*}}`, 'gi'), valor ?? '');
+    }, texto);
+
+    return this.normalizarTextoPdf(textoComVariaveis);
+  }
+
+  private extrairElementosLayout(config: Record<string, unknown>): CertificadoPdfElement[] {
+    if (!Array.isArray(config.elements)) return [];
+
+    return (config.elements as unknown[])
+      .filter((item): item is CertificadoPdfElement => !!item && typeof item === 'object' && !Array.isArray(item))
+      .filter((item) => item.visible !== false)
+      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+  }
+
+  private quebrarTextoEmLinhas(texto: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
+    return texto
+      .split(/\r?\n/)
+      .flatMap((paragraph) => {
+        const words = paragraph.split(/\s+/).filter(Boolean);
+        if (words.length === 0) return [''];
+
+        const lines: string[] = [];
+        let current = '';
+        words.forEach((word) => {
+          const candidate = current ? `${current} ${word}` : word;
+          if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth || !current) {
+            current = candidate;
+            return;
+          }
+          lines.push(current);
+          current = word;
+        });
+        if (current) lines.push(current);
+        return lines;
+      });
+  }
+
+  private xAlinhado(boxX: number, boxWidth: number, textWidth: number, align?: string): number {
+    if (align === 'center') return boxX + Math.max(0, (boxWidth - textWidth) / 2);
+    if (align === 'right') return boxX + Math.max(0, boxWidth - textWidth);
+    return boxX;
   }
 
   // ── Carregamento de Fontes ─────────────────────────────────────────────────
@@ -235,82 +363,6 @@ export class PdfService {
     return { page, width, height };
   }
 
-  private async desenharCorpoTexto(
-    pdfDoc: PDFDocument,
-    page: PDFPage,
-    width: number,
-    height: number,
-    config: Record<string, unknown>,
-    textoFormatado: string,
-  ): Promise<void> {
-    const textConf = (config.textoPronto as Record<string, unknown>) || {};
-    const tXPct = (textConf.x as number) ?? 10;
-    const tYPct = (textConf.y as number) ?? 20;
-    const tX = (tXPct / 100) * width;
-    const tMaxW = textConf.maxWidth ? ((textConf.maxWidth as number) / 100) * width : width - tX - 50;
-
-    const tSize = (((textConf.fontSize as number) || 32) / CANVAS_REF_W) * width;
-    const tY = topPctToY(tYPct, height, tSize);
-    const fontCorpo = await this.carregarFonte(pdfDoc, textConf.fontFamily as string);
-    const [r, g, b] = this.extrairRgb(textConf.color as string);
-
-    page.drawText(textoFormatado, {
-      x: tX,
-      y: tY,
-      size: tSize,
-      font: fontCorpo,
-      color: rgb(r, g, b),
-      maxWidth: tMaxW,
-      lineHeight: tSize * 1.4,
-    });
-  }
-
-  private async desenharNomeAluno(
-    pdfDoc: PDFDocument,
-    page: PDFPage,
-    width: number,
-    height: number,
-    config: Record<string, unknown>,
-    nomeAluno: string,
-  ): Promise<void> {
-    const naConf = config.nomeAluno as Record<string, unknown> | undefined;
-    if (!naConf) return;
-
-    const fontNome = await this.carregarFonte(pdfDoc, naConf.fontFamily as string);
-    const [naR, naG, naB] = this.extrairRgb(naConf.color as string);
-    const nomeLinhaUnica = nomeAluno.replace(/\s+/g, ' ').trim();
-    if (!nomeLinhaUnica) return;
-
-    const naX = (((naConf.x as number) ?? 10) / 100) * width;
-    const naMaxW = Math.max(
-      1,
-      Math.min(((((naConf.maxWidth as number) || 80) / 100) * width), width - naX),
-    );
-    const tamanhoBase = (((naConf.fontSize as number) || 56) / CANVAS_REF_W) * width;
-    const larguraBase = fontNome.widthOfTextAtSize(nomeLinhaUnica, tamanhoBase);
-    const naSize =
-      larguraBase > naMaxW
-        ? Math.max(tamanhoBase * 0.45, tamanhoBase * (naMaxW / larguraBase))
-        : tamanhoBase;
-    const larguraFinal = fontNome.widthOfTextAtSize(nomeLinhaUnica, naSize);
-    const alinhamento = naConf.textAlign as string | undefined;
-    const ajusteX =
-      alinhamento === 'center'
-        ? Math.max(0, (naMaxW - larguraFinal) / 2)
-        : alinhamento === 'right'
-          ? Math.max(0, naMaxW - larguraFinal)
-          : 0;
-    const naY = topPctToY((naConf.y as number) ?? 45, height, naSize);
-
-    page.drawText(nomeLinhaUnica, {
-      x: naX + ajusteX,
-      y: naY,
-      size: naSize,
-      font: fontNome,
-      color: rgb(naR, naG, naB),
-    });
-  }
-
   private async injetarAssinaturaUrl(
     pc: PageCtx,
     width: number,
@@ -331,13 +383,14 @@ export class PdfService {
     // Extraído de nested ternary — SonarQube: Extract this nested ternary operation
     const defaultXPrimaria = ctx.assinaturaUrl2 ? 20 : 40;
     const defaultX = isSecondary ? 60 : defaultXPrimaria;
-    const defaultWpct = isSecondary ? ((ctx.assinatura1?.width as number) ?? 20) : 20;
-    const wpct = (conf.width as number) || defaultWpct;
+    const wpct = (conf.width as number) || 20;
     const drawW = (wpct / 100) * width;
     const xpct = (conf.x as number) ?? defaultX;
     const yTopPct = (conf.y as number) ?? 70;
+    const hpct = (conf.height as number) || 10;
+    const boxH = (hpct / 100) * height;
 
-    const maxSigH = (80 / CANVAS_REF_H) * height;
+    const maxSigH = Math.max((30 / CANVAS_REF_H) * height, boxH * 0.62);
     const sigGap = (4 / CANVAS_REF_H) * height;
     const sigNmSz = (11 / CANVAS_REF_W) * width;
     const sigCgSz = (9 / CANVAS_REF_W) * width;
@@ -407,6 +460,229 @@ export class PdfService {
     page.drawImage(qrImage, { x: qrX, y: qrY, width: qrW, height: qrW });
   }
 
+  private async desenharElementoTexto(
+    pc: PageCtx,
+    pageWidth: number,
+    pageHeight: number,
+    element: CertificadoPdfElement,
+    data: PdfRenderData,
+  ): Promise<void> {
+    const content = element.type === 'VALIDATION_CODE'
+      ? (element.content || '{{CODIGO_CERTIFICADO}}')
+      : (element.content || '');
+    const texto = this.normalizarTextoVariavel(content, data);
+    if (!texto) return;
+
+    const font = await this.carregarFonte(pc.pdfDoc, element.fontFamily);
+    const fontSize = this.tamanhoFontePdf(element.fontSize, pageWidth);
+    const lineHeight = fontSize * (element.lineHeight ?? 1.4);
+    const boxX = this.pctToX(element.x, pageWidth);
+    const boxTopY = pageHeight - (((element.y ?? 0) / 100) * pageHeight);
+    const boxWidth = this.pctToWidth(element.width, pageWidth, 40);
+    const boxHeight = this.pctToHeight(element.height, pageHeight, 10);
+    const [r, g, b] = this.extrairRgb(element.color);
+    const lines = this.quebrarTextoEmLinhas(texto, font, fontSize, boxWidth);
+    const maxLines = Math.max(1, Math.floor(boxHeight / lineHeight));
+
+    lines.slice(0, maxLines).forEach((line, index) => {
+      const textWidth = font.widthOfTextAtSize(line, fontSize);
+      const x = this.xAlinhado(boxX, boxWidth, textWidth, element.textAlign);
+      const y = boxTopY - fontSize - (index * lineHeight);
+      pc.page.drawText(line, {
+        x,
+        y,
+        size: fontSize,
+        font,
+        color: rgb(r, g, b),
+      });
+    });
+  }
+
+  private async desenharElementoQrCode(
+    pc: PageCtx,
+    pageWidth: number,
+    pageHeight: number,
+    element: CertificadoPdfElement,
+    codigoValidacao: string,
+  ): Promise<void> {
+    await this.desenharQrCode(
+      pc.pdfDoc,
+      pc.page,
+      pageWidth,
+      pageHeight,
+      { x: element.x, y: element.y, size: element.width ?? element.height },
+      codigoValidacao,
+    );
+  }
+
+  private desenharElementoLinha(
+    page: PDFPage,
+    pageWidth: number,
+    pageHeight: number,
+    element: CertificadoPdfElement,
+  ): void {
+    const x = this.pctToX(element.x, pageWidth);
+    const y = topPctToY(element.y ?? 0, pageHeight);
+    const lineWidth = this.pctToWidth(element.width, pageWidth, 20);
+    const thickness = Math.max(0.5, this.pctToHeight(element.height, pageHeight, 0.2));
+    const [r, g, b] = this.extrairRgb(element.color);
+
+    page.drawLine({
+      start: { x, y },
+      end: { x: x + lineWidth, y },
+      thickness,
+      color: rgb(r, g, b),
+    });
+  }
+
+  private desenharElementoRetangulo(
+    page: PDFPage,
+    pageWidth: number,
+    pageHeight: number,
+    element: CertificadoPdfElement,
+  ): void {
+    const x = this.pctToX(element.x, pageWidth);
+    const width = this.pctToWidth(element.width, pageWidth, 20);
+    const height = this.pctToHeight(element.height, pageHeight, 8);
+    const y = topPctToY(element.y ?? 0, pageHeight, height);
+    const [r, g, b] = this.extrairRgb(element.color);
+
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      borderWidth: Math.max(0.5, pageWidth * 0.001),
+      borderColor: rgb(r, g, b),
+    });
+  }
+
+  private isSecondSignatureElement(element: CertificadoPdfElement): boolean {
+    if (element.signatureSlot === 2) return true;
+    if (element.signatureSlot === 1) return false;
+
+    const marker = `${element.id ?? ''} ${element.label ?? ''} ${element.content ?? ''}`.toLowerCase();
+    return marker.includes('assinatura-2') || marker.includes('assinatura 2') || marker.includes('segunda');
+  }
+
+  private async desenharElementoAssinatura(
+    pc: PageCtx,
+    pageWidth: number,
+    pageHeight: number,
+    element: CertificadoPdfElement,
+    data: PdfRenderData,
+  ): Promise<void> {
+    const isSecondary = this.isSecondSignatureElement(element);
+    const signatureUrl = isSecondary ? data.modelo.assinaturaUrl2 : data.modelo.assinaturaUrl;
+    const nome = isSecondary ? data.modelo.nomeAssinante2 : data.modelo.nomeAssinante;
+    const cargo = isSecondary ? data.modelo.cargoAssinante2 : data.modelo.cargoAssinante;
+
+    if (signatureUrl) {
+      await this.injetarAssinaturaUrl(
+        pc,
+        pageWidth,
+        pageHeight,
+        signatureUrl,
+        {
+          config: {
+            x: element.x,
+            y: element.y,
+            width: element.width,
+            height: element.height,
+          },
+          nome,
+          cargo,
+          assinaturaUrl2: data.modelo.assinaturaUrl2,
+        },
+        isSecondary,
+      );
+      return;
+    }
+
+    const x = this.pctToX(element.x, pageWidth);
+    const y = topPctToY(element.y ?? 0, pageHeight);
+    const boxWidth = this.pctToWidth(element.width, pageWidth, 30);
+    const fontSize = this.tamanhoFontePdf(element.fontSize, pageWidth, 12);
+    const texto = this.normalizarTextoVariavel(element.content || '{{NOME_RESPONSAVEL}}\n{{CARGO_RESPONSAVEL}}', data);
+
+    pc.page.drawLine({
+      start: { x, y },
+      end: { x: x + boxWidth, y },
+      thickness: Math.max(0.5, pageWidth * 0.0003),
+      color: rgb(0.35, 0.29, 0),
+    });
+
+    texto.split(/\r?\n/).forEach((line, index) => {
+      const textWidth = pc.font.widthOfTextAtSize(line, fontSize);
+      pc.page.drawText(line, {
+        x: this.xAlinhado(x, boxWidth, textWidth, 'center'),
+        y: y - fontSize * (1.4 + index),
+        size: fontSize,
+        font: pc.font,
+        color: rgb(0, 0, 0),
+      });
+    });
+  }
+
+  private async desenharElementoImagemAssinatura(
+    pc: PageCtx,
+    pageWidth: number,
+    pageHeight: number,
+    element: CertificadoPdfElement,
+  ): Promise<void> {
+    if (!element.content) return;
+
+    const safeUrl = this.sanitizeSafeUrl(element.content);
+    const res = await fetch(safeUrl);
+    if (!res.ok) return;
+
+    const imgBytes = await res.arrayBuffer();
+    const isPng = safeUrl.toLowerCase().endsWith('.png');
+    const image = isPng ? await pc.pdfDoc.embedPng(imgBytes) : await pc.pdfDoc.embedJpg(imgBytes);
+    const drawW = this.pctToWidth(element.width, pageWidth, 20);
+    const drawH = this.pctToHeight(element.height, pageHeight, 8);
+    const x = this.pctToX(element.x, pageWidth);
+    const y = topPctToY(element.y ?? 0, pageHeight, drawH);
+
+    pc.page.drawImage(image, { x, y, width: drawW, height: drawH });
+  }
+
+  private async desenharElementosDinamicos(
+    pc: PageCtx,
+    pageWidth: number,
+    pageHeight: number,
+    elements: CertificadoPdfElement[],
+    data: PdfRenderData,
+  ): Promise<void> {
+    for (const element of elements) {
+      switch (element.type) {
+        case 'TEXT':
+        case 'DYNAMIC_TEXT':
+        case 'VALIDATION_CODE':
+          await this.desenharElementoTexto(pc, pageWidth, pageHeight, element, data);
+          break;
+        case 'QR_CODE':
+          await this.desenharElementoQrCode(pc, pageWidth, pageHeight, element, data.codigoValidacao);
+          break;
+        case 'SIGNATURE_BLOCK':
+          await this.desenharElementoAssinatura(pc, pageWidth, pageHeight, element, data);
+          break;
+        case 'SIGNATURE_IMAGE':
+          await this.desenharElementoImagemAssinatura(pc, pageWidth, pageHeight, element);
+          break;
+        case 'LINE':
+          this.desenharElementoLinha(pc.page, pageWidth, pageHeight, element);
+          break;
+        case 'RECTANGLE':
+          this.desenharElementoRetangulo(pc.page, pageWidth, pageHeight, element);
+          break;
+        default:
+          this.logger.warn(`Tipo de elemento PDF nao suportado: ${String(element.type)}`);
+          break;
+      }
+    }
+  }
+
   // ── Engine Principal ───────────────────────────────────────────────────────
 
   async construirPdfBase(
@@ -414,77 +690,23 @@ export class PdfService {
     textoFormatado: string,
     codigoValidacao: string,
     nomeAluno?: string,
+    variables: Record<string, string> = {},
   ): Promise<Buffer> {
     try {
-      const {
-        arteBaseUrl,
-        assinaturaUrl,
-        assinaturaUrl2,
-        layoutConfig,
-        nomeAssinante,
-        cargoAssinante,
-        nomeAssinante2,
-        cargoAssinante2,
-      } = modelo;
-      const config = (layoutConfig as Record<string, unknown>) || {};
+      const { arteBaseUrl, layoutConfig } = modelo;
+      const config = layoutConfig && typeof layoutConfig === 'object' && !Array.isArray(layoutConfig)
+        ? (layoutConfig as Record<string, unknown>)
+        : {};
       const pdfDoc = await PDFDocument.create();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
       const { page, width, height } = await this.adicionarArteBase(pdfDoc, arteBaseUrl);
       const pc: PageCtx = { pdfDoc, page, font, fontBold };
+      const renderData: PdfRenderData = { textoFormatado, codigoValidacao, nomeAluno, variables, modelo };
+      const elements = this.extrairElementosLayout(config);
 
-      await this.desenharCorpoTexto(pdfDoc, page, width, height, config, textoFormatado);
-
-      if (nomeAluno) {
-        await this.desenharNomeAluno(pdfDoc, page, width, height, config, nomeAluno);
-      }
-
-      const assinatura1Conf = (config.assinatura1 as Record<string, unknown> | undefined) ?? {};
-      const assinatura2Conf = (config.assinatura2 as Record<string, unknown> | undefined) ?? {};
-
-      if (assinaturaUrl) {
-        await this.injetarAssinaturaUrl(
-          pc,
-          width,
-          height,
-          assinaturaUrl,
-          {
-            config: assinatura1Conf,
-            nome: nomeAssinante,
-            cargo: cargoAssinante,
-            assinaturaUrl2,
-            assinatura1: assinatura1Conf,
-          },
-          false,
-        );
-      }
-
-      if (assinaturaUrl2) {
-        await this.injetarAssinaturaUrl(
-          pc,
-          width,
-          height,
-          assinaturaUrl2,
-          {
-            config: assinatura2Conf,
-            nome: nomeAssinante2,
-            cargo: cargoAssinante2,
-            assinaturaUrl2,
-            assinatura1: assinatura1Conf,
-          },
-          true,
-        );
-      }
-
-      await this.desenharQrCode(
-        pdfDoc,
-        page,
-        width,
-        height,
-        config.qrCode as Record<string, unknown> | undefined,
-        codigoValidacao,
-      );
+      await this.desenharElementosDinamicos(pc, width, height, elements, renderData);
 
       const pdfBytes = await pdfDoc.save();
       return Buffer.from(pdfBytes);
