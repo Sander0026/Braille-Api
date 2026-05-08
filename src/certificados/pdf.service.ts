@@ -90,7 +90,8 @@ type CertificadoPdfElementType =
   | 'SIGNATURE_BLOCK'
   | 'QR_CODE'
   | 'VALIDATION_CODE'
-  | 'LINE';
+  | 'LINE'
+  | 'RECTANGLE';
 
 type CertificadoPdfElement = {
   id?: string;
@@ -370,8 +371,10 @@ export class PdfService {
     const drawW = (wpct / 100) * width;
     const xpct = (conf.x as number) ?? defaultX;
     const yTopPct = (conf.y as number) ?? 70;
+    const hpct = (conf.height as number) || 10;
+    const boxH = (hpct / 100) * height;
 
-    const maxSigH = (80 / CANVAS_REF_H) * height;
+    const maxSigH = Math.max((30 / CANVAS_REF_H) * height, boxH * 0.62);
     const sigGap = (4 / CANVAS_REF_H) * height;
     const sigNmSz = (11 / CANVAS_REF_W) * width;
     const sigCgSz = (9 / CANVAS_REF_W) * width;
@@ -516,8 +519,30 @@ export class PdfService {
     });
   }
 
+  private desenharElementoRetangulo(
+    page: PDFPage,
+    pageWidth: number,
+    pageHeight: number,
+    element: CertificadoPdfElement,
+  ): void {
+    const x = this.pctToX(element.x, pageWidth);
+    const width = this.pctToWidth(element.width, pageWidth, 20);
+    const height = this.pctToHeight(element.height, pageHeight, 8);
+    const y = topPctToY(element.y ?? 0, pageHeight, height);
+    const [r, g, b] = this.extrairRgb(element.color);
+
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      borderWidth: Math.max(0.5, pageWidth * 0.001),
+      borderColor: rgb(r, g, b),
+    });
+  }
+
   private isSecondSignatureElement(element: CertificadoPdfElement): boolean {
-    const marker = `${element.id ?? ''} ${element.label ?? ''}`.toLowerCase();
+    const marker = `${element.id ?? ''} ${element.label ?? ''} ${element.content ?? ''}`.toLowerCase();
     return marker.includes('assinatura-2') || marker.includes('assinatura 2') || marker.includes('segunda');
   }
 
@@ -544,6 +569,7 @@ export class PdfService {
             x: element.x,
             y: element.y,
             width: element.width,
+            height: element.height,
           },
           nome,
           cargo,
@@ -627,6 +653,9 @@ export class PdfService {
           break;
         case 'LINE':
           this.desenharElementoLinha(pc.page, pageWidth, pageHeight, element);
+          break;
+        case 'RECTANGLE':
+          this.desenharElementoRetangulo(pc.page, pageWidth, pageHeight, element);
           break;
         default:
           this.logger.warn(`Tipo de elemento PDF nao suportado: ${String(element.type)}`);

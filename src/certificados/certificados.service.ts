@@ -157,6 +157,7 @@ export class CertificadosService {
       'QR_CODE',
       'VALIDATION_CODE',
       'LINE',
+      'RECTANGLE',
     ]);
 
     elements.forEach((elemento, index) => {
