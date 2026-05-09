@@ -20,6 +20,10 @@ export class AcompanhamentosIndividuaisService {
     return this.atendimentosService.listarAcompanhamentos(query, authUser);
   }
 
+  dashboard(authUser: AuthenticatedUser | undefined) {
+    return this.atendimentosService.obterDashboardAdministrativo(authUser);
+  }
+
   verificarDuplicidade(query: VerificarDuplicidadeAcompanhamentoDto, authUser: AuthenticatedUser | undefined) {
     return this.atendimentosService.verificarDuplicidadeAcompanhamento(query, authUser);
   }

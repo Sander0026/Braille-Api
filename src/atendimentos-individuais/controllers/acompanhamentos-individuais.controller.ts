@@ -53,6 +53,14 @@ export class AcompanhamentosIndividuaisController {
     return this.service.listar(query, req.user);
   }
 
+  @Get('dashboard')
+  @Roles(Role.ADMIN, Role.SECRETARIA)
+  @ApiOperation({ summary: 'Obter indicadores administrativos de atendimentos individuais' })
+  @ApiResponse({ status: 200, description: 'Indicadores do dashboard retornados.' })
+  dashboard(@Req() req: AuthenticatedRequest) {
+    return this.service.dashboard(req.user);
+  }
+
   @Get('duplicidade')
   @ApiOperation({ summary: 'Verificar acompanhamento em andamento semelhante antes de criar novo' })
   @ApiResponse({ status: 200, description: 'Resultado da verificacao de duplicidade.' })
