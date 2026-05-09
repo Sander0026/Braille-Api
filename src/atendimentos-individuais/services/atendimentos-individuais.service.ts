@@ -26,7 +26,7 @@ import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto'
 import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-individual.dto';
 import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { RelatorioAtendimentoPdfService } from './relatorio-atendimento-pdf.service';
 
 const ACOMPANHAMENTO_INCLUDE = {
   aluno: { select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true } },
@@ -60,6 +60,7 @@ export class AtendimentosIndividuaisService {
     private readonly auditService: AuditLogService,
     private readonly uploadService: UploadService,
     private readonly policy: AtendimentosIndividuaisPolicy,
+    private readonly relatorioPdfService: RelatorioAtendimentoPdfService,
   ) {}
 
   async criarAcompanhamento(
@@ -97,6 +98,11 @@ export class AtendimentosIndividuaisService {
                 alunoId: dto.alunoId,
                 professorId,
                 dataAtendimento: this.parseDate(dto.primeiroAtendimento.dataAtendimento),
+                horaInicio: dto.primeiroAtendimento.horaInicio,
+                horaFim: dto.primeiroAtendimento.horaFim,
+                duracaoMinutos: this.resolverDuracaoAtendimento(dto.primeiroAtendimento),
+                modalidade: dto.primeiroAtendimento.modalidade,
+                localAtendimento: dto.primeiroAtendimento.localAtendimento,
                 tipoRegistro: dto.primeiroAtendimento.tipoRegistro,
                 assuntoDoDia: dto.primeiroAtendimento.assuntoDoDia,
                 observacao: dto.primeiroAtendimento.observacao,
@@ -257,6 +263,46 @@ export class AtendimentosIndividuaisService {
     return this.sanitizarAcompanhamento(atualizado);
   }
 
+  async arquivarAcompanhamento(id: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
+    const acompanhamento = await this.buscarAcompanhamento(id, authUser);
+    this.policy.assertCanArchive(authUser);
+
+    if (acompanhamento.status === StatusAcompanhamentoIndividual.ARQUIVADO) return this.sanitizarAcompanhamento(acompanhamento);
+
+    const atualizado = await this.prisma.acompanhamentoIndividual.update({
+      where: { id },
+      data: { status: StatusAcompanhamentoIndividual.ARQUIVADO },
+      include: ACOMPANHAMENTO_DETALHE_INCLUDE,
+    });
+
+    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.MUDAR_STATUS, auditUser, {
+      status: acompanhamento.status,
+    }, {
+      status: atualizado.status,
+    });
+    return this.sanitizarAcompanhamento(atualizado);
+  }
+
+  async desarquivarAcompanhamento(id: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
+    const acompanhamento = await this.buscarAcompanhamento(id, authUser);
+    this.policy.assertCanArchive(authUser);
+
+    if (acompanhamento.status !== StatusAcompanhamentoIndividual.ARQUIVADO) return this.sanitizarAcompanhamento(acompanhamento);
+
+    const atualizado = await this.prisma.acompanhamentoIndividual.update({
+      where: { id },
+      data: { status: StatusAcompanhamentoIndividual.EM_ANDAMENTO },
+      include: ACOMPANHAMENTO_DETALHE_INCLUDE,
+    });
+
+    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.MUDAR_STATUS, auditUser, {
+      status: acompanhamento.status,
+    }, {
+      status: atualizado.status,
+    });
+    return this.sanitizarAcompanhamento(atualizado);
+  }
+
   async criarAtendimento(
     acompanhamentoId: string,
     dto: CriarAtendimentoIndividualDto,
@@ -277,6 +323,11 @@ export class AtendimentosIndividuaisService {
         alunoId: acompanhamento.alunoId,
         professorId: acompanhamento.professorId,
         dataAtendimento: this.parseDate(dto.dataAtendimento),
+        horaInicio: dto.horaInicio,
+        horaFim: dto.horaFim,
+        duracaoMinutos: this.resolverDuracaoAtendimento(dto),
+        modalidade: dto.modalidade,
+        localAtendimento: dto.localAtendimento,
         tipoRegistro: dto.tipoRegistro,
         assuntoDoDia: dto.assuntoDoDia,
         observacao: dto.observacao,
@@ -455,78 +506,7 @@ export class AtendimentosIndividuaisService {
 
   async gerarRelatorioPdf(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser): Promise<Buffer> {
     const relatorio = await this.gerarRelatorio(query, authUser);
-    const pdfDoc = await PDFDocument.create();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-    const margin = 48;
-    const fontSize = 10;
-    const lineHeight = 15;
-    let page = pdfDoc.addPage([595.28, 841.89]);
-    let y = page.getHeight() - margin;
-
-    const addPageIfNeeded = (requiredHeight = lineHeight) => {
-      if (y - requiredHeight >= margin) return;
-      page = pdfDoc.addPage([595.28, 841.89]);
-      y = page.getHeight() - margin;
-    };
-
-    const drawLine = (text: string, options: { bold?: boolean; size?: number; indent?: number } = {}) => {
-      const size = options.size ?? fontSize;
-      const selectedFont = options.bold ? fontBold : font;
-      const indent = options.indent ?? 0;
-      const maxChars = Math.max(40, Math.floor((page.getWidth() - margin * 2 - indent) / (size * 0.48)));
-      const linhas = this.quebrarTextoRelatorio(text, maxChars);
-
-      for (const linha of linhas) {
-        addPageIfNeeded(lineHeight);
-        page.drawText(linha, {
-          x: margin + indent,
-          y,
-          size,
-          font: selectedFont,
-          color: rgb(0.08, 0.1, 0.16),
-        });
-        y -= lineHeight;
-      }
-    };
-
-    drawLine('Relatorio de Atendimento Individual', { bold: true, size: 16 });
-    drawLine(`Emitido em ${this.formatarDataHoraBR(new Date())}`);
-    y -= 8;
-    drawLine(`Total de acompanhamentos: ${relatorio.totalAcompanhamentos}`, { bold: true });
-    drawLine(`Total de registros: ${relatorio.totalRegistros}`, { bold: true });
-    drawLine(`Atendimentos realizados: ${relatorio.totais.atendimentosRealizados}`);
-    drawLine(`Faltas justificadas: ${relatorio.totais.faltasJustificadas}`);
-    drawLine(`Faltas nao justificadas: ${relatorio.totais.faltasNaoJustificadas}`);
-    drawLine(`Cancelados: ${relatorio.totais.cancelados}`);
-    y -= 8;
-
-    for (const acompanhamento of relatorio.acompanhamentos as any[]) {
-      drawLine(`${acompanhamento.aluno?.nomeCompleto ?? 'Aluno'} - ${acompanhamento.assuntoAtual}`, {
-        bold: true,
-        size: 12,
-      });
-      drawLine(`Professor: ${acompanhamento.professor?.nome ?? 'Nao informado'} | Status: ${acompanhamento.status}`);
-
-      for (const atendimento of acompanhamento.atendimentos ?? []) {
-        drawLine(`${this.formatarDataBR(atendimento.dataAtendimento)} - ${this.formatarTipoRegistro(atendimento.tipoRegistro)}`, {
-          bold: true,
-          indent: 12,
-        });
-        if (atendimento.assuntoDoDia) drawLine(`Assunto: ${atendimento.assuntoDoDia}`, { indent: 24 });
-        if (atendimento.observacao) drawLine(`Observacao: ${atendimento.observacao}`, { indent: 24 });
-        if (atendimento.evolucao) drawLine(`Evolucao: ${atendimento.evolucao}`, { indent: 24 });
-        if (atendimento.dificuldades) drawLine(`Dificuldades: ${atendimento.dificuldades}`, { indent: 24 });
-        if (atendimento.pendencias) drawLine(`Pendencias: ${atendimento.pendencias}`, { indent: 24 });
-        if (atendimento.recomendacoes) drawLine(`Recomendacoes: ${atendimento.recomendacoes}`, { indent: 24 });
-        if (atendimento.arquivos?.length) drawLine(`Arquivos anexados: ${atendimento.arquivos.length}`, { indent: 24 });
-      }
-      y -= 8;
-    }
-
-    const bytes = await pdfDoc.save();
-    return Buffer.from(bytes);
+    return this.relatorioPdfService.gerar(relatorio);
   }
 
   private montarWhereAcompanhamento(
@@ -594,6 +574,8 @@ export class AtendimentosIndividuaisService {
   }
 
   private validarRegraAtendimento(dto: CriarAtendimentoIndividualDto): void {
+    this.validarHorarioAtendimento(dto);
+
     if (dto.tipoRegistro === TipoRegistroAtendimentoIndividual.ATENDIMENTO_REALIZADO) {
       if (!dto.assuntoDoDia?.trim()) {
         throw new BadRequestException('assuntoDoDia e obrigatorio para atendimento realizado.');
@@ -673,6 +655,29 @@ export class AtendimentosIndividuaisService {
     if (!isPdf && !isPng && !isJpeg) {
       throw new BadRequestException('Assinatura do arquivo nao corresponde ao tipo informado.');
     }
+  }
+
+  private validarHorarioAtendimento(dto: CriarAtendimentoIndividualDto): void {
+    if (!dto.horaInicio || !dto.horaFim) return;
+
+    const inicio = this.converterHoraParaMinutos(dto.horaInicio);
+    const fim = this.converterHoraParaMinutos(dto.horaFim);
+
+    if (fim <= inicio) {
+      throw new BadRequestException('horaFim deve ser posterior a horaInicio.');
+    }
+  }
+
+  private resolverDuracaoAtendimento(dto: CriarAtendimentoIndividualDto): number | undefined {
+    if (dto.duracaoMinutos) return dto.duracaoMinutos;
+    if (!dto.horaInicio || !dto.horaFim) return undefined;
+
+    return this.converterHoraParaMinutos(dto.horaFim) - this.converterHoraParaMinutos(dto.horaInicio);
+  }
+
+  private converterHoraParaMinutos(value: string): number {
+    const [hora, minuto] = value.split(':').map(Number);
+    return hora * 60 + minuto;
   }
 
   private validarPeriodoRelatorio(query: FiltroRelatorioAtendimentoDto): void {

@@ -90,4 +90,20 @@ export class AcompanhamentosIndividuaisController {
   reabrir(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.service.reabrirAcompanhamento(id, req.user, getAuditUser(req));
   }
+
+  @Patch(':id/arquivar')
+  @ApiOperation({ summary: 'Arquivar acompanhamento individual para ocultacao administrativa' })
+  @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
+  @ApiResponse({ status: 200, description: 'Acompanhamento arquivado.' })
+  arquivar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.service.arquivarAcompanhamento(id, req.user, getAuditUser(req));
+  }
+
+  @Patch(':id/desarquivar')
+  @ApiOperation({ summary: 'Desarquivar acompanhamento individual' })
+  @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
+  @ApiResponse({ status: 200, description: 'Acompanhamento desarquivado.' })
+  desarquivar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.service.desarquivarAcompanhamento(id, req.user, getAuditUser(req));
+  }
 }

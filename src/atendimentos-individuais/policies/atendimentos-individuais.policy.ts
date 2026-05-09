@@ -36,6 +36,10 @@ export class AtendimentosIndividuaisPolicy {
     return this.isAdmin(user);
   }
 
+  canArchive(user?: AuthenticatedUser): boolean {
+    return this.isAdmin(user);
+  }
+
   canGenerateReport(user?: AuthenticatedUser): boolean {
     return this.isAdminOrSecretaria(user) || user?.role === Role.PROFESSOR;
   }
@@ -79,6 +83,12 @@ export class AtendimentosIndividuaisPolicy {
   assertCanReopen(user?: AuthenticatedUser): void {
     if (!this.canReopen(user)) {
       throw new ForbiddenException('Voce nao tem permissao para alterar este acompanhamento individual.');
+    }
+  }
+
+  assertCanArchive(user?: AuthenticatedUser): void {
+    if (!this.canArchive(user)) {
+      throw new ForbiddenException('Voce nao tem permissao para arquivar este acompanhamento individual.');
     }
   }
 

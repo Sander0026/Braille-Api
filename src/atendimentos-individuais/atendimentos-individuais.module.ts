@@ -6,6 +6,8 @@ import { AcompanhamentosIndividuaisController } from './controllers/acompanhamen
 import { AtendimentosIndividuaisController } from './controllers/atendimentos-individuais.controller';
 import { RelatoriosAtendimentosIndividuaisController } from './controllers/relatorios-atendimentos-individuais.controller';
 import { AtendimentosIndividuaisService } from './services/atendimentos-individuais.service';
+import { RelatorioAtendimentoPdfService } from './services/relatorio-atendimento-pdf.service';
+import { ArquivoAtendimentoDownloadService } from './services/arquivo-atendimento-download.service';
 import { AtendimentosIndividuaisPolicy } from './policies/atendimentos-individuais.policy';
 
 @Module({
@@ -15,6 +17,11 @@ import { AtendimentosIndividuaisPolicy } from './policies/atendimentos-individua
     AtendimentosIndividuaisController,
     RelatoriosAtendimentosIndividuaisController,
   ],
-  providers: [AtendimentosIndividuaisService, AtendimentosIndividuaisPolicy],
+  providers: [
+    AtendimentosIndividuaisService,
+    RelatorioAtendimentoPdfService,
+    ArquivoAtendimentoDownloadService,
+    AtendimentosIndividuaisPolicy,
+  ],
 })
 export class AtendimentosIndividuaisModule {}

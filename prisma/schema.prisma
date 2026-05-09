@@ -172,6 +172,13 @@ enum CategoriaArquivoAtendimentoIndividual {
   OUTRO
 }
 
+enum ModalidadeAtendimentoIndividual {
+  PRESENCIAL
+  REMOTO
+  TELEFONE
+  OUTRO
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -709,6 +716,11 @@ model AtendimentoIndividual {
   alunoId          String
   professorId      String
   dataAtendimento  DateTime                        @db.Date
+  horaInicio       String?
+  horaFim          String?
+  duracaoMinutos   Int?
+  modalidade       ModalidadeAtendimentoIndividual?
+  localAtendimento String?
   tipoRegistro     TipoRegistroAtendimentoIndividual
   assuntoDoDia     String?
   observacao       String?

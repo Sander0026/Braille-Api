@@ -1,5 +1,4 @@
 import {
-  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
@@ -31,11 +30,11 @@ import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 import { getAuditUser } from '../../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../../common/interfaces/authenticated-request.interface';
 import { AtendimentosIndividuaisService } from '../services/atendimentos-individuais.service';
+import { ArquivoAtendimentoDownloadService } from '../services/arquivo-atendimento-download.service';
 import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individual.dto';
 import { AnexarArquivoAtendimentoDto } from '../dto/anexar-arquivo-atendimento.dto';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const STORAGE_DOWNLOAD_TIMEOUT_MS = 30_000;
 const ALLOWED_MIMES = [
   'application/pdf',
   'image/png',
@@ -51,7 +50,10 @@ const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 @SkipAudit()
 @Controller('atendimentos-individuais')
 export class AtendimentosIndividuaisController {
-  constructor(private readonly service: AtendimentosIndividuaisService) {}
+  constructor(
+    private readonly service: AtendimentosIndividuaisService,
+    private readonly downloadService: ArquivoAtendimentoDownloadService,
+  ) {}
 
   @Post('acompanhamentos/:id/atendimentos')
   @ApiOperation({ summary: 'Criar registro de atendimento, falta ou cancelamento no acompanhamento' })
@@ -86,31 +88,11 @@ export class AtendimentosIndividuaisController {
   @ApiResponse({ status: 200, description: 'Arquivo retornado pela API apos permissao validada.' })
   async downloadArquivo(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
     const arquivo = await this.service.obterArquivoParaDownload(id, req.user);
-    this.validarUrlStorage(arquivo.url);
+    const download = await this.downloadService.baixar(arquivo);
 
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), STORAGE_DOWNLOAD_TIMEOUT_MS);
-    let storageResponse: globalThis.Response;
-
-    try {
-      storageResponse = await fetch(arquivo.url, { signal: abortController.signal });
-    } catch {
-      throw new BadGatewayException('Nao foi possivel carregar o arquivo solicitado.');
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!storageResponse.ok) {
-      throw new BadGatewayException('Nao foi possivel carregar o arquivo solicitado.');
-    }
-
-    const contentType = arquivo.tipoArquivo || storageResponse.headers.get('content-type') || 'application/octet-stream';
-    const fileName = this.sanitizarNomeArquivo(arquivo.nomeOriginal);
-    const encodedFileName = encodeURIComponent(arquivo.nomeOriginal);
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `inline; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`);
-    res.send(Buffer.from(await storageResponse.arrayBuffer()));
+    res.setHeader('Content-Type', download.contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${download.fileName}"; filename*=UTF-8''${download.encodedFileName}`);
+    res.send(download.buffer);
   }
 
   @Post('atendimentos/:id/arquivos')
@@ -165,40 +147,4 @@ export class AtendimentosIndividuaisController {
     );
   }
 
-  private sanitizarNomeArquivo(nome: string): string {
-    return nome
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^\w.-]+/g, '_')
-      .replace(/^_+|_+$/g, '') || 'arquivo-atendimento';
-  }
-
-  private validarUrlStorage(url: string): void {
-    let parsedUrl: URL;
-
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      throw new BadGatewayException('URL do arquivo armazenado e invalida.');
-    }
-
-    if (parsedUrl.protocol !== 'https:') {
-      throw new BadGatewayException('URL do arquivo armazenado nao e permitida.');
-    }
-
-    const allowedHosts = this.obterHostsStoragePermitidos();
-    const hostname = parsedUrl.hostname.toLowerCase();
-    const isAllowed = allowedHosts.some((host) => hostname === host || hostname.endsWith(`.${host}`));
-
-    if (!isAllowed) {
-      throw new BadGatewayException('Origem do arquivo armazenado nao e permitida.');
-    }
-  }
-
-  private obterHostsStoragePermitidos(): string[] {
-    return (process.env.ATENDIMENTOS_ARQUIVOS_ALLOWED_HOSTS || 'cloudinary.com')
-      .split(',')
-      .map((host) => host.trim().toLowerCase())
-      .filter(Boolean);
-  }
 }
