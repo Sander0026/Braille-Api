@@ -64,6 +64,11 @@ export class AtendimentosIndividuaisService {
     this.policy.assertCanCreate(authUser);
 
     const professorId = this.resolverProfessorId(dto.professorId, authUser);
+
+    if (dto.primeiroAtendimento) {
+      this.policy.assertCanCreateAtendimento(authUser, { professorId });
+    }
+
     await Promise.all([
       this.validarAlunoAtivo(dto.alunoId),
       this.validarProfessorAtivo(professorId),
