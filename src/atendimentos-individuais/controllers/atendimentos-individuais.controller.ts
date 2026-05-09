@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
@@ -81,10 +82,22 @@ export class AtendimentosIndividuaisController {
   @Get('arquivos/:id/download')
   @ApiOperation({ summary: 'Baixar arquivo de atendimento apos validacao de permissao' })
   @ApiParam({ name: 'id', description: 'UUID do arquivo anexado ao atendimento' })
-  @ApiResponse({ status: 302, description: 'Redireciona para o arquivo apos permissao validada.' })
+  @ApiResponse({ status: 200, description: 'Arquivo retornado pela API apos permissao validada.' })
   async downloadArquivo(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
     const arquivo = await this.service.obterArquivoParaDownload(id, req.user);
-    res.redirect(arquivo.url);
+    const storageResponse = await fetch(arquivo.url);
+
+    if (!storageResponse.ok) {
+      throw new BadGatewayException('Nao foi possivel carregar o arquivo solicitado.');
+    }
+
+    const contentType = arquivo.tipoArquivo || storageResponse.headers.get('content-type') || 'application/octet-stream';
+    const fileName = this.sanitizarNomeArquivo(arquivo.nomeOriginal);
+    const encodedFileName = encodeURIComponent(arquivo.nomeOriginal);
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`);
+    res.send(Buffer.from(await storageResponse.arrayBuffer()));
   }
 
   @Post('atendimentos/:id/arquivos')
@@ -137,5 +150,13 @@ export class AtendimentosIndividuaisController {
       req.user,
       getAuditUser(req),
     );
+  }
+
+  private sanitizarNomeArquivo(nome: string): string {
+    return nome
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w.-]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'arquivo-atendimento';
   }
 }
