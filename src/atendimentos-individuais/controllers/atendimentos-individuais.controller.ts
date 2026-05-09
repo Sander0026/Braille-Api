@@ -6,11 +6,13 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -38,6 +40,7 @@ const ALLOWED_MIMES = [
   'image/jpeg',
   'image/jpg',
 ];
+const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 
 @ApiTags('Atendimentos Individuais - Registros')
 @ApiBearerAuth()
@@ -75,6 +78,15 @@ export class AtendimentosIndividuaisController {
     return this.service.buscarAtendimento(id, req.user);
   }
 
+  @Get('arquivos/:id/download')
+  @ApiOperation({ summary: 'Baixar arquivo de atendimento apos validacao de permissao' })
+  @ApiParam({ name: 'id', description: 'UUID do arquivo anexado ao atendimento' })
+  @ApiResponse({ status: 302, description: 'Redireciona para o arquivo apos permissao validada.' })
+  async downloadArquivo(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
+    const arquivo = await this.service.obterArquivoParaDownload(id, req.user);
+    res.redirect(arquivo.url);
+  }
+
   @Post('atendimentos/:id/arquivos')
   @ApiOperation({
     summary: 'Anexar arquivo ao atendimento individual',
@@ -99,7 +111,10 @@ export class AtendimentosIndividuaisController {
     FileInterceptor('file', {
       limits: { fileSize: MAX_FILE_SIZE },
       fileFilter: (_req, file, callback) => {
-        if (ALLOWED_MIMES.includes(file.mimetype)) {
+        const lowerName = file.originalname.toLowerCase();
+        const hasAllowedExtension = ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+
+        if (ALLOWED_MIMES.includes(file.mimetype) && hasAllowedExtension) {
           callback(null, true);
           return;
         }

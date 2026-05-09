@@ -25,12 +25,17 @@ import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto'
 import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-individual.dto';
 import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 const ACOMPANHAMENTO_INCLUDE = {
   aluno: { select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true } },
   professor: { select: { id: true, nome: true, matricula: true, role: true } },
   _count: { select: { atendimentos: true } },
 } as const;
+
+const ARQUIVO_ATENDIMENTO_PUBLIC_BASE = '/api/atendimentos-individuais/arquivos';
+const ARQUIVO_ATENDIMENTO_ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
+const ARQUIVO_ATENDIMENTO_ALLOWED_MIMES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
 
 const ACOMPANHAMENTO_DETALHE_INCLUDE = {
   ...ACOMPANHAMENTO_INCLUDE,
@@ -115,7 +120,7 @@ export class AtendimentosIndividuaisService {
       dataInicio: acompanhamento.dataInicio,
       possuiPrimeiroAtendimento: Boolean(dto.primeiroAtendimento),
     });
-    return acompanhamento;
+    return this.sanitizarAcompanhamento(acompanhamento);
   }
 
   async listarAcompanhamentos(query: FiltroAcompanhamentoIndividualDto, authUser?: AuthenticatedUser) {
@@ -149,7 +154,7 @@ export class AtendimentosIndividuaisService {
 
     if (!acompanhamento) throw new NotFoundException('Acompanhamento individual nao encontrado.');
     this.policy.assertCanView(authUser, acompanhamento);
-    return acompanhamento;
+    return this.sanitizarAcompanhamento(acompanhamento);
   }
 
   async atualizarAssunto(
@@ -165,7 +170,7 @@ export class AtendimentosIndividuaisService {
       throw new ConflictException('Nao e possivel alterar assunto de acompanhamento finalizado ou arquivado.');
     }
 
-    if (acompanhamento.assuntoAtual === dto.assuntoAtual) return acompanhamento;
+    if (acompanhamento.assuntoAtual === dto.assuntoAtual) return this.sanitizarAcompanhamento(acompanhamento);
 
     const atualizado = await this.prisma.acompanhamentoIndividual.update({
       where: { id },
@@ -189,7 +194,7 @@ export class AtendimentosIndividuaisService {
       assuntoAtual: atualizado.assuntoAtual,
       motivoAlteracao: dto.motivoAlteracao,
     });
-    return atualizado;
+    return this.sanitizarAcompanhamento(atualizado);
   }
 
   async finalizarAcompanhamento(
@@ -222,14 +227,14 @@ export class AtendimentosIndividuaisService {
       status: atualizado.status,
       dataFinalizacao: atualizado.dataFinalizacao,
     });
-    return atualizado;
+    return this.sanitizarAcompanhamento(atualizado);
   }
 
   async reabrirAcompanhamento(id: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
     this.policy.assertCanReopen(authUser);
 
-    if (acompanhamento.status === StatusAcompanhamentoIndividual.EM_ANDAMENTO) return acompanhamento;
+    if (acompanhamento.status === StatusAcompanhamentoIndividual.EM_ANDAMENTO) return this.sanitizarAcompanhamento(acompanhamento);
 
     const atualizado = await this.prisma.acompanhamentoIndividual.update({
       where: { id },
@@ -247,7 +252,7 @@ export class AtendimentosIndividuaisService {
       status: atualizado.status,
       dataFinalizacao: atualizado.dataFinalizacao,
     });
-    return atualizado;
+    return this.sanitizarAcompanhamento(atualizado);
   }
 
   async criarAtendimento(
@@ -288,18 +293,20 @@ export class AtendimentosIndividuaisService {
       tipoRegistro: atendimento.tipoRegistro,
       dataAtendimento: atendimento.dataAtendimento,
     });
-    return atendimento;
+    return this.sanitizarAtendimento(atendimento);
   }
 
   async listarAtendimentos(acompanhamentoId: string, authUser?: AuthenticatedUser) {
     const acompanhamento = await this.buscarAcompanhamento(acompanhamentoId, authUser);
     this.policy.assertCanView(authUser, acompanhamento);
 
-    return this.prisma.atendimentoIndividual.findMany({
+    const atendimentos = await this.prisma.atendimentoIndividual.findMany({
       where: { acompanhamentoId, excluidoEm: null },
       include: { arquivos: true },
       orderBy: { dataAtendimento: 'desc' },
     });
+
+    return atendimentos.map((item) => this.sanitizarAtendimento(item));
   }
 
   async buscarAtendimento(id: string, authUser?: AuthenticatedUser) {
@@ -318,7 +325,7 @@ export class AtendimentosIndividuaisService {
 
     if (!atendimento) throw new NotFoundException('Atendimento individual nao encontrado.');
     this.policy.assertCanView(authUser, atendimento.acompanhamento);
-    return atendimento;
+    return this.sanitizarAtendimento(atendimento);
   }
 
   async anexarArquivo(
@@ -330,6 +337,7 @@ export class AtendimentosIndividuaisService {
   ) {
     const atendimento = await this.buscarAtendimento(atendimentoId, authUser);
     this.policy.assertCanAttachFile(authUser, atendimento.acompanhamento);
+    this.validarArquivoAtendimento(file);
 
     const upload = await this.uploadService.uploadArquivoAtendimento(file, auditUser);
     const arquivo = await this.prisma.arquivoAtendimentoIndividual.create({
@@ -351,7 +359,7 @@ export class AtendimentosIndividuaisService {
       tipoArquivo: arquivo.tipoArquivo,
       tamanho: arquivo.tamanho,
     });
-    return arquivo;
+    return this.sanitizarArquivo(arquivo);
   }
 
   async gerarRelatorio(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser) {
@@ -414,8 +422,108 @@ export class AtendimentosIndividuaisService {
       totalAcompanhamentos: acompanhamentos.length,
       totalRegistros: atendimentos.length,
       totais,
-      acompanhamentos,
+      acompanhamentos: acompanhamentos.map((item) => this.sanitizarAcompanhamento(item)),
     };
+  }
+
+  async obterArquivoParaDownload(id: string, authUser?: AuthenticatedUser) {
+    const arquivo = await this.prisma.arquivoAtendimentoIndividual.findUnique({
+      where: { id },
+      include: {
+        atendimento: {
+          include: {
+            acompanhamento: {
+              select: { id: true, professorId: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!arquivo) throw new NotFoundException('Arquivo do atendimento nao encontrado.');
+    this.policy.assertCanView(authUser, arquivo.atendimento.acompanhamento);
+
+    return {
+      url: arquivo.urlArquivo,
+      nomeOriginal: arquivo.nomeOriginal,
+      tipoArquivo: arquivo.tipoArquivo,
+    };
+  }
+
+  async gerarRelatorioPdf(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser): Promise<Buffer> {
+    const relatorio = await this.gerarRelatorio(query, authUser);
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    const margin = 48;
+    const fontSize = 10;
+    const lineHeight = 15;
+    let page = pdfDoc.addPage([595.28, 841.89]);
+    let y = page.getHeight() - margin;
+
+    const addPageIfNeeded = (requiredHeight = lineHeight) => {
+      if (y - requiredHeight >= margin) return;
+      page = pdfDoc.addPage([595.28, 841.89]);
+      y = page.getHeight() - margin;
+    };
+
+    const drawLine = (text: string, options: { bold?: boolean; size?: number; indent?: number } = {}) => {
+      const size = options.size ?? fontSize;
+      const selectedFont = options.bold ? fontBold : font;
+      const indent = options.indent ?? 0;
+      const maxChars = Math.max(40, Math.floor((page.getWidth() - margin * 2 - indent) / (size * 0.48)));
+      const linhas = this.quebrarTextoRelatorio(text, maxChars);
+
+      for (const linha of linhas) {
+        addPageIfNeeded(lineHeight);
+        page.drawText(linha, {
+          x: margin + indent,
+          y,
+          size,
+          font: selectedFont,
+          color: rgb(0.08, 0.1, 0.16),
+        });
+        y -= lineHeight;
+      }
+    };
+
+    drawLine('Relatorio de Atendimento Individual', { bold: true, size: 16 });
+    drawLine(`Emitido em ${this.formatarDataHoraBR(new Date())}`);
+    y -= 8;
+    drawLine(`Total de acompanhamentos: ${relatorio.totalAcompanhamentos}`, { bold: true });
+    drawLine(`Total de registros: ${relatorio.totalRegistros}`, { bold: true });
+    drawLine(`Atendimentos realizados: ${relatorio.totais.atendimentosRealizados}`);
+    drawLine(`Faltas justificadas: ${relatorio.totais.faltasJustificadas}`);
+    drawLine(`Faltas nao justificadas: ${relatorio.totais.faltasNaoJustificadas}`);
+    drawLine(`Cancelados: ${relatorio.totais.cancelados}`);
+    y -= 8;
+
+    for (const acompanhamento of relatorio.acompanhamentos as any[]) {
+      drawLine(`${acompanhamento.aluno?.nomeCompleto ?? 'Aluno'} - ${acompanhamento.assuntoAtual}`, {
+        bold: true,
+        size: 12,
+      });
+      drawLine(`Professor: ${acompanhamento.professor?.nome ?? 'Nao informado'} | Status: ${acompanhamento.status}`);
+
+      for (const atendimento of acompanhamento.atendimentos ?? []) {
+        drawLine(`${this.formatarDataBR(atendimento.dataAtendimento)} - ${this.formatarTipoRegistro(atendimento.tipoRegistro)}`, {
+          bold: true,
+          indent: 12,
+        });
+        if (atendimento.assuntoDoDia) drawLine(`Assunto: ${atendimento.assuntoDoDia}`, { indent: 24 });
+        if (atendimento.observacao) drawLine(`Observacao: ${atendimento.observacao}`, { indent: 24 });
+        if (atendimento.evolucao) drawLine(`Evolucao: ${atendimento.evolucao}`, { indent: 24 });
+        if (atendimento.dificuldades) drawLine(`Dificuldades: ${atendimento.dificuldades}`, { indent: 24 });
+        if (atendimento.pendencias) drawLine(`Pendencias: ${atendimento.pendencias}`, { indent: 24 });
+        if (atendimento.recomendacoes) drawLine(`Recomendacoes: ${atendimento.recomendacoes}`, { indent: 24 });
+        if (atendimento.arquivos?.length) drawLine(`Arquivos anexados: ${atendimento.arquivos.length}`, { indent: 24 });
+      }
+      y -= 8;
+    }
+
+    const bytes = await pdfDoc.save();
+    return Buffer.from(bytes);
   }
 
   private montarWhereAcompanhamento(
@@ -512,6 +620,58 @@ export class AtendimentosIndividuaisService {
     return atendimentos.filter((item) => item.tipoRegistro === tipo).length;
   }
 
+  private sanitizarAcompanhamento<T extends Record<string, any>>(acompanhamento: T): T {
+    if (!Array.isArray(acompanhamento.atendimentos)) return acompanhamento;
+
+    return {
+      ...acompanhamento,
+      atendimentos: acompanhamento.atendimentos.map((item: Record<string, any>) => this.sanitizarAtendimento(item)),
+    };
+  }
+
+  private sanitizarAtendimento<T extends Record<string, any>>(atendimento: T): T {
+    if (!Array.isArray(atendimento.arquivos)) return atendimento;
+
+    return {
+      ...atendimento,
+      arquivos: atendimento.arquivos.map((arquivo: Record<string, any>) => this.sanitizarArquivo(arquivo)),
+    };
+  }
+
+  private sanitizarArquivo<T extends Record<string, any>>(arquivo: T): Omit<T, 'urlArquivo'> & { downloadUrl: string } {
+    const { urlArquivo: _urlArquivo, ...rest } = arquivo;
+    return {
+      ...rest,
+      downloadUrl: `${ARQUIVO_ATENDIMENTO_PUBLIC_BASE}/${arquivo.id}/download`,
+    };
+  }
+
+  private validarArquivoAtendimento(file: Express.Multer.File): void {
+    const lowerName = file.originalname.toLowerCase();
+    const hasAllowedExtension = ARQUIVO_ATENDIMENTO_ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+    if (!hasAllowedExtension || !ARQUIVO_ATENDIMENTO_ALLOWED_MIMES.includes(file.mimetype)) {
+      throw new BadRequestException('Arquivo invalido. Envie PDF, PNG, JPG ou JPEG.');
+    }
+
+    const buffer = file.buffer;
+    const isPdf = file.mimetype === 'application/pdf' && buffer.subarray(0, 4).toString('utf8') === '%PDF';
+    const isPng = file.mimetype === 'image/png'
+      && buffer.length >= 8
+      && buffer[0] === 0x89
+      && buffer[1] === 0x50
+      && buffer[2] === 0x4e
+      && buffer[3] === 0x47;
+    const isJpeg = (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg')
+      && buffer.length >= 3
+      && buffer[0] === 0xff
+      && buffer[1] === 0xd8
+      && buffer[2] === 0xff;
+
+    if (!isPdf && !isPng && !isJpeg) {
+      throw new BadRequestException('Assinatura do arquivo nao corresponde ao tipo informado.');
+    }
+  }
+
   private validarPeriodoRelatorio(query: FiltroRelatorioAtendimentoDto): void {
     if (!query.dataInicio || !query.dataFim) return;
 
@@ -528,6 +688,57 @@ export class AtendimentosIndividuaisService {
     } catch {
       return null;
     }
+  }
+
+  private quebrarTextoRelatorio(texto: string, maxChars: number): string[] {
+    const words = this.normalizarTextoRelatorio(texto).split(/\s+/);
+    const linhas: string[] = [];
+    let linha = '';
+
+    for (const word of words) {
+      const candidate = linha ? `${linha} ${word}` : word;
+      if (candidate.length <= maxChars) {
+        linha = candidate;
+        continue;
+      }
+      if (linha) linhas.push(linha);
+      linha = word;
+    }
+
+    if (linha) linhas.push(linha);
+    return linhas.length ? linhas : [''];
+  }
+
+  private normalizarTextoRelatorio(texto: string): string {
+    return String(texto ?? '')
+      .normalize('NFC')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[–—]/g, '-')
+      .replace(/…/g, '...')
+      .replace(/\u00A0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private formatarDataBR(value: string | Date): string {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Data nao informada';
+    return date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  }
+
+  private formatarDataHoraBR(date: Date): string {
+    return date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  }
+
+  private formatarTipoRegistro(tipo: TipoRegistroAtendimentoIndividual): string {
+    const labels: Record<TipoRegistroAtendimentoIndividual, string> = {
+      ATENDIMENTO_REALIZADO: 'Atendimento realizado',
+      FALTA_JUSTIFICADA: 'Falta justificada',
+      FALTA_NAO_JUSTIFICADA: 'Falta nao justificada',
+      CANCELADO: 'Cancelado',
+    };
+    return labels[tipo] ?? tipo;
   }
 
   private registrarAuditoria(

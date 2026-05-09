@@ -224,6 +224,53 @@ export class BeneficiariesService {
     return where;
   }
 
+  async searchResumo(busca?: string) {
+    const termo = busca?.trim();
+    if (!termo || termo.length < 3) {
+      return [];
+    }
+    const termoCpf = termo.replaceAll(/\D/g, '');
+    const or: Prisma.AlunoWhereInput[] = [
+      { nomeCompleto: { contains: termo, mode: 'insensitive' } },
+      { matricula: { contains: termo, mode: 'insensitive' } },
+    ];
+
+    if (termoCpf.length >= 3) {
+      or.push({ cpf: { contains: termoCpf, mode: 'insensitive' } });
+    }
+
+    const alunos = await this.prisma.aluno.findMany({
+      where: {
+        excluido: false,
+        statusAtivo: true,
+        OR: or,
+      },
+      take: 20,
+      orderBy: { nomeCompleto: 'asc' },
+      select: {
+        id: true,
+        nomeCompleto: true,
+        matricula: true,
+        cpf: true,
+        statusAtivo: true,
+      },
+    });
+
+    return alunos.map((aluno) => ({
+      id: aluno.id,
+      nomeCompleto: aluno.nomeCompleto,
+      matricula: aluno.matricula,
+      cpfMascarado: this.mascararCpf(aluno.cpf),
+      statusAtivo: aluno.statusAtivo,
+    }));
+  }
+
+  private mascararCpf(cpf?: string | null): string | null {
+    const digits = cpf?.replaceAll(/\D/g, '');
+    if (!digits || digits.length !== 11) return null;
+    return `${digits.slice(0, 3)}.***.***-${digits.slice(9)}`;
+  }
+
   // ── Criar ──────────────────────────────────────────────────────────────────
 
   async create(dto: CreateBeneficiaryDto, auditUser?: AuditUser) {

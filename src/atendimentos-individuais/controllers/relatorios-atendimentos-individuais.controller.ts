@@ -1,4 +1,5 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { AuthGuard } from '../../auth/auth.guard';
@@ -27,5 +28,27 @@ export class RelatoriosAtendimentosIndividuaisController {
   @ApiResponse({ status: 200, description: 'Relatorio gerado.' })
   gerar(@Query() query: FiltroRelatorioAtendimentoDto, @Req() req: AuthenticatedRequest) {
     return this.service.gerarRelatorio(query, req.user);
+  }
+
+  @Post('pdf')
+  @ApiOperation({
+    summary: 'Exportar relatorio de atendimentos individuais em PDF',
+    description:
+      'Gera um PDF institucional simples a partir dos mesmos filtros do relatorio JSON. Professores veem apenas os proprios registros.',
+  })
+  @ApiResponse({ status: 200, description: 'PDF gerado.' })
+  async gerarPdf(
+    @Body() body: FiltroRelatorioAtendimentoDto,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.service.gerarRelatorioPdf(body, req.user);
+    const date = new Date().toISOString().slice(0, 10);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="relatorio-atendimento-individual-${date}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.send(buffer);
   }
 }
