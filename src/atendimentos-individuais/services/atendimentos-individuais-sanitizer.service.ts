@@ -6,19 +6,26 @@ const ARQUIVO_ATENDIMENTO_PUBLIC_BASE = '/api/atendimentos-individuais/arquivos'
 @Injectable()
 export class AtendimentosIndividuaisSanitizerService {
   sanitizarAcompanhamento<T extends Record<string, any>>(acompanhamento: T): T {
-    if (!Array.isArray(acompanhamento.atendimentos)) return acompanhamento;
+    const base = {
+      ...acompanhamento,
+      ...(acompanhamento.arquivado && { status: 'ARQUIVADO' }),
+    };
+
+    if (!Array.isArray(acompanhamento.atendimentos)) return base;
 
     return {
-      ...acompanhamento,
+      ...base,
       atendimentos: acompanhamento.atendimentos.map((item: Record<string, any>) => this.sanitizarAtendimento(item)),
     };
   }
 
   sanitizarAtendimento<T extends Record<string, any>>(atendimento: T): T {
+    const base = this.sanitizarHorarioAtendimento(atendimento);
+
     if (!Array.isArray(atendimento.arquivos)) {
-      if (atendimento.tipoRegistro !== TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA) return atendimento;
+      if (atendimento.tipoRegistro !== TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA) return base;
       return {
-        ...atendimento,
+        ...base,
         temComprovante: false,
       };
     }
@@ -29,7 +36,7 @@ export class AtendimentosIndividuaisSanitizerService {
       : undefined;
 
     return {
-      ...atendimento,
+      ...base,
       arquivos,
       ...(atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA && { temComprovante }),
     };
@@ -43,5 +50,23 @@ export class AtendimentosIndividuaisSanitizerService {
       ...rest,
       downloadUrl: `${ARQUIVO_ATENDIMENTO_PUBLIC_BASE}/${arquivo.id}/download`,
     };
+  }
+
+  private sanitizarHorarioAtendimento<T extends Record<string, any>>(atendimento: T): T {
+    const { horaInicioMinutos, horaFimMinutos, ...rest } = atendimento;
+
+    return ({
+      ...rest,
+      horaInicio: this.formatarMinutos(horaInicioMinutos),
+      horaFim: this.formatarMinutos(horaFimMinutos),
+    } as unknown) as T;
+  }
+
+  private formatarMinutos(value: unknown): string | undefined {
+    if (!Number.isInteger(value)) return undefined;
+    const total = Number(value);
+    const hora = Math.floor(total / 60).toString().padStart(2, '0');
+    const minuto = (total % 60).toString().padStart(2, '0');
+    return `${hora}:${minuto}`;
   }
 }

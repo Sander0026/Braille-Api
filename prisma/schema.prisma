@@ -155,7 +155,6 @@ enum CertificateBatchStatus {
 enum StatusAcompanhamentoIndividual {
   EM_ANDAMENTO
   FINALIZADO
-  ARQUIVADO
 }
 
 enum TipoRegistroAtendimentoIndividual {
@@ -695,7 +694,7 @@ model AcompanhamentoIndividual {
   assuntoAtual    String
   descricao       String?
   status          StatusAcompanhamentoIndividual @default(EM_ANDAMENTO)
-  statusAntesArquivamento StatusAcompanhamentoIndividual?
+  arquivado       Boolean                        @default(false)
   arquivadoEm     DateTime?
   arquivadoPorId  String?
   desarquivadoEm  DateTime?
@@ -717,6 +716,9 @@ model AcompanhamentoIndividual {
 
   @@index([alunoId, status])
   @@index([professorId, status])
+  @@index([arquivado])
+  @@index([alunoId, status, arquivado])
+  @@index([professorId, status, arquivado])
   @@index([arquivadoPorId])
   @@index([desarquivadoPorId])
   @@index([dataInicio])
@@ -729,8 +731,8 @@ model AtendimentoIndividual {
   alunoId          String
   professorId      String
   dataAtendimento  DateTime                        @db.Date
-  horaInicio       String?
-  horaFim          String?
+  horaInicioMinutos Int?
+  horaFimMinutos    Int?
   duracaoMinutos   Int?
   modalidade       ModalidadeAtendimentoIndividual?
   localAtendimento String?

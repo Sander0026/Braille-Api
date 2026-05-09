@@ -3,7 +3,9 @@ import {
   StatusAcompanhamentoIndividual,
   TipoRegistroAtendimentoIndividual,
 } from '@prisma/client';
-import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsOptional, IsUUID } from 'class-validator';
+import { STATUS_ARQUIVADO_VIRTUAL } from './filtro-acompanhamento-individual.dto';
+import type { FiltroStatusAcompanhamentoIndividual } from './filtro-acompanhamento-individual.dto';
 
 export class FiltroRelatorioAtendimentoDto {
   @ApiPropertyOptional()
@@ -26,10 +28,10 @@ export class FiltroRelatorioAtendimentoDto {
   @IsDateString()
   dataFim?: string;
 
-  @ApiPropertyOptional({ enum: StatusAcompanhamentoIndividual })
+  @ApiPropertyOptional({ enum: [...Object.values(StatusAcompanhamentoIndividual), STATUS_ARQUIVADO_VIRTUAL] })
   @IsOptional()
-  @IsEnum(StatusAcompanhamentoIndividual)
-  status?: StatusAcompanhamentoIndividual;
+  @IsIn([...Object.values(StatusAcompanhamentoIndividual), STATUS_ARQUIVADO_VIRTUAL])
+  status?: FiltroStatusAcompanhamentoIndividual;
 
   @ApiPropertyOptional({ enum: TipoRegistroAtendimentoIndividual })
   @IsOptional()

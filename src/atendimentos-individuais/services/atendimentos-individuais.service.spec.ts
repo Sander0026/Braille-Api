@@ -10,6 +10,7 @@ import { AtendimentosIndividuaisSanitizerService } from './atendimentos-individu
 import { RelatorioAtendimentoPdfService } from './relatorio-atendimento-pdf.service';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import type { AuditUser } from '../../common/interfaces/audit-user.interface';
+import { STATUS_ARQUIVADO_VIRTUAL } from '../dto/filtro-acompanhamento-individual.dto';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ function makeAcompanhamento(overrides: Record<string, unknown> = {}) {
     assuntoAtual: 'Braille basico',
     descricao: null,
     status: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
-    statusAntesArquivamento: null,
+    arquivado: false,
     dataInicio: new Date(),
     dataFinalizacao: null,
     resultadoFinal: null,
@@ -104,13 +105,12 @@ describe('AtendimentosIndividuaisService', () => {
 
   // ─── 1. ADMIN arquiva EM_ANDAMENTO ─────────────────────────────────
 
-  it('deve permitir ADMIN arquivar acompanhamento EM_ANDAMENTO salvando statusAntesArquivamento', async () => {
+  it('deve permitir ADMIN arquivar acompanhamento EM_ANDAMENTO sem alterar status pedagogico', async () => {
     const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.EM_ANDAMENTO });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
     prisma.acompanhamentoIndividual.update.mockResolvedValue({
       ...original,
-      status: StatusAcompanhamentoIndividual.ARQUIVADO,
-      statusAntesArquivamento: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+      arquivado: true,
     });
 
     const result = await service.arquivarAcompanhamento('acomp-1', makeUser(Role.ADMIN), makeAudit());
@@ -118,24 +118,22 @@ describe('AtendimentosIndividuaisService', () => {
     expect(prisma.acompanhamentoIndividual.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          status: StatusAcompanhamentoIndividual.ARQUIVADO,
-          statusAntesArquivamento: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+          arquivado: true,
           arquivadoPorId: 'user-1',
         }),
       }),
     );
-    expect(result.status).toBe(StatusAcompanhamentoIndividual.ARQUIVADO);
+    expect(result.status).toBe(STATUS_ARQUIVADO_VIRTUAL);
   });
 
   // ─── 2. ADMIN arquiva FINALIZADO ───────────────────────────────────
 
-  it('deve permitir ADMIN arquivar acompanhamento FINALIZADO salvando statusAntesArquivamento', async () => {
+  it('deve permitir ADMIN arquivar acompanhamento FINALIZADO sem alterar status pedagogico', async () => {
     const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.FINALIZADO });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
     prisma.acompanhamentoIndividual.update.mockResolvedValue({
       ...original,
-      status: StatusAcompanhamentoIndividual.ARQUIVADO,
-      statusAntesArquivamento: StatusAcompanhamentoIndividual.FINALIZADO,
+      arquivado: true,
     });
 
     const result = await service.arquivarAcompanhamento('acomp-1', makeUser(Role.ADMIN), makeAudit());
@@ -143,26 +141,23 @@ describe('AtendimentosIndividuaisService', () => {
     expect(prisma.acompanhamentoIndividual.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          statusAntesArquivamento: StatusAcompanhamentoIndividual.FINALIZADO,
+          arquivado: true,
           arquivadoPorId: 'user-1',
         }),
       }),
     );
-    expect(result.status).toBe(StatusAcompanhamentoIndividual.ARQUIVADO);
+    expect(result.status).toBe(STATUS_ARQUIVADO_VIRTUAL);
   });
 
   // ─── 3. Desarquivar FINALIZADO → volta FINALIZADO ─────────────────
 
   it('deve restaurar status FINALIZADO ao desarquivar acompanhamento que era FINALIZADO', async () => {
-    const original = makeAcompanhamento({
-      status: StatusAcompanhamentoIndividual.ARQUIVADO,
-      statusAntesArquivamento: StatusAcompanhamentoIndividual.FINALIZADO,
-    });
+    const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.FINALIZADO, arquivado: true });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
     prisma.acompanhamentoIndividual.update.mockResolvedValue({
       ...original,
       status: StatusAcompanhamentoIndividual.FINALIZADO,
-      statusAntesArquivamento: null,
+      arquivado: false,
     });
 
     const result = await service.desarquivarAcompanhamento('acomp-1', makeUser(Role.ADMIN), makeAudit());
@@ -170,8 +165,7 @@ describe('AtendimentosIndividuaisService', () => {
     expect(prisma.acompanhamentoIndividual.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          status: StatusAcompanhamentoIndividual.FINALIZADO,
-          statusAntesArquivamento: null,
+          arquivado: false,
           desarquivadoPorId: 'user-1',
         }),
       }),
@@ -182,15 +176,12 @@ describe('AtendimentosIndividuaisService', () => {
   // ─── 4. Desarquivar EM_ANDAMENTO → volta EM_ANDAMENTO ─────────────
 
   it('deve restaurar status EM_ANDAMENTO ao desarquivar acompanhamento que era EM_ANDAMENTO', async () => {
-    const original = makeAcompanhamento({
-      status: StatusAcompanhamentoIndividual.ARQUIVADO,
-      statusAntesArquivamento: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
-    });
+    const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.EM_ANDAMENTO, arquivado: true });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
     prisma.acompanhamentoIndividual.update.mockResolvedValue({
       ...original,
       status: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
-      statusAntesArquivamento: null,
+      arquivado: false,
     });
 
     const result = await service.desarquivarAcompanhamento('acomp-1', makeUser(Role.ADMIN), makeAudit());
@@ -201,7 +192,7 @@ describe('AtendimentosIndividuaisService', () => {
   // ─── 5. Reabrir ARQUIVADO lança ConflictException ─────────────────
 
   it('nao deve permitir reabrir acompanhamento ARQUIVADO diretamente', async () => {
-    const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.ARQUIVADO });
+    const original = makeAcompanhamento({ arquivado: true });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
 
     await expect(
@@ -223,7 +214,7 @@ describe('AtendimentosIndividuaisService', () => {
   it('deve impedir PROFESSOR de listar acompanhamentos arquivados', async () => {
     await expect(
       service.listarAcompanhamentos(
-        { status: StatusAcompanhamentoIndividual.ARQUIVADO } as any,
+        { status: STATUS_ARQUIVADO_VIRTUAL } as any,
         makeUser(Role.PROFESSOR, 'prof-1'),
       ),
     ).rejects.toThrow(ForbiddenException);
@@ -256,7 +247,7 @@ describe('AtendimentosIndividuaisService', () => {
   });
 
   it('deve impedir SECRETARIA de desarquivar acompanhamento', async () => {
-    const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.ARQUIVADO });
+    const original = makeAcompanhamento({ arquivado: true });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
 
     await expect(
@@ -276,7 +267,7 @@ describe('AtendimentosIndividuaisService', () => {
   });
 
   it('deve impedir PROFESSOR de desarquivar acompanhamento', async () => {
-    const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.ARQUIVADO });
+    const original = makeAcompanhamento({ arquivado: true });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
 
     await expect(
@@ -337,8 +328,8 @@ describe('AtendimentosIndividuaisService', () => {
       professorId: 'prof-1',
       tipoRegistro: TipoRegistroAtendimentoIndividual.ATENDIMENTO_REALIZADO,
       dataAtendimento: new Date('2026-05-08'),
-      horaInicio: '08:00',
-      horaFim: '09:30',
+      horaInicioMinutos: 480,
+      horaFimMinutos: 570,
       duracaoMinutos: 90,
       arquivos: [],
     });
@@ -356,6 +347,8 @@ describe('AtendimentosIndividuaisService', () => {
     expect(prisma.atendimentoIndividual.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          horaInicioMinutos: 480,
+          horaFimMinutos: 570,
           duracaoMinutos: 90,
         }),
       }),

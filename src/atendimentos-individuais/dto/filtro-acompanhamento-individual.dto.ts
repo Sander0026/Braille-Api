@@ -1,7 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { StatusAcompanhamentoIndividual } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+
+export const STATUS_ARQUIVADO_VIRTUAL = 'ARQUIVADO' as const;
+export type FiltroStatusAcompanhamentoIndividual =
+  | StatusAcompanhamentoIndividual
+  | typeof STATUS_ARQUIVADO_VIRTUAL;
 
 export class FiltroAcompanhamentoIndividualDto {
   @ApiPropertyOptional({ default: 1 })
@@ -29,10 +34,10 @@ export class FiltroAcompanhamentoIndividualDto {
   @IsUUID()
   professorId?: string;
 
-  @ApiPropertyOptional({ enum: StatusAcompanhamentoIndividual })
+  @ApiPropertyOptional({ enum: [...Object.values(StatusAcompanhamentoIndividual), STATUS_ARQUIVADO_VIRTUAL] })
   @IsOptional()
-  @IsEnum(StatusAcompanhamentoIndividual)
-  status?: StatusAcompanhamentoIndividual;
+  @IsIn([...Object.values(StatusAcompanhamentoIndividual), STATUS_ARQUIVADO_VIRTUAL])
+  status?: FiltroStatusAcompanhamentoIndividual;
 
   @ApiPropertyOptional({ description: 'Busca por nome/matricula do aluno ou assunto.' })
   @IsOptional()

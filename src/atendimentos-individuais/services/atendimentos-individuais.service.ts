@@ -21,7 +21,7 @@ import { CriarAcompanhamentoIndividualDto } from '../dto/criar-acompanhamento-in
 import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individual.dto';
 import { AtualizarAssuntoAcompanhamentoDto } from '../dto/atualizar-assunto-acompanhamento.dto';
 import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto';
-import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-individual.dto';
+import { FiltroAcompanhamentoIndividualDto, STATUS_ARQUIVADO_VIRTUAL } from '../dto/filtro-acompanhamento-individual.dto';
 import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
 import { VerificarDuplicidadeAcompanhamentoDto } from '../dto/verificar-duplicidade-acompanhamento.dto';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
@@ -97,8 +97,8 @@ export class AtendimentosIndividuaisService {
                 alunoId: dto.alunoId,
                 professorId,
                 dataAtendimento: this.parseDate(dto.primeiroAtendimento.dataAtendimento),
-                horaInicio: dto.primeiroAtendimento.horaInicio,
-                horaFim: dto.primeiroAtendimento.horaFim,
+                horaInicioMinutos: this.resolverHoraMinutos(dto.primeiroAtendimento.horaInicio),
+                horaFimMinutos: this.resolverHoraMinutos(dto.primeiroAtendimento.horaFim),
                 duracaoMinutos: this.resolverDuracaoAtendimento(dto.primeiroAtendimento),
                 modalidade: dto.primeiroAtendimento.modalidade,
                 localAtendimento: dto.primeiroAtendimento.localAtendimento,
@@ -131,7 +131,7 @@ export class AtendimentosIndividuaisService {
   }
 
   async listarAcompanhamentos(query: FiltroAcompanhamentoIndividualDto, authUser?: AuthenticatedUser) {
-    if (query.status === StatusAcompanhamentoIndividual.ARQUIVADO) {
+    if (query.status === STATUS_ARQUIVADO_VIRTUAL) {
       this.policy.assertCanViewArchivedList(authUser);
     }
 
@@ -152,7 +152,7 @@ export class AtendimentosIndividuaisService {
     ]);
 
     return {
-      data,
+      data: data.map((item) => this.sanitizarAcompanhamento(item)),
       meta: { total, page, lastPage: Math.ceil(total / limit) },
     };
   }
@@ -177,7 +177,7 @@ export class AtendimentosIndividuaisService {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
     this.policy.assertCanUpdateSubject(authUser, acompanhamento);
 
-    if (acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
+    if (acompanhamento.arquivado || acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
       throw new ConflictException('Nao e possivel alterar assunto de acompanhamento finalizado ou arquivado.');
     }
 
@@ -217,7 +217,7 @@ export class AtendimentosIndividuaisService {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
     this.policy.assertCanFinish(authUser, acompanhamento);
 
-    if (acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
+    if (acompanhamento.arquivado || acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
       throw new ConflictException('Acompanhamento individual ja esta finalizado ou arquivado.');
     }
 
@@ -245,7 +245,7 @@ export class AtendimentosIndividuaisService {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
     this.policy.assertCanReopen(authUser);
 
-    if (acompanhamento.status === StatusAcompanhamentoIndividual.ARQUIVADO) {
+    if (acompanhamento.arquivado) {
       throw new ConflictException('Desarquive o acompanhamento antes de reabri-lo.');
     }
 
@@ -274,13 +274,12 @@ export class AtendimentosIndividuaisService {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
     this.policy.assertCanArchive(authUser);
 
-    if (acompanhamento.status === StatusAcompanhamentoIndividual.ARQUIVADO) return this.sanitizarAcompanhamento(acompanhamento);
+    if (acompanhamento.arquivado) return this.sanitizarAcompanhamento(acompanhamento);
 
     const atualizado = await this.prisma.acompanhamentoIndividual.update({
       where: { id },
       data: {
-        status: StatusAcompanhamentoIndividual.ARQUIVADO,
-        statusAntesArquivamento: acompanhamento.status,
+        arquivado: true,
         arquivadoEm: new Date(),
         arquivadoPorId: auditUser.sub || undefined,
         desarquivadoEm: null,
@@ -293,6 +292,7 @@ export class AtendimentosIndividuaisService {
       status: acompanhamento.status,
     }, {
       status: atualizado.status,
+      arquivado: atualizado.arquivado,
       arquivadoEm: atualizado.arquivadoEm,
       arquivadoPorId: atualizado.arquivadoPorId,
     });
@@ -303,17 +303,12 @@ export class AtendimentosIndividuaisService {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
     this.policy.assertCanArchive(authUser);
 
-    if (acompanhamento.status !== StatusAcompanhamentoIndividual.ARQUIVADO) return this.sanitizarAcompanhamento(acompanhamento);
-
-    const statusRestaurado = acompanhamento.statusAntesArquivamento === StatusAcompanhamentoIndividual.FINALIZADO
-      ? StatusAcompanhamentoIndividual.FINALIZADO
-      : StatusAcompanhamentoIndividual.EM_ANDAMENTO;
+    if (!acompanhamento.arquivado) return this.sanitizarAcompanhamento(acompanhamento);
 
     const atualizado = await this.prisma.acompanhamentoIndividual.update({
       where: { id },
       data: {
-        status: statusRestaurado,
-        statusAntesArquivamento: null,
+        arquivado: false,
         desarquivadoEm: new Date(),
         desarquivadoPorId: auditUser.sub || undefined,
       },
@@ -324,6 +319,7 @@ export class AtendimentosIndividuaisService {
       status: acompanhamento.status,
     }, {
       status: atualizado.status,
+      arquivado: atualizado.arquivado,
       desarquivadoEm: atualizado.desarquivadoEm,
       desarquivadoPorId: atualizado.desarquivadoPorId,
     });
@@ -340,7 +336,7 @@ export class AtendimentosIndividuaisService {
     const acompanhamento = await this.buscarAcompanhamento(acompanhamentoId, authUser);
     this.policy.assertCanCreateAtendimento(authUser, acompanhamento);
 
-    if (acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
+    if (acompanhamento.arquivado || acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
       throw new ConflictException('Nao e possivel registrar atendimento em acompanhamento finalizado ou arquivado.');
     }
 
@@ -350,8 +346,8 @@ export class AtendimentosIndividuaisService {
         alunoId: acompanhamento.alunoId,
         professorId: acompanhamento.professorId,
         dataAtendimento: this.parseDate(dto.dataAtendimento),
-        horaInicio: dto.horaInicio,
-        horaFim: dto.horaFim,
+        horaInicioMinutos: this.resolverHoraMinutos(dto.horaInicio),
+        horaFimMinutos: this.resolverHoraMinutos(dto.horaFim),
         duracaoMinutos: this.resolverDuracaoAtendimento(dto),
         modalidade: dto.modalidade,
         localAtendimento: dto.localAtendimento,
@@ -529,6 +525,7 @@ export class AtendimentosIndividuaisService {
         alunoId: query.alunoId,
         professorId,
         status: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+        arquivado: false,
         excluidoEm: null,
         assuntoAtual: { equals: assuntoAtual, mode: 'insensitive' },
       },
@@ -642,10 +639,12 @@ export class AtendimentosIndividuaisService {
     query: Pick<FiltroAcompanhamentoIndividualDto, 'alunoId' | 'professorId' | 'status' | 'busca' | 'dataInicio' | 'dataFim'>,
     authUser?: AuthenticatedUser,
   ): Prisma.AcompanhamentoIndividualWhereInput {
+    const statusArquivado = query.status === STATUS_ARQUIVADO_VIRTUAL;
     const where: Prisma.AcompanhamentoIndividualWhereInput = {
       excluidoEm: null,
       ...(query.alunoId && { alunoId: query.alunoId }),
-      ...(query.status && { status: query.status }),
+      arquivado: statusArquivado,
+      ...(query.status && !statusArquivado && { status: query.status as StatusAcompanhamentoIndividual }),
       ...(query.dataInicio || query.dataFim
         ? {
             dataInicio: {
@@ -658,9 +657,6 @@ export class AtendimentosIndividuaisService {
 
     if (authUser?.role === Role.PROFESSOR) {
       where.professorId = authUser.sub;
-      if (!query.status) {
-        where.status = { not: StatusAcompanhamentoIndividual.ARQUIVADO };
-      }
     } else if (query.professorId) {
       where.professorId = query.professorId;
     }
@@ -792,6 +788,10 @@ export class AtendimentosIndividuaisService {
     }
 
     return dto.duracaoMinutos;
+  }
+
+  private resolverHoraMinutos(value?: string): number | undefined {
+    return value ? this.converterHoraParaMinutos(value) : undefined;
   }
 
   private converterHoraParaMinutos(value: string): number {
