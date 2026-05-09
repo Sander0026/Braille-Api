@@ -21,4 +21,8 @@ export class ArquivosAtendimentosIndividuaisService {
   obterParaDownload(id: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
     return this.atendimentosService.obterArquivoParaDownload(id, authUser, auditUser);
   }
+
+  arquivar(id: string, motivoExclusao: string | undefined, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
+    return this.atendimentosService.arquivarArquivoAtendimento(id, motivoExclusao, authUser, auditUser);
+  }
 }

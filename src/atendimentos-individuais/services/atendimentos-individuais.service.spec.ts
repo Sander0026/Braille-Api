@@ -67,6 +67,7 @@ describe('AtendimentosIndividuaisService', () => {
     arquivoAtendimentoIndividual: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
     aluno: { findUnique: jest.fn() },
     user: { findUnique: jest.fn() },
@@ -119,6 +120,7 @@ describe('AtendimentosIndividuaisService', () => {
         data: expect.objectContaining({
           status: StatusAcompanhamentoIndividual.ARQUIVADO,
           statusAntesArquivamento: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+          arquivadoPorId: 'user-1',
         }),
       }),
     );
@@ -142,6 +144,7 @@ describe('AtendimentosIndividuaisService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           statusAntesArquivamento: StatusAcompanhamentoIndividual.FINALIZADO,
+          arquivadoPorId: 'user-1',
         }),
       }),
     );
@@ -169,6 +172,7 @@ describe('AtendimentosIndividuaisService', () => {
         data: expect.objectContaining({
           status: StatusAcompanhamentoIndividual.FINALIZADO,
           statusAntesArquivamento: null,
+          desarquivadoPorId: 'user-1',
         }),
       }),
     );
@@ -392,8 +396,11 @@ describe('AtendimentosIndividuaisService', () => {
       tamanho: 2048,
       categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
       atendimento: {
+        alunoId: 'aluno-1',
+        professorId: 'prof-1',
         acompanhamento: {
           id: 'acomp-1',
+          alunoId: 'aluno-1',
           professorId: 'prof-1',
         },
       },
@@ -408,11 +415,15 @@ describe('AtendimentosIndividuaisService', () => {
         registroId: 'arq-1',
         acao: AuditAcao.DOWNLOAD,
         newValue: expect.objectContaining({
+          arquivoId: 'arq-1',
           atendimentoId: 'atend-1',
           acompanhamentoId: 'acomp-1',
+          alunoId: 'aluno-1',
+          professorId: 'prof-1',
           categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
           tipoArquivo: 'application/pdf',
-          tamanho: 2048,
+          usuarioId: 'user-1',
+          baixadoEm: expect.any(String),
         }),
       }),
     );
@@ -435,8 +446,11 @@ describe('AtendimentosIndividuaisService', () => {
       tamanho: 2048,
       categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
       atendimento: {
+        alunoId: 'aluno-1',
+        professorId: 'prof-outro',
         acompanhamento: {
           id: 'acomp-1',
+          alunoId: 'aluno-1',
           professorId: 'prof-outro',
         },
       },
@@ -472,6 +486,79 @@ describe('AtendimentosIndividuaisService', () => {
     expect(atendimento.temComprovante).toBe(true);
     expect(atendimento.arquivos[0].downloadUrl).toBe('/api/atendimentos-individuais/arquivos/arq-1/download');
     expect(atendimento.arquivos[0].urlArquivo).toBeUndefined();
+  });
+
+  it('deve permitir ADMIN remover anexo por exclusao logica', async () => {
+    prisma.arquivoAtendimentoIndividual.findUnique.mockResolvedValue({
+      id: 'arq-1',
+      atendimentoId: 'atend-1',
+      nomeOriginal: 'atestado.pdf',
+      urlArquivo: 'https://res.cloudinary.com/demo/raw/upload/atestado.pdf',
+      tipoArquivo: 'application/pdf',
+      tamanho: 2048,
+      categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
+      criadoPorId: 'prof-1',
+      excluidoEm: null,
+      atendimento: {
+        alunoId: 'aluno-1',
+        professorId: 'prof-1',
+        acompanhamento: {
+          id: 'acomp-1',
+          alunoId: 'aluno-1',
+          professorId: 'prof-1',
+        },
+      },
+    });
+    prisma.arquivoAtendimentoIndividual.update.mockResolvedValue({
+      id: 'arq-1',
+      nomeOriginal: 'atestado.pdf',
+      urlArquivo: 'https://res.cloudinary.com/demo/raw/upload/atestado.pdf',
+      tipoArquivo: 'application/pdf',
+      categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
+      excluidoEm: new Date('2026-05-09T12:00:00Z'),
+      excluidoPorId: 'user-1',
+      motivoExclusao: 'Duplicado',
+    });
+
+    const result = await service.arquivarArquivoAtendimento('arq-1', 'Duplicado', makeUser(Role.ADMIN), makeAudit());
+
+    expect(prisma.arquivoAtendimentoIndividual.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        excluidoPorId: 'user-1',
+        motivoExclusao: 'Duplicado',
+      }),
+    }));
+    expect(result.urlArquivo).toBeUndefined();
+    expect(auditService.registrar).toHaveBeenCalledWith(expect.objectContaining({
+      entidade: 'ArquivoAtendimentoIndividual',
+      registroId: 'arq-1',
+      acao: AuditAcao.ARQUIVAR,
+    }));
+  });
+
+  it('deve impedir professor remover anexo criado por outro usuario', async () => {
+    prisma.arquivoAtendimentoIndividual.findUnique.mockResolvedValue({
+      id: 'arq-1',
+      atendimentoId: 'atend-1',
+      categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
+      tipoArquivo: 'application/pdf',
+      criadoPorId: 'outro-prof',
+      excluidoEm: null,
+      atendimento: {
+        alunoId: 'aluno-1',
+        professorId: 'prof-1',
+        acompanhamento: {
+          id: 'acomp-1',
+          alunoId: 'aluno-1',
+          professorId: 'prof-1',
+        },
+      },
+    });
+
+    await expect(
+      service.arquivarArquivoAtendimento('arq-1', 'Duplicado', makeUser(Role.PROFESSOR, 'prof-1'), makeAudit('prof-1')),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.arquivoAtendimentoIndividual.update).not.toHaveBeenCalled();
   });
 
   it('deve rejeitar upload com assinatura de arquivo invalida', async () => {

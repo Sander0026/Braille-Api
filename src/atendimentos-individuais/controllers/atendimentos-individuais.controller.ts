@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   Res,
@@ -34,6 +35,7 @@ import { ArquivosAtendimentosIndividuaisService } from '../services/arquivos-ate
 import { ArquivoAtendimentoDownloadService } from '../services/arquivo-atendimento-download.service';
 import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individual.dto';
 import { AnexarArquivoAtendimentoDto } from '../dto/anexar-arquivo-atendimento.dto';
+import { ArquivarArquivoAtendimentoDto } from '../dto/arquivar-arquivo-atendimento.dto';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_MIMES = [
@@ -95,6 +97,22 @@ export class AtendimentosIndividuaisController {
     res.setHeader('Content-Type', download.contentType);
     res.setHeader('Content-Disposition', `inline; filename="${download.fileName}"; filename*=UTF-8''${download.encodedFileName}`);
     res.send(download.buffer);
+  }
+
+  @Patch('arquivos/:id/arquivar')
+  @ApiOperation({
+    summary: 'Remover anexo de atendimento por exclusao logica',
+    description:
+      'ADMIN pode remover qualquer anexo. PROFESSOR pode remover somente anexo que ele mesmo enviou em acompanhamento proprio.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID do arquivo anexado ao atendimento' })
+  @ApiResponse({ status: 200, description: 'Arquivo marcado como removido.' })
+  arquivarArquivo(
+    @Param('id') id: string,
+    @Body() dto: ArquivarArquivoAtendimentoDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.arquivosService.arquivar(id, dto.motivoExclusao, req.user, getAuditUser(req));
   }
 
   @Post('atendimentos/:id/arquivos')

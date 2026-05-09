@@ -32,6 +32,11 @@ export class AtendimentosIndividuaisPolicy {
     return this.isAdmin(user) || this.isProfessorOwner(user, recurso);
   }
 
+  canRemoveFile(user: AuthenticatedUser | undefined, recurso: RecursoComProfessor, criadoPorId?: string | null): boolean {
+    if (this.isAdmin(user)) return true;
+    return this.isProfessorOwner(user, recurso) && !!criadoPorId && criadoPorId === user?.sub;
+  }
+
   canReopen(user?: AuthenticatedUser): boolean {
     return this.isAdmin(user);
   }
@@ -77,6 +82,12 @@ export class AtendimentosIndividuaisPolicy {
   assertCanAttachFile(user: AuthenticatedUser | undefined, recurso: RecursoComProfessor): void {
     if (!this.canAttachFile(user, recurso)) {
       throw new ForbiddenException('Voce nao tem permissao para anexar arquivos neste atendimento individual.');
+    }
+  }
+
+  assertCanRemoveFile(user: AuthenticatedUser | undefined, recurso: RecursoComProfessor, criadoPorId?: string | null): void {
+    if (!this.canRemoveFile(user, recurso, criadoPorId)) {
+      throw new ForbiddenException('Voce nao tem permissao para remover este arquivo de atendimento individual.');
     }
   }
 

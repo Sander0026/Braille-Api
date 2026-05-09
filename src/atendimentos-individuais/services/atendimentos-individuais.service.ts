@@ -41,7 +41,7 @@ const ACOMPANHAMENTO_DETALHE_INCLUDE = {
   ...ACOMPANHAMENTO_INCLUDE,
   atendimentos: {
     where: { excluidoEm: null },
-    include: { arquivos: true },
+    include: { arquivos: { where: { excluidoEm: null } } },
     orderBy: { dataAtendimento: 'desc' },
   },
   historicoAssuntos: {
@@ -276,6 +276,10 @@ export class AtendimentosIndividuaisService {
       data: {
         status: StatusAcompanhamentoIndividual.ARQUIVADO,
         statusAntesArquivamento: acompanhamento.status,
+        arquivadoEm: new Date(),
+        arquivadoPorId: auditUser.sub || undefined,
+        desarquivadoEm: null,
+        desarquivadoPorId: null,
       },
       include: ACOMPANHAMENTO_DETALHE_INCLUDE,
     });
@@ -284,6 +288,8 @@ export class AtendimentosIndividuaisService {
       status: acompanhamento.status,
     }, {
       status: atualizado.status,
+      arquivadoEm: atualizado.arquivadoEm,
+      arquivadoPorId: atualizado.arquivadoPorId,
     });
     return this.sanitizarAcompanhamento(atualizado);
   }
@@ -303,6 +309,8 @@ export class AtendimentosIndividuaisService {
       data: {
         status: statusRestaurado,
         statusAntesArquivamento: null,
+        desarquivadoEm: new Date(),
+        desarquivadoPorId: auditUser.sub || undefined,
       },
       include: ACOMPANHAMENTO_DETALHE_INCLUDE,
     });
@@ -311,6 +319,8 @@ export class AtendimentosIndividuaisService {
       status: acompanhamento.status,
     }, {
       status: atualizado.status,
+      desarquivadoEm: atualizado.desarquivadoEm,
+      desarquivadoPorId: atualizado.desarquivadoPorId,
     });
     return this.sanitizarAcompanhamento(atualizado);
   }
@@ -349,7 +359,7 @@ export class AtendimentosIndividuaisService {
         recomendacoes: dto.recomendacoes,
         criadoPorId: auditUser.sub || undefined,
       },
-      include: { arquivos: true },
+      include: { arquivos: { where: { excluidoEm: null } } },
     });
 
     this.registrarAuditoria('AtendimentoIndividual', atendimento.id, AuditAcao.CRIAR, auditUser, undefined, {
@@ -368,7 +378,7 @@ export class AtendimentosIndividuaisService {
 
     const atendimentos = await this.prisma.atendimentoIndividual.findMany({
       where: { acompanhamentoId, excluidoEm: null },
-      include: { arquivos: true },
+      include: { arquivos: { where: { excluidoEm: null } } },
       orderBy: { dataAtendimento: 'desc' },
     });
 
@@ -379,7 +389,7 @@ export class AtendimentosIndividuaisService {
     const atendimento = await this.prisma.atendimentoIndividual.findFirst({
       where: { id, excluidoEm: null },
       include: {
-        arquivos: true,
+        arquivos: { where: { excluidoEm: null } },
         acompanhamento: {
           include: {
             aluno: { select: { id: true, nomeCompleto: true, matricula: true } },
@@ -468,7 +478,7 @@ export class AtendimentosIndividuaisService {
         professor: { select: { id: true, nome: true, matricula: true } },
         atendimentos: {
           where: whereAtendimento,
-          include: { arquivos: true },
+          include: { arquivos: { where: { excluidoEm: null } } },
           orderBy: { dataAtendimento: 'asc' },
         },
       },
@@ -499,22 +509,26 @@ export class AtendimentosIndividuaisService {
         atendimento: {
           include: {
             acompanhamento: {
-              select: { id: true, professorId: true },
+              select: { id: true, alunoId: true, professorId: true },
             },
           },
         },
       },
     });
 
-    if (!arquivo) throw new NotFoundException('Arquivo do atendimento nao encontrado.');
+    if (!arquivo || arquivo.excluidoEm) throw new NotFoundException('Arquivo do atendimento nao encontrado.');
     this.policy.assertCanView(authUser, arquivo.atendimento.acompanhamento);
     if (auditUser) {
       this.registrarAuditoria('ArquivoAtendimentoIndividual', arquivo.id, AuditAcao.DOWNLOAD, auditUser, undefined, {
+        arquivoId: arquivo.id,
         atendimentoId: arquivo.atendimentoId,
         acompanhamentoId: arquivo.atendimento.acompanhamento.id,
+        alunoId: arquivo.atendimento.alunoId,
+        professorId: arquivo.atendimento.professorId,
         categoria: arquivo.categoria,
         tipoArquivo: arquivo.tipoArquivo,
-        tamanho: arquivo.tamanho,
+        usuarioId: auditUser.sub,
+        baixadoEm: new Date().toISOString(),
       });
     }
 
@@ -523,6 +537,57 @@ export class AtendimentosIndividuaisService {
       nomeOriginal: arquivo.nomeOriginal,
       tipoArquivo: arquivo.tipoArquivo,
     };
+  }
+
+  async arquivarArquivoAtendimento(
+    id: string,
+    motivoExclusao: string | undefined,
+    authUser: AuthenticatedUser | undefined,
+    auditUser: AuditUser,
+  ) {
+    const arquivo = await this.prisma.arquivoAtendimentoIndividual.findUnique({
+      where: { id },
+      include: {
+        atendimento: {
+          include: {
+            acompanhamento: {
+              select: { id: true, alunoId: true, professorId: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!arquivo || arquivo.excluidoEm) throw new NotFoundException('Arquivo do atendimento nao encontrado.');
+
+    this.policy.assertCanRemoveFile(authUser, arquivo.atendimento.acompanhamento, arquivo.criadoPorId);
+
+    const atualizado = await this.prisma.arquivoAtendimentoIndividual.update({
+      where: { id },
+      data: {
+        excluidoEm: new Date(),
+        excluidoPorId: auditUser.sub || undefined,
+        motivoExclusao,
+      },
+    });
+
+    this.registrarAuditoria('ArquivoAtendimentoIndividual', id, AuditAcao.ARQUIVAR, auditUser, {
+      categoria: arquivo.categoria,
+      tipoArquivo: arquivo.tipoArquivo,
+    }, {
+      arquivoId: arquivo.id,
+      atendimentoId: arquivo.atendimentoId,
+      acompanhamentoId: arquivo.atendimento.acompanhamento.id,
+      alunoId: arquivo.atendimento.alunoId,
+      professorId: arquivo.atendimento.professorId,
+      categoria: arquivo.categoria,
+      tipoArquivo: arquivo.tipoArquivo,
+      excluidoEm: atualizado.excluidoEm,
+      excluidoPorId: atualizado.excluidoPorId,
+      motivoExclusao: atualizado.motivoExclusao,
+    });
+
+    return this.sanitizarArquivo(atualizado);
   }
 
   async gerarRelatorioPdf(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser): Promise<Buffer> {
@@ -634,7 +699,7 @@ export class AtendimentosIndividuaisService {
     return this.sanitizer.sanitizarAtendimento(atendimento);
   }
 
-  private sanitizarArquivo<T extends Record<string, any>>(arquivo: T): Omit<T, 'urlArquivo'> & { downloadUrl: string } {
+  private sanitizarArquivo<T extends Record<string, any>>(arquivo: T): Omit<T, 'urlArquivo'> & { downloadUrl?: string } {
     return this.sanitizer.sanitizarArquivo(arquivo);
   }
 

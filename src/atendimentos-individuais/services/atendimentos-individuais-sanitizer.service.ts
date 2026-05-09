@@ -35,8 +35,10 @@ export class AtendimentosIndividuaisSanitizerService {
     };
   }
 
-  sanitizarArquivo<T extends Record<string, any>>(arquivo: T): Omit<T, 'urlArquivo'> & { downloadUrl: string } {
+  sanitizarArquivo<T extends Record<string, any>>(arquivo: T): Omit<T, 'urlArquivo'> & { downloadUrl?: string } {
     const { urlArquivo: _urlArquivo, ...rest } = arquivo;
+    if (arquivo.excluidoEm) return rest;
+
     return {
       ...rest,
       downloadUrl: `${ARQUIVO_ATENDIMENTO_PUBLIC_BASE}/${arquivo.id}/download`,

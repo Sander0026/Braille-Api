@@ -214,9 +214,12 @@ model User {
   comunicados  Comunicado[]
   sessoes      UserSession[]
   acompanhamentosIndividuaisProfessor AcompanhamentoIndividual[]      @relation("AcompanhamentoIndividualProfessor")
+  acompanhamentosIndividuaisArquivados AcompanhamentoIndividual[]     @relation("AcompanhamentoIndividualArquivadoPor")
+  acompanhamentosIndividuaisDesarquivados AcompanhamentoIndividual[]  @relation("AcompanhamentoIndividualDesarquivadoPor")
   atendimentosIndividuaisProfessor    AtendimentoIndividual[]          @relation("AtendimentoIndividualProfessor")
   atendimentosIndividuaisCriados      AtendimentoIndividual[]          @relation("AtendimentoIndividualCriadoPor")
   arquivosAtendimentoIndividual       ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoCriadoPor")
+  arquivosAtendimentoIndividualExcluidos ArquivoAtendimentoIndividual[] @relation("ArquivoAtendimentoExcluidoPor")
   historicosAssuntoAcompanhamento     HistoricoAssuntoAcompanhamento[] @relation("HistoricoAssuntoAlteradoPor")
 
   @@index([statusAtivo, excluido])
@@ -693,6 +696,10 @@ model AcompanhamentoIndividual {
   descricao       String?
   status          StatusAcompanhamentoIndividual @default(EM_ANDAMENTO)
   statusAntesArquivamento StatusAcompanhamentoIndividual?
+  arquivadoEm     DateTime?
+  arquivadoPorId  String?
+  desarquivadoEm  DateTime?
+  desarquivadoPorId String?
   dataInicio      DateTime                       @default(now()) @db.Date
   dataFinalizacao DateTime?                      @db.Date
   resultadoFinal  String?
@@ -703,11 +710,15 @@ model AcompanhamentoIndividual {
 
   aluno            Aluno                            @relation(fields: [alunoId], references: [id])
   professor        User                             @relation("AcompanhamentoIndividualProfessor", fields: [professorId], references: [id])
+  arquivadoPor     User?                            @relation("AcompanhamentoIndividualArquivadoPor", fields: [arquivadoPorId], references: [id])
+  desarquivadoPor  User?                            @relation("AcompanhamentoIndividualDesarquivadoPor", fields: [desarquivadoPorId], references: [id])
   atendimentos     AtendimentoIndividual[]
   historicoAssuntos HistoricoAssuntoAcompanhamento[]
 
   @@index([alunoId, status])
   @@index([professorId, status])
+  @@index([arquivadoPorId])
+  @@index([desarquivadoPorId])
   @@index([dataInicio])
   @@index([excluidoEm])
 }
@@ -760,13 +771,19 @@ model ArquivoAtendimentoIndividual {
   categoria     CategoriaArquivoAtendimentoIndividual @default(OUTRO)
   criadoPorId   String?
   criadoEm      DateTime                             @default(now())
+  excluidoEm    DateTime?
+  excluidoPorId String?
+  motivoExclusao String?
 
   atendimento AtendimentoIndividual @relation(fields: [atendimentoId], references: [id])
   criadoPor   User?                 @relation("ArquivoAtendimentoCriadoPor", fields: [criadoPorId], references: [id])
+  excluidoPor User?                  @relation("ArquivoAtendimentoExcluidoPor", fields: [excluidoPorId], references: [id])
 
   @@index([atendimentoId])
   @@index([categoria])
   @@index([criadoPorId])
+  @@index([excluidoEm])
+  @@index([excluidoPorId])
 }
 
 model HistoricoAssuntoAcompanhamento {
