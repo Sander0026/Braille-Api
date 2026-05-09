@@ -35,6 +35,7 @@ import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individu
 import { AnexarArquivoAtendimentoDto } from '../dto/anexar-arquivo-atendimento.dto';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const STORAGE_DOWNLOAD_TIMEOUT_MS = 30_000;
 const ALLOWED_MIMES = [
   'application/pdf',
   'image/png',
@@ -85,7 +86,19 @@ export class AtendimentosIndividuaisController {
   @ApiResponse({ status: 200, description: 'Arquivo retornado pela API apos permissao validada.' })
   async downloadArquivo(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
     const arquivo = await this.service.obterArquivoParaDownload(id, req.user);
-    const storageResponse = await fetch(arquivo.url);
+    this.validarUrlStorage(arquivo.url);
+
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), STORAGE_DOWNLOAD_TIMEOUT_MS);
+    let storageResponse: globalThis.Response;
+
+    try {
+      storageResponse = await fetch(arquivo.url, { signal: abortController.signal });
+    } catch {
+      throw new BadGatewayException('Nao foi possivel carregar o arquivo solicitado.');
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!storageResponse.ok) {
       throw new BadGatewayException('Nao foi possivel carregar o arquivo solicitado.');
@@ -158,5 +171,34 @@ export class AtendimentosIndividuaisController {
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^\w.-]+/g, '_')
       .replace(/^_+|_+$/g, '') || 'arquivo-atendimento';
+  }
+
+  private validarUrlStorage(url: string): void {
+    let parsedUrl: URL;
+
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new BadGatewayException('URL do arquivo armazenado e invalida.');
+    }
+
+    if (parsedUrl.protocol !== 'https:') {
+      throw new BadGatewayException('URL do arquivo armazenado nao e permitida.');
+    }
+
+    const allowedHosts = this.obterHostsStoragePermitidos();
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const isAllowed = allowedHosts.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+
+    if (!isAllowed) {
+      throw new BadGatewayException('Origem do arquivo armazenado nao e permitida.');
+    }
+  }
+
+  private obterHostsStoragePermitidos(): string[] {
+    return (process.env.ATENDIMENTOS_ARQUIVOS_ALLOWED_HOSTS || 'cloudinary.com')
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean);
   }
 }
