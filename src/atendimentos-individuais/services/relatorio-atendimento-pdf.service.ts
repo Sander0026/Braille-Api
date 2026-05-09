@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { TipoRegistroAtendimentoIndividual } from '@prisma/client';
-import { PDFDocument, PDFPage, PDFFont, StandardFonts, rgb } from 'pdf-lib';
+import { readFile } from 'node:fs/promises';
+import { extname, resolve } from 'node:path';
+import { PDFDocument, PDFImage, PDFPage, PDFFont, StandardFonts, rgb } from 'pdf-lib';
 
 type PdfOptions = {
   emissorNome?: string;
@@ -20,9 +22,12 @@ type PdfTheme = {
 
 const A4 = { width: 595.28, height: 841.89 };
 const INSTITUICAO = {
-  nome: 'Instituto Luiz Braille do Espirito Santo',
-  subtitulo: 'Relatorio institucional de atendimento individual',
-  contato: 'Documento interno - uso administrativo e pedagogico',
+  nome: process.env.INSTITUICAO_NOME || 'Instituto Luiz Braille do Espirito Santo',
+  subtitulo: process.env.INSTITUICAO_SUBTITULO || 'Relatorio institucional de atendimento individual',
+  cnpj: process.env.INSTITUICAO_CNPJ || '',
+  endereco: process.env.INSTITUICAO_ENDERECO || '',
+  contato: process.env.INSTITUICAO_CONTATO || 'Documento interno - uso administrativo e pedagogico',
+  logoPath: process.env.ATENDIMENTO_RELATORIO_LOGO_PATH || process.env.INSTITUICAO_LOGO_PATH || '',
 };
 
 @Injectable()
@@ -31,6 +36,7 @@ export class RelatorioAtendimentoPdfService {
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const logoImage = await this.carregarLogo(pdfDoc);
     const margin = 42;
     const theme: PdfTheme = {
       title: rgb(0.06, 0.1, 0.18),
@@ -60,6 +66,15 @@ export class RelatorioAtendimentoPdfService {
     };
 
     const drawLogo = (x: number, logoY: number) => {
+      if (logoImage) {
+        const maxSize = 42;
+        const scale = Math.min(maxSize / logoImage.width, maxSize / logoImage.height);
+        const width = logoImage.width * scale;
+        const height = logoImage.height * scale;
+        page.drawImage(logoImage, { x, y: logoY - height - 1, width, height });
+        return;
+      }
+
       page.drawCircle({ x: x + 22, y: logoY - 16, size: 21, color: theme.accent });
       page.drawCircle({ x: x + 22, y: logoY - 16, size: 17, color: theme.white });
       page.drawText('ILB', { x: x + 9, y: logoY - 22, size: 12, font: fontBold, color: theme.title });
@@ -69,7 +84,7 @@ export class RelatorioAtendimentoPdfService {
       drawLogo(margin, y);
       page.drawText(INSTITUICAO.nome, { x: margin + 54, y: y - 4, size: 12, font: fontBold, color: theme.title });
       page.drawText(INSTITUICAO.subtitulo, { x: margin + 54, y: y - 20, size: 9, font, color: theme.muted });
-      page.drawText(INSTITUICAO.contato, { x: margin + 54, y: y - 34, size: 8, font, color: theme.muted });
+      page.drawText(this.limitar(this.descreverDadosInstituicao(), 64), { x: margin + 54, y: y - 34, size: 8, font, color: theme.muted });
       page.drawText(`Emitido em: ${this.formatarDataHora(emitidoEm)}`, { x: A4.width - margin - 172, y: y - 4, size: 8, font, color: theme.muted });
       page.drawText(`Emissor: ${this.limitar(emissorNome, 34)}`, { x: A4.width - margin - 172, y: y - 18, size: 8, font, color: theme.muted });
       page.drawText(`Perfil: ${emissorPerfil}`, { x: A4.width - margin - 172, y: y - 32, size: 8, font, color: theme.muted });
@@ -280,6 +295,28 @@ export class RelatorioAtendimentoPdfService {
     });
   }
 
+  private async carregarLogo(pdfDoc: PDFDocument): Promise<PDFImage | null> {
+    if (!INSTITUICAO.logoPath) return null;
+
+    try {
+      const logoPath = resolve(INSTITUICAO.logoPath);
+      const bytes = await readFile(logoPath);
+      const extension = extname(logoPath).toLowerCase();
+
+      if (extension === '.png') return pdfDoc.embedPng(bytes);
+      if (extension === '.jpg' || extension === '.jpeg') return pdfDoc.embedJpg(bytes);
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private descreverDadosInstituicao(): string {
+    return [INSTITUICAO.cnpj ? `CNPJ: ${INSTITUICAO.cnpj}` : null, INSTITUICAO.endereco, INSTITUICAO.contato]
+      .filter(Boolean)
+      .join(' | ');
+  }
+
   private descreverFiltros(filtros: Record<string, unknown> = {}): string {
     const partes = [
       filtros['alunoId'] ? 'Aluno selecionado' : 'Todos os alunos permitidos',
@@ -347,13 +384,18 @@ export class RelatorioAtendimentoPdfService {
 
   private normalizarTexto(texto: string): string {
     return String(texto ?? '')
-      .normalize('NFC')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[–—]/g, '-')
+      .replace(/…/g, '...')
       .replace(/[“”]/g, '"')
       .replace(/[‘’]/g, "'")
       .replace(/[–—]/g, '-')
       .replace(/…/g, '...')
       .replace(/\u00A0/g, ' ')
-      .replace(/[^\x00-\x7F]/g, (char) => this.asciiFallback(char))
+      .replace(/[^\x00-\x7F]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
   }

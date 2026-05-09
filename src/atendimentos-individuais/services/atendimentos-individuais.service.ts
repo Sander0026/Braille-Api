@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -22,10 +21,8 @@ import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individu
 import { AtualizarAssuntoAcompanhamentoDto } from '../dto/atualizar-assunto-acompanhamento.dto';
 import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto';
 import { FiltroAcompanhamentoIndividualDto, STATUS_ARQUIVADO_VIRTUAL } from '../dto/filtro-acompanhamento-individual.dto';
-import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
 import { VerificarDuplicidadeAcompanhamentoDto } from '../dto/verificar-duplicidade-acompanhamento.dto';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
-import { RelatorioAtendimentoPdfService } from './relatorio-atendimento-pdf.service';
 import { AtendimentosIndividuaisAuditService } from './atendimentos-individuais-audit.service';
 import { AtendimentosIndividuaisSanitizerService } from './atendimentos-individuais-sanitizer.service';
 
@@ -57,7 +54,6 @@ export class AtendimentosIndividuaisService {
     private readonly prisma: PrismaService,
     private readonly uploadService: UploadService,
     private readonly policy: AtendimentosIndividuaisPolicy,
-    private readonly relatorioPdfService: RelatorioAtendimentoPdfService,
     private readonly sanitizer: AtendimentosIndividuaisSanitizerService,
     private readonly audit: AtendimentosIndividuaisAuditService,
   ) {}
@@ -154,131 +150,6 @@ export class AtendimentosIndividuaisService {
     return {
       data: data.map((item) => this.sanitizarAcompanhamento(item)),
       meta: { total, page, lastPage: Math.ceil(total / limit) },
-    };
-  }
-
-  async obterDashboardAdministrativo(authUser?: AuthenticatedUser) {
-    if (!this.policy.canViewArchivedList(authUser)) {
-      throw new ForbiddenException('Seu perfil nao tem permissao para consultar o dashboard administrativo.');
-    }
-
-    const agora = new Date();
-    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
-    const fimMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 0, 23, 59, 59, 999);
-
-    const acompanhamentoBase: Prisma.AcompanhamentoIndividualWhereInput = { excluidoEm: null };
-    const atendimentoBase: Prisma.AtendimentoIndividualWhereInput = {
-      excluidoEm: null,
-      acompanhamento: acompanhamentoBase,
-    };
-    const atendimentoMes: Prisma.AtendimentoIndividualWhereInput = {
-      ...atendimentoBase,
-      dataAtendimento: { gte: inicioMes, lte: fimMes },
-    };
-
-    const [
-      emAndamento,
-      finalizados,
-      arquivados,
-      atendimentosNoMes,
-      faltasComComprovante,
-      faltasSemComprovante,
-      totalAcompanhamentosNaoArquivados,
-      totalAtendimentosNaoArquivados,
-      porProfessorRaw,
-      alunosRaw,
-    ] = await Promise.all([
-      this.prisma.acompanhamentoIndividual.count({
-        where: { ...acompanhamentoBase, status: StatusAcompanhamentoIndividual.EM_ANDAMENTO, arquivado: false },
-      }),
-      this.prisma.acompanhamentoIndividual.count({
-        where: { ...acompanhamentoBase, status: StatusAcompanhamentoIndividual.FINALIZADO, arquivado: false },
-      }),
-      this.prisma.acompanhamentoIndividual.count({ where: { ...acompanhamentoBase, arquivado: true } }),
-      this.prisma.atendimentoIndividual.count({ where: atendimentoMes }),
-      this.prisma.atendimentoIndividual.count({
-        where: {
-          ...atendimentoMes,
-          tipoRegistro: TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA,
-          arquivos: { some: { categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO, excluidoEm: null } },
-        },
-      }),
-      this.prisma.atendimentoIndividual.count({
-        where: {
-          ...atendimentoMes,
-          tipoRegistro: TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA,
-          arquivos: { none: { categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO, excluidoEm: null } },
-        },
-      }),
-      this.prisma.acompanhamentoIndividual.count({ where: { ...acompanhamentoBase, arquivado: false } }),
-      this.prisma.atendimentoIndividual.count({
-        where: { ...atendimentoBase, acompanhamento: { ...acompanhamentoBase, arquivado: false } },
-      }),
-      this.prisma.atendimentoIndividual.groupBy({
-        by: ['professorId'],
-        where: atendimentoMes,
-        _count: { _all: true },
-        orderBy: { _count: { professorId: 'desc' } },
-        take: 5,
-      }),
-      this.prisma.atendimentoIndividual.groupBy({
-        by: ['alunoId'],
-        where: atendimentoMes,
-        _count: { _all: true },
-        orderBy: { _count: { alunoId: 'desc' } },
-        take: 5,
-      }),
-    ]);
-
-    const [professores, alunos] = await Promise.all([
-      porProfessorRaw.length
-        ? this.prisma.user.findMany({
-            where: { id: { in: porProfessorRaw.map((item) => item.professorId) } },
-            select: { id: true, nome: true, matricula: true },
-          })
-        : [],
-      alunosRaw.length
-        ? this.prisma.aluno.findMany({
-            where: { id: { in: alunosRaw.map((item) => item.alunoId) } },
-            select: { id: true, nomeCompleto: true, matricula: true },
-          })
-        : [],
-    ]);
-
-    return {
-      periodo: {
-        inicio: inicioMes.toISOString().slice(0, 10),
-        fim: fimMes.toISOString().slice(0, 10),
-      },
-      indicadores: {
-        emAndamento,
-        finalizados,
-        arquivados,
-        atendimentosNoMes,
-        faltasJustificadasComComprovante: faltasComComprovante,
-        faltasJustificadasSemComprovante: faltasSemComprovante,
-        mediaAtendimentosPorAcompanhamento: totalAcompanhamentosNaoArquivados
-          ? Number((totalAtendimentosNaoArquivados / totalAcompanhamentosNaoArquivados).toFixed(1))
-          : 0,
-      },
-      atendimentosPorProfessor: porProfessorRaw.map((item) => {
-        const professor = professores.find((prof) => prof.id === item.professorId);
-        return {
-          professorId: item.professorId,
-          nome: professor?.nome ?? 'Professor nao encontrado',
-          matricula: professor?.matricula ?? null,
-          total: item._count._all,
-        };
-      }),
-      alunosMaisAtendidos: alunosRaw.map((item) => {
-        const aluno = alunos.find((registro) => registro.id === item.alunoId);
-        return {
-          alunoId: item.alunoId,
-          nome: aluno?.nomeCompleto ?? 'Aluno nao encontrado',
-          matricula: aluno?.matricula ?? null,
-          total: item._count._all,
-        };
-      }),
     };
   }
 
@@ -564,77 +435,6 @@ export class AtendimentosIndividuaisService {
     return this.sanitizarArquivo(arquivo);
   }
 
-  async gerarRelatorio(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser) {
-    if (!this.policy.canGenerateReport(authUser)) {
-      throw new ForbiddenException('Seu perfil nao tem permissao para gerar relatorio.');
-    }
-
-    this.validarPeriodoRelatorio(query);
-
-    const whereAcompanhamento = this.montarWhereAcompanhamento(
-      {
-        alunoId: query.alunoId,
-        professorId: query.professorId,
-        status: query.status,
-      },
-      authUser,
-    );
-
-    const whereAtendimento: Prisma.AtendimentoIndividualWhereInput = {
-      excluidoEm: null,
-      ...(query.tipoRegistro && { tipoRegistro: query.tipoRegistro }),
-      ...(query.dataInicio || query.dataFim
-        ? {
-            dataAtendimento: {
-              ...(query.dataInicio && { gte: this.parseDate(query.dataInicio) }),
-              ...(query.dataFim && { lte: this.parseDate(query.dataFim) }),
-            },
-          }
-        : {}),
-    };
-
-    if (query.tipoRegistro || query.dataInicio || query.dataFim) {
-      whereAcompanhamento.atendimentos = { some: whereAtendimento };
-    }
-
-    const acompanhamentos = await this.prisma.acompanhamentoIndividual.findMany({
-      where: whereAcompanhamento,
-      include: {
-        aluno: { select: { id: true, nomeCompleto: true, matricula: true } },
-        professor: { select: { id: true, nome: true, matricula: true } },
-        atendimentos: {
-          where: whereAtendimento,
-          include: { arquivos: { where: { excluidoEm: null } } },
-          orderBy: { dataAtendimento: 'asc' },
-        },
-      },
-      orderBy: { atualizadoEm: 'desc' },
-    });
-
-    const atendimentos = acompanhamentos.flatMap((item) => item.atendimentos);
-    const faltasJustificadas = atendimentos.filter((item) => item.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA);
-    const totais = {
-      atendimentosRealizados: this.contar(atendimentos, TipoRegistroAtendimentoIndividual.ATENDIMENTO_REALIZADO),
-      faltasJustificadas: faltasJustificadas.length,
-      faltasJustificadasComComprovante: faltasJustificadas.filter((item: any) =>
-        item.arquivos?.some((arquivo: any) => arquivo.categoria === CategoriaArquivoAtendimentoIndividual.ATESTADO),
-      ).length,
-      faltasJustificadasSemComprovante: faltasJustificadas.filter((item: any) =>
-        !item.arquivos?.some((arquivo: any) => arquivo.categoria === CategoriaArquivoAtendimentoIndividual.ATESTADO),
-      ).length,
-      faltasNaoJustificadas: this.contar(atendimentos, TipoRegistroAtendimentoIndividual.FALTA_NAO_JUSTIFICADA),
-      cancelados: this.contar(atendimentos, TipoRegistroAtendimentoIndividual.CANCELADO),
-    };
-
-    return {
-      filtros: query,
-      totalAcompanhamentos: acompanhamentos.length,
-      totalRegistros: atendimentos.length,
-      totais,
-      acompanhamentos: acompanhamentos.map((item) => this.sanitizarAcompanhamento(item)),
-    };
-  }
-
   async verificarDuplicidadeAcompanhamento(query: VerificarDuplicidadeAcompanhamentoDto, authUser?: AuthenticatedUser) {
     this.policy.assertCanCreate(authUser);
 
@@ -755,14 +555,6 @@ export class AtendimentosIndividuaisService {
     return this.sanitizarArquivo(atualizado);
   }
 
-  async gerarRelatorioPdf(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser): Promise<Buffer> {
-    const relatorio = await this.gerarRelatorio(query, authUser);
-    return this.relatorioPdfService.gerar(relatorio, {
-      emissorNome: authUser?.nome || authUser?.email || authUser?.sub,
-      emissorPerfil: authUser?.role,
-    });
-  }
-
   private montarWhereAcompanhamento(
     query: Pick<FiltroAcompanhamentoIndividualDto, 'alunoId' | 'professorId' | 'status' | 'busca' | 'dataInicio' | 'dataFim'>,
     authUser?: AuthenticatedUser,
@@ -854,13 +646,6 @@ export class AtendimentosIndividuaisService {
     return date;
   }
 
-  private contar(
-    atendimentos: Array<{ tipoRegistro: TipoRegistroAtendimentoIndividual }>,
-    tipo: TipoRegistroAtendimentoIndividual,
-  ): number {
-    return atendimentos.filter((item) => item.tipoRegistro === tipo).length;
-  }
-
   private sanitizarAcompanhamento<T extends Record<string, any>>(acompanhamento: T): T {
     return this.sanitizer.sanitizarAcompanhamento(acompanhamento);
   }
@@ -925,16 +710,6 @@ export class AtendimentosIndividuaisService {
   private converterHoraParaMinutos(value: string): number {
     const [hora, minuto] = value.split(':').map(Number);
     return hora * 60 + minuto;
-  }
-
-  private validarPeriodoRelatorio(query: FiltroRelatorioAtendimentoDto): void {
-    if (!query.dataInicio || !query.dataFim) return;
-
-    const inicio = this.parseDate(query.dataInicio);
-    const fim = this.parseDate(query.dataFim);
-    if (inicio.getTime() > fim.getTime()) {
-      throw new BadRequestException('dataInicio deve ser menor ou igual a dataFim.');
-    }
   }
 
   private extrairNomeArquivo(url: string): string | null {

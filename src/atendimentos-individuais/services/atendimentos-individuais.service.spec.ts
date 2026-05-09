@@ -7,7 +7,6 @@ import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individu
 import { AtendimentosIndividuaisService } from './atendimentos-individuais.service';
 import { AtendimentosIndividuaisAuditService } from './atendimentos-individuais-audit.service';
 import { AtendimentosIndividuaisSanitizerService } from './atendimentos-individuais-sanitizer.service';
-import { RelatorioAtendimentoPdfService } from './relatorio-atendimento-pdf.service';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import type { AuditUser } from '../../common/interfaces/audit-user.interface';
 import { STATUS_ARQUIVADO_VIRTUAL } from '../dto/filtro-acompanhamento-individual.dto';
@@ -83,10 +82,6 @@ describe('AtendimentosIndividuaisService', () => {
     uploadArquivoAtendimento: jest.fn(),
   };
 
-  const relatorioPdfService = {
-    gerar: jest.fn(),
-  };
-
   const policy = new AtendimentosIndividuaisPolicy();
   const sanitizer = new AtendimentosIndividuaisSanitizerService();
 
@@ -97,7 +92,6 @@ describe('AtendimentosIndividuaisService', () => {
       prisma as unknown as PrismaService,
       uploadService as unknown as UploadService,
       policy,
-      relatorioPdfService as unknown as RelatorioAtendimentoPdfService,
       sanitizer,
       audit,
     );
