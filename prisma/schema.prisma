@@ -207,6 +207,7 @@ model User {
   sessoes      UserSession[]
   acompanhamentosIndividuaisProfessor AcompanhamentoIndividual[]      @relation("AcompanhamentoIndividualProfessor")
   atendimentosIndividuaisProfessor    AtendimentoIndividual[]          @relation("AtendimentoIndividualProfessor")
+  atendimentosIndividuaisCriados      AtendimentoIndividual[]          @relation("AtendimentoIndividualCriadoPor")
   arquivosAtendimentoIndividual       ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoCriadoPor")
   historicosAssuntoAcompanhamento     HistoricoAssuntoAcompanhamento[] @relation("HistoricoAssuntoAlteradoPor")
 
@@ -715,6 +716,7 @@ model AtendimentoIndividual {
   dificuldades     String?
   pendencias       String?
   recomendacoes    String?
+  criadoPorId      String?
   criadoEm         DateTime                        @default(now())
   atualizadoEm     DateTime                        @updatedAt
   excluidoEm       DateTime?
@@ -722,11 +724,13 @@ model AtendimentoIndividual {
   acompanhamento AcompanhamentoIndividual       @relation(fields: [acompanhamentoId], references: [id])
   aluno          Aluno                          @relation(fields: [alunoId], references: [id])
   professor      User                           @relation("AtendimentoIndividualProfessor", fields: [professorId], references: [id])
+  criadoPor      User?                          @relation("AtendimentoIndividualCriadoPor", fields: [criadoPorId], references: [id])
   arquivos       ArquivoAtendimentoIndividual[]
 
   @@index([acompanhamentoId, dataAtendimento])
   @@index([alunoId, dataAtendimento])
   @@index([professorId, dataAtendimento])
+  @@index([criadoPorId])
   @@index([tipoRegistro])
   @@index([excluidoEm])
 }

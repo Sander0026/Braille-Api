@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -103,6 +104,7 @@ export class AtendimentosIndividuaisService {
                 dificuldades: dto.primeiroAtendimento.dificuldades,
                 pendencias: dto.primeiroAtendimento.pendencias,
                 recomendacoes: dto.primeiroAtendimento.recomendacoes,
+                criadoPorId: auditUser.sub || undefined,
               },
             },
           }),
@@ -282,6 +284,7 @@ export class AtendimentosIndividuaisService {
         dificuldades: dto.dificuldades,
         pendencias: dto.pendencias,
         recomendacoes: dto.recomendacoes,
+        criadoPorId: auditUser.sub || undefined,
       },
       include: { arquivos: true },
     });
@@ -364,7 +367,7 @@ export class AtendimentosIndividuaisService {
 
   async gerarRelatorio(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser) {
     if (!this.policy.canGenerateReport(authUser)) {
-      throw new BadRequestException('Seu perfil nao tem permissao para gerar relatorio.');
+      throw new ForbiddenException('Seu perfil nao tem permissao para gerar relatorio.');
     }
 
     this.validarPeriodoRelatorio(query);
