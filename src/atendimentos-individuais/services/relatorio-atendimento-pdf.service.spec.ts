@@ -92,7 +92,7 @@ describe('RelatorioAtendimentoPdfService', () => {
     expect(detalhes).toContain('Inicio 08:00');
     expect(detalhes).toContain('Fim 09:30');
     expect(detalhes).toContain('90 min');
-    expect(detalhes).toContain('Modalidade PRESENCIAL');
+    expect(detalhes).toContain('Modalidade Presencial');
     expect(detalhes).toContain('Local Sala 3');
   });
 
@@ -106,10 +106,10 @@ describe('RelatorioAtendimentoPdfService', () => {
       tipoRegistro: 'ATENDIMENTO_REALIZADO',
     });
 
-    expect(filtros).toContain('aluno selecionado');
-    expect(filtros).toContain('professor selecionado');
-    expect(filtros).toContain('periodo 2026-05-01 a 2026-05-31');
-    expect(filtros).toContain('status EM_ANDAMENTO');
-    expect(filtros).toContain('tipo ATENDIMENTO_REALIZADO');
+    expect(filtros).toContain('Aluno selecionado');
+    expect(filtros).toContain('Professor selecionado');
+    expect(filtros).toContain('Periodo 2026-05-01 a 2026-05-31');
+    expect(filtros).toContain('Status Em Andamento');
+    expect(filtros).toContain('Tipo Atendimento realizado');
   });
 });

@@ -632,7 +632,10 @@ export class AtendimentosIndividuaisService {
 
   async gerarRelatorioPdf(query: FiltroRelatorioAtendimentoDto, authUser?: AuthenticatedUser): Promise<Buffer> {
     const relatorio = await this.gerarRelatorio(query, authUser);
-    return this.relatorioPdfService.gerar(relatorio);
+    return this.relatorioPdfService.gerar(relatorio, {
+      emissorNome: authUser?.nome || authUser?.email || authUser?.sub,
+      emissorPerfil: authUser?.role,
+    });
   }
 
   private montarWhereAcompanhamento(
