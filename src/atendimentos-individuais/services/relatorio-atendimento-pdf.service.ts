@@ -93,6 +93,8 @@ export class RelatorioAtendimentoPdfService {
     drawLine(`Total de registros: ${relatorio.totalRegistros}`, { bold: true });
     drawLine(`Atendimentos realizados: ${relatorio.totais.atendimentosRealizados}`);
     drawLine(`Faltas justificadas: ${relatorio.totais.faltasJustificadas}`);
+    drawLine(`Faltas justificadas com comprovante: ${relatorio.totais.faltasJustificadasComComprovante ?? 0}`);
+    drawLine(`Faltas justificadas sem comprovante: ${relatorio.totais.faltasJustificadasSemComprovante ?? 0}`);
     drawLine(`Faltas nao justificadas: ${relatorio.totais.faltasNaoJustificadas}`);
     drawLine(`Cancelados: ${relatorio.totais.cancelados}`);
 

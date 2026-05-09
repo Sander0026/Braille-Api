@@ -5,6 +5,7 @@ import { AtualizarAssuntoAcompanhamentoDto } from '../dto/atualizar-assunto-acom
 import { CriarAcompanhamentoIndividualDto } from '../dto/criar-acompanhamento-individual.dto';
 import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-individual.dto';
 import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto';
+import { VerificarDuplicidadeAcompanhamentoDto } from '../dto/verificar-duplicidade-acompanhamento.dto';
 import { AtendimentosIndividuaisService } from './atendimentos-individuais.service';
 
 @Injectable()
@@ -17,6 +18,10 @@ export class AcompanhamentosIndividuaisService {
 
   listar(query: FiltroAcompanhamentoIndividualDto, authUser: AuthenticatedUser | undefined) {
     return this.atendimentosService.listarAcompanhamentos(query, authUser);
+  }
+
+  verificarDuplicidade(query: VerificarDuplicidadeAcompanhamentoDto, authUser: AuthenticatedUser | undefined) {
+    return this.atendimentosService.verificarDuplicidadeAcompanhamento(query, authUser);
   }
 
   buscar(id: string, authUser: AuthenticatedUser | undefined) {

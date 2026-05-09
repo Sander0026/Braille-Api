@@ -23,6 +23,7 @@ import { AtualizarAssuntoAcompanhamentoDto } from '../dto/atualizar-assunto-acom
 import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto';
 import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-individual.dto';
 import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
+import { VerificarDuplicidadeAcompanhamentoDto } from '../dto/verificar-duplicidade-acompanhamento.dto';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
 import { RelatorioAtendimentoPdfService } from './relatorio-atendimento-pdf.service';
 import { AtendimentosIndividuaisAuditService } from './atendimentos-individuais-audit.service';
@@ -130,6 +131,10 @@ export class AtendimentosIndividuaisService {
   }
 
   async listarAcompanhamentos(query: FiltroAcompanhamentoIndividualDto, authUser?: AuthenticatedUser) {
+    if (query.status === StatusAcompanhamentoIndividual.ARQUIVADO) {
+      this.policy.assertCanViewArchivedList(authUser);
+    }
+
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
@@ -486,9 +491,16 @@ export class AtendimentosIndividuaisService {
     });
 
     const atendimentos = acompanhamentos.flatMap((item) => item.atendimentos);
+    const faltasJustificadas = atendimentos.filter((item) => item.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA);
     const totais = {
       atendimentosRealizados: this.contar(atendimentos, TipoRegistroAtendimentoIndividual.ATENDIMENTO_REALIZADO),
-      faltasJustificadas: this.contar(atendimentos, TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA),
+      faltasJustificadas: faltasJustificadas.length,
+      faltasJustificadasComComprovante: faltasJustificadas.filter((item: any) =>
+        item.arquivos?.some((arquivo: any) => arquivo.categoria === CategoriaArquivoAtendimentoIndividual.ATESTADO),
+      ).length,
+      faltasJustificadasSemComprovante: faltasJustificadas.filter((item: any) =>
+        !item.arquivos?.some((arquivo: any) => arquivo.categoria === CategoriaArquivoAtendimentoIndividual.ATESTADO),
+      ).length,
       faltasNaoJustificadas: this.contar(atendimentos, TipoRegistroAtendimentoIndividual.FALTA_NAO_JUSTIFICADA),
       cancelados: this.contar(atendimentos, TipoRegistroAtendimentoIndividual.CANCELADO),
     };
@@ -499,6 +511,37 @@ export class AtendimentosIndividuaisService {
       totalRegistros: atendimentos.length,
       totais,
       acompanhamentos: acompanhamentos.map((item) => this.sanitizarAcompanhamento(item)),
+    };
+  }
+
+  async verificarDuplicidadeAcompanhamento(query: VerificarDuplicidadeAcompanhamentoDto, authUser?: AuthenticatedUser) {
+    this.policy.assertCanCreate(authUser);
+
+    const professorId = this.resolverProfessorId(query.professorId, authUser);
+    const assuntoAtual = query.assuntoAtual.trim();
+
+    if (!assuntoAtual) {
+      throw new BadRequestException('assuntoAtual e obrigatorio.');
+    }
+
+    const acompanhamento = await this.prisma.acompanhamentoIndividual.findFirst({
+      where: {
+        alunoId: query.alunoId,
+        professorId,
+        status: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+        excluidoEm: null,
+        assuntoAtual: { equals: assuntoAtual, mode: 'insensitive' },
+      },
+      include: ACOMPANHAMENTO_INCLUDE,
+      orderBy: { atualizadoEm: 'desc' },
+    });
+
+    return {
+      duplicado: !!acompanhamento,
+      acompanhamento,
+      mensagem: acompanhamento
+        ? 'Ja existe um acompanhamento em andamento para este aluno, professor e assunto.'
+        : null,
     };
   }
 
@@ -615,6 +658,9 @@ export class AtendimentosIndividuaisService {
 
     if (authUser?.role === Role.PROFESSOR) {
       where.professorId = authUser.sub;
+      if (!query.status) {
+        where.status = { not: StatusAcompanhamentoIndividual.ARQUIVADO };
+      }
     } else if (query.professorId) {
       where.professorId = query.professorId;
     }

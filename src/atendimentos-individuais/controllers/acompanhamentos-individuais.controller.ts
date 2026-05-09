@@ -18,6 +18,7 @@ import { CriarAcompanhamentoIndividualDto } from '../dto/criar-acompanhamento-in
 import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-individual.dto';
 import { AtualizarAssuntoAcompanhamentoDto } from '../dto/atualizar-assunto-acompanhamento.dto';
 import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto';
+import { VerificarDuplicidadeAcompanhamentoDto } from '../dto/verificar-duplicidade-acompanhamento.dto';
 
 @ApiTags('Atendimentos Individuais - Acompanhamentos')
 @ApiBearerAuth()
@@ -50,6 +51,13 @@ export class AcompanhamentosIndividuaisController {
   @ApiResponse({ status: 200, description: 'Lista paginada retornada.' })
   findAll(@Query() query: FiltroAcompanhamentoIndividualDto, @Req() req: AuthenticatedRequest) {
     return this.service.listar(query, req.user);
+  }
+
+  @Get('duplicidade')
+  @ApiOperation({ summary: 'Verificar acompanhamento em andamento semelhante antes de criar novo' })
+  @ApiResponse({ status: 200, description: 'Resultado da verificacao de duplicidade.' })
+  verificarDuplicidade(@Query() query: VerificarDuplicidadeAcompanhamentoDto, @Req() req: AuthenticatedRequest) {
+    return this.service.verificarDuplicidade(query, req.user);
   }
 
   @Get(':id')

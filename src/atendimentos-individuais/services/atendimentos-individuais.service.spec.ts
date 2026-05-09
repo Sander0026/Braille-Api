@@ -220,6 +220,41 @@ describe('AtendimentosIndividuaisService', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('deve impedir PROFESSOR de listar acompanhamentos arquivados', async () => {
+    await expect(
+      service.listarAcompanhamentos(
+        { status: StatusAcompanhamentoIndividual.ARQUIVADO } as any,
+        makeUser(Role.PROFESSOR, 'prof-1'),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('deve avisar quando existir acompanhamento em andamento duplicado', async () => {
+    const original = makeAcompanhamento({
+      alunoId: 'aluno-1',
+      professorId: 'prof-1',
+      assuntoAtual: 'Braille',
+      status: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+    });
+    prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
+
+    const result = await service.verificarDuplicidadeAcompanhamento(
+      { alunoId: 'aluno-1', professorId: 'prof-1', assuntoAtual: 'braille' },
+      makeUser(Role.ADMIN),
+    );
+
+    expect(result.duplicado).toBe(true);
+    expect(result.acompanhamento?.id).toBe('acomp-1');
+    expect(prisma.acompanhamentoIndividual.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        alunoId: 'aluno-1',
+        professorId: 'prof-1',
+        status: StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+        assuntoAtual: { equals: 'braille', mode: 'insensitive' },
+      }),
+    }));
+  });
+
   it('deve impedir SECRETARIA de desarquivar acompanhamento', async () => {
     const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.ARQUIVADO });
     prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);

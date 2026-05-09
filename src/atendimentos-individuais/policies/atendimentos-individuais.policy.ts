@@ -45,6 +45,10 @@ export class AtendimentosIndividuaisPolicy {
     return this.isAdmin(user);
   }
 
+  canViewArchivedList(user?: AuthenticatedUser): boolean {
+    return this.isAdminOrSecretaria(user);
+  }
+
   canGenerateReport(user?: AuthenticatedUser): boolean {
     return this.isAdminOrSecretaria(user) || user?.role === Role.PROFESSOR;
   }
@@ -100,6 +104,12 @@ export class AtendimentosIndividuaisPolicy {
   assertCanArchive(user?: AuthenticatedUser): void {
     if (!this.canArchive(user)) {
       throw new ForbiddenException('Voce nao tem permissao para arquivar este acompanhamento individual.');
+    }
+  }
+
+  assertCanViewArchivedList(user?: AuthenticatedUser): void {
+    if (!this.canViewArchivedList(user)) {
+      throw new ForbiddenException('Voce nao tem permissao para consultar acompanhamentos arquivados.');
     }
   }
 

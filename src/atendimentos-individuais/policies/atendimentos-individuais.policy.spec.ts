@@ -23,6 +23,13 @@ describe('AtendimentosIndividuaisPolicy', () => {
     expect(policy.canArchive(undefined)).toBe(false);
   });
 
+  it('canViewArchivedList deve permitir apenas ADMIN e SECRETARIA', () => {
+    expect(policy.canViewArchivedList(makeUser(Role.ADMIN))).toBe(true);
+    expect(policy.canViewArchivedList(makeUser(Role.SECRETARIA))).toBe(true);
+    expect(policy.canViewArchivedList(makeUser(Role.PROFESSOR))).toBe(false);
+    expect(policy.canViewArchivedList(undefined)).toBe(false);
+  });
+
   // ─── canCreate ─────────────────────────────────────────────────────
 
   it('canCreate deve retornar true para ADMIN, SECRETARIA e PROFESSOR', () => {
