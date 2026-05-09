@@ -325,6 +325,8 @@ export class UsersService {
             nome: true,
             username: true,
             role: true,
+            matricula: true,
+            statusAtivo: true,
             fotoPerfil: true,
           },
           orderBy: { nome: 'asc' },

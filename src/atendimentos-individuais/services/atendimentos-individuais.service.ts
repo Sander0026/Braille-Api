@@ -103,7 +103,13 @@ export class AtendimentosIndividuaisService {
       return criado;
     });
 
-    this.registrarAuditoria('AcompanhamentoIndividual', acompanhamento.id, AuditAcao.CRIAR, auditUser, undefined, acompanhamento);
+    this.registrarAuditoria('AcompanhamentoIndividual', acompanhamento.id, AuditAcao.CRIAR, auditUser, undefined, {
+      alunoId: acompanhamento.alunoId,
+      professorId: acompanhamento.professorId,
+      status: acompanhamento.status,
+      dataInicio: acompanhamento.dataInicio,
+      possuiPrimeiroAtendimento: Boolean(dto.primeiroAtendimento),
+    });
     return acompanhamento;
   }
 
@@ -148,7 +154,7 @@ export class AtendimentosIndividuaisService {
     auditUser: AuditUser,
   ) {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
-    this.policy.assertCanMutate(authUser, acompanhamento);
+    this.policy.assertCanUpdateSubject(authUser, acompanhamento);
 
     if (acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
       throw new ConflictException('Nao e possivel alterar assunto de acompanhamento finalizado ou arquivado.');
@@ -172,7 +178,12 @@ export class AtendimentosIndividuaisService {
       include: ACOMPANHAMENTO_DETALHE_INCLUDE,
     });
 
-    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.ATUALIZAR, auditUser, acompanhamento, atualizado);
+    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.ATUALIZAR, auditUser, {
+      assuntoAtual: acompanhamento.assuntoAtual,
+    }, {
+      assuntoAtual: atualizado.assuntoAtual,
+      motivoAlteracao: dto.motivoAlteracao,
+    });
     return atualizado;
   }
 
@@ -183,7 +194,7 @@ export class AtendimentosIndividuaisService {
     auditUser: AuditUser,
   ) {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
-    this.policy.assertCanMutate(authUser, acompanhamento);
+    this.policy.assertCanFinish(authUser, acompanhamento);
 
     if (acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
       throw new ConflictException('Acompanhamento individual ja esta finalizado ou arquivado.');
@@ -200,13 +211,18 @@ export class AtendimentosIndividuaisService {
       include: ACOMPANHAMENTO_DETALHE_INCLUDE,
     });
 
-    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.MUDAR_STATUS, auditUser, acompanhamento, atualizado);
+    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.MUDAR_STATUS, auditUser, {
+      status: acompanhamento.status,
+    }, {
+      status: atualizado.status,
+      dataFinalizacao: atualizado.dataFinalizacao,
+    });
     return atualizado;
   }
 
   async reabrirAcompanhamento(id: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
-    this.policy.assertCanMutate(authUser, acompanhamento);
+    this.policy.assertCanReopen(authUser);
 
     if (acompanhamento.status === StatusAcompanhamentoIndividual.EM_ANDAMENTO) return acompanhamento;
 
@@ -219,7 +235,13 @@ export class AtendimentosIndividuaisService {
       include: ACOMPANHAMENTO_DETALHE_INCLUDE,
     });
 
-    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.MUDAR_STATUS, auditUser, acompanhamento, atualizado);
+    this.registrarAuditoria('AcompanhamentoIndividual', id, AuditAcao.MUDAR_STATUS, auditUser, {
+      status: acompanhamento.status,
+      dataFinalizacao: acompanhamento.dataFinalizacao,
+    }, {
+      status: atualizado.status,
+      dataFinalizacao: atualizado.dataFinalizacao,
+    });
     return atualizado;
   }
 
@@ -231,7 +253,7 @@ export class AtendimentosIndividuaisService {
   ) {
     this.validarRegraAtendimento(dto);
     const acompanhamento = await this.buscarAcompanhamento(acompanhamentoId, authUser);
-    this.policy.assertCanMutate(authUser, acompanhamento);
+    this.policy.assertCanCreateAtendimento(authUser, acompanhamento);
 
     if (acompanhamento.status !== StatusAcompanhamentoIndividual.EM_ANDAMENTO) {
       throw new ConflictException('Nao e possivel registrar atendimento em acompanhamento finalizado ou arquivado.');
@@ -254,7 +276,13 @@ export class AtendimentosIndividuaisService {
       include: { arquivos: true },
     });
 
-    this.registrarAuditoria('AtendimentoIndividual', atendimento.id, AuditAcao.CRIAR, auditUser, undefined, atendimento);
+    this.registrarAuditoria('AtendimentoIndividual', atendimento.id, AuditAcao.CRIAR, auditUser, undefined, {
+      acompanhamentoId,
+      alunoId: atendimento.alunoId,
+      professorId: atendimento.professorId,
+      tipoRegistro: atendimento.tipoRegistro,
+      dataAtendimento: atendimento.dataAtendimento,
+    });
     return atendimento;
   }
 
@@ -296,7 +324,7 @@ export class AtendimentosIndividuaisService {
     auditUser: AuditUser,
   ) {
     const atendimento = await this.buscarAtendimento(atendimentoId, authUser);
-    this.policy.assertCanMutate(authUser, atendimento.acompanhamento);
+    this.policy.assertCanAttachFile(authUser, atendimento.acompanhamento);
 
     const upload = await this.uploadService.uploadArquivoAtendimento(file, auditUser);
     const arquivo = await this.prisma.arquivoAtendimentoIndividual.create({
@@ -312,7 +340,12 @@ export class AtendimentosIndividuaisService {
       },
     });
 
-    this.registrarAuditoria('ArquivoAtendimentoIndividual', arquivo.id, AuditAcao.CRIAR, auditUser, undefined, arquivo);
+    this.registrarAuditoria('ArquivoAtendimentoIndividual', arquivo.id, AuditAcao.CRIAR, auditUser, undefined, {
+      atendimentoId,
+      categoria: arquivo.categoria,
+      tipoArquivo: arquivo.tipoArquivo,
+      tamanho: arquivo.tamanho,
+    });
     return arquivo;
   }
 
@@ -320,6 +353,8 @@ export class AtendimentosIndividuaisService {
     if (!this.policy.canGenerateReport(authUser)) {
       throw new BadRequestException('Seu perfil nao tem permissao para gerar relatorio.');
     }
+
+    this.validarPeriodoRelatorio(query);
 
     const whereAcompanhamento = this.montarWhereAcompanhamento(
       {
@@ -342,6 +377,10 @@ export class AtendimentosIndividuaisService {
           }
         : {}),
     };
+
+    if (query.tipoRegistro || query.dataInicio || query.dataFim) {
+      whereAcompanhamento.atendimentos = { some: whereAtendimento };
+    }
 
     const acompanhamentos = await this.prisma.acompanhamentoIndividual.findMany({
       where: whereAcompanhamento,
@@ -466,6 +505,16 @@ export class AtendimentosIndividuaisService {
     tipo: TipoRegistroAtendimentoIndividual,
   ): number {
     return atendimentos.filter((item) => item.tipoRegistro === tipo).length;
+  }
+
+  private validarPeriodoRelatorio(query: FiltroRelatorioAtendimentoDto): void {
+    if (!query.dataInicio || !query.dataFim) return;
+
+    const inicio = this.parseDate(query.dataInicio);
+    const fim = this.parseDate(query.dataFim);
+    if (inicio.getTime() > fim.getTime()) {
+      throw new BadRequestException('dataInicio deve ser menor ou igual a dataFim.');
+    }
   }
 
   private extrairNomeArquivo(url: string): string | null {

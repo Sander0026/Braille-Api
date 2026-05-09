@@ -37,7 +37,6 @@ const ALLOWED_MIMES = [
   'image/png',
   'image/jpeg',
   'image/jpg',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
 
 @ApiTags('Atendimentos Individuais - Registros')
@@ -79,7 +78,7 @@ export class AtendimentosIndividuaisController {
   @Post('atendimentos/:id/arquivos')
   @ApiOperation({
     summary: 'Anexar arquivo ao atendimento individual',
-    description: 'Aceita PDF, PNG, JPG, JPEG e DOCX com limite de 10 MB.',
+    description: 'Aceita PDF, PNG, JPG e JPEG com limite de 10 MB.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
