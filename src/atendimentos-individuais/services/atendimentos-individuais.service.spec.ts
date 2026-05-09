@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { Role, StatusAcompanhamentoIndividual, TipoRegistroAtendimentoIndividual } from '@prisma/client';
+import { AuditAcao, CategoriaArquivoAtendimentoIndividual, Role, StatusAcompanhamentoIndividual, TipoRegistroAtendimentoIndividual } from '@prisma/client';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UploadService } from '../../upload/upload.service';
@@ -286,6 +286,7 @@ describe('AtendimentosIndividuaisService', () => {
       dataAtendimento: '2026-05-08',
       horaInicio: '08:00',
       horaFim: '09:30',
+      duracaoMinutos: 999,
       assuntoDoDia: 'Leitura em Braille',
       observacao: 'Aula produtiva',
     } as any, makeUser(Role.ADMIN), makeAudit());
@@ -328,6 +329,75 @@ describe('AtendimentosIndividuaisService', () => {
   });
 
   // ─── 13. Upload com assinatura inválida falha ─────────────────────
+
+  it('deve auditar download de arquivo sem registrar a URL real no log', async () => {
+    prisma.arquivoAtendimentoIndividual.findUnique.mockResolvedValue({
+      id: 'arq-1',
+      atendimentoId: 'atend-1',
+      nomeOriginal: 'atestado.pdf',
+      urlArquivo: 'https://res.cloudinary.com/demo/raw/upload/atestado.pdf',
+      tipoArquivo: 'application/pdf',
+      tamanho: 2048,
+      categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
+      atendimento: {
+        acompanhamento: {
+          id: 'acomp-1',
+          professorId: 'prof-1',
+        },
+      },
+    });
+
+    const arquivo = await service.obterArquivoParaDownload('arq-1', makeUser(Role.ADMIN), makeAudit());
+
+    expect(arquivo.url).toContain('cloudinary.com');
+    expect(auditService.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entidade: 'ArquivoAtendimentoIndividual',
+        registroId: 'arq-1',
+        acao: AuditAcao.DOWNLOAD,
+        newValue: expect.objectContaining({
+          atendimentoId: 'atend-1',
+          acompanhamentoId: 'acomp-1',
+          categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
+          tipoArquivo: 'application/pdf',
+          tamanho: 2048,
+        }),
+      }),
+    );
+    expect(auditService.registrar).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        newValue: expect.objectContaining({
+          urlArquivo: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it('deve sinalizar falta justificada com comprovante quando houver ATESTADO', async () => {
+    prisma.atendimentoIndividual.findFirst.mockResolvedValue({
+      id: 'atend-1',
+      tipoRegistro: TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA,
+      dataAtendimento: new Date('2026-05-08'),
+      arquivos: [
+        {
+          id: 'arq-1',
+          nomeOriginal: 'atestado.pdf',
+          urlArquivo: 'https://res.cloudinary.com/demo/raw/upload/atestado.pdf',
+          categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
+        },
+      ],
+      acompanhamento: {
+        id: 'acomp-1',
+        professorId: 'prof-1',
+      },
+    });
+
+    const atendimento = await service.buscarAtendimento('atend-1', makeUser(Role.ADMIN));
+
+    expect(atendimento.temComprovante).toBe(true);
+    expect(atendimento.arquivos[0].downloadUrl).toBe('/api/atendimentos-individuais/arquivos/arq-1/download');
+    expect(atendimento.arquivos[0].urlArquivo).toBeUndefined();
+  });
 
   it('deve rejeitar upload com assinatura de arquivo invalida', async () => {
     const original = makeAcompanhamento();

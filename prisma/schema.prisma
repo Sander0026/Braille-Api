@@ -102,6 +102,7 @@ enum AuditAcao {
   FECHAR_DIARIO
   REABRIR_DIARIO
   MUDAR_STATUS
+  DOWNLOAD
 }
 
 enum TipoApoiador {

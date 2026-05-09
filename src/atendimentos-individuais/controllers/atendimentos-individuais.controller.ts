@@ -87,7 +87,7 @@ export class AtendimentosIndividuaisController {
   @ApiParam({ name: 'id', description: 'UUID do arquivo anexado ao atendimento' })
   @ApiResponse({ status: 200, description: 'Arquivo retornado pela API apos permissao validada.' })
   async downloadArquivo(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const arquivo = await this.service.obterArquivoParaDownload(id, req.user);
+    const arquivo = await this.service.obterArquivoParaDownload(id, req.user, getAuditUser(req));
     const download = await this.downloadService.baixar(arquivo);
 
     res.setHeader('Content-Type', download.contentType);

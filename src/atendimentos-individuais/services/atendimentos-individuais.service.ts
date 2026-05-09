@@ -494,7 +494,7 @@ export class AtendimentosIndividuaisService {
     };
   }
 
-  async obterArquivoParaDownload(id: string, authUser?: AuthenticatedUser) {
+  async obterArquivoParaDownload(id: string, authUser?: AuthenticatedUser, auditUser?: AuditUser) {
     const arquivo = await this.prisma.arquivoAtendimentoIndividual.findUnique({
       where: { id },
       include: {
@@ -510,6 +510,15 @@ export class AtendimentosIndividuaisService {
 
     if (!arquivo) throw new NotFoundException('Arquivo do atendimento nao encontrado.');
     this.policy.assertCanView(authUser, arquivo.atendimento.acompanhamento);
+    if (auditUser) {
+      this.registrarAuditoria('ArquivoAtendimentoIndividual', arquivo.id, AuditAcao.DOWNLOAD, auditUser, undefined, {
+        atendimentoId: arquivo.atendimentoId,
+        acompanhamentoId: arquivo.atendimento.acompanhamento.id,
+        categoria: arquivo.categoria,
+        tipoArquivo: arquivo.tipoArquivo,
+        tamanho: arquivo.tamanho,
+      });
+    }
 
     return {
       url: arquivo.urlArquivo,
@@ -629,11 +638,23 @@ export class AtendimentosIndividuaisService {
   }
 
   private sanitizarAtendimento<T extends Record<string, any>>(atendimento: T): T {
-    if (!Array.isArray(atendimento.arquivos)) return atendimento;
+    if (!Array.isArray(atendimento.arquivos)) {
+      if (atendimento.tipoRegistro !== TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA) return atendimento;
+      return {
+        ...atendimento,
+        temComprovante: false,
+      };
+    }
+
+    const arquivos = atendimento.arquivos.map((arquivo: Record<string, any>) => this.sanitizarArquivo(arquivo));
+    const temComprovante = atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA
+      ? atendimento.arquivos.some((arquivo: Record<string, any>) => arquivo.categoria === CategoriaArquivoAtendimentoIndividual.ATESTADO)
+      : undefined;
 
     return {
       ...atendimento,
-      arquivos: atendimento.arquivos.map((arquivo: Record<string, any>) => this.sanitizarArquivo(arquivo)),
+      arquivos,
+      ...(atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA && { temComprovante }),
     };
   }
 
