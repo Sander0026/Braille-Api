@@ -691,6 +691,7 @@ model AcompanhamentoIndividual {
   assuntoAtual    String
   descricao       String?
   status          StatusAcompanhamentoIndividual @default(EM_ANDAMENTO)
+  statusAntesArquivamento StatusAcompanhamentoIndividual?
   dataInicio      DateTime                       @default(now()) @db.Date
   dataFinalizacao DateTime?                      @db.Date
   resultadoFinal  String?

@@ -242,6 +242,10 @@ export class AtendimentosIndividuaisService {
     const acompanhamento = await this.buscarAcompanhamento(id, authUser);
     this.policy.assertCanReopen(authUser);
 
+    if (acompanhamento.status === StatusAcompanhamentoIndividual.ARQUIVADO) {
+      throw new ConflictException('Desarquive o acompanhamento antes de reabri-lo.');
+    }
+
     if (acompanhamento.status === StatusAcompanhamentoIndividual.EM_ANDAMENTO) return this.sanitizarAcompanhamento(acompanhamento);
 
     const atualizado = await this.prisma.acompanhamentoIndividual.update({
@@ -271,7 +275,10 @@ export class AtendimentosIndividuaisService {
 
     const atualizado = await this.prisma.acompanhamentoIndividual.update({
       where: { id },
-      data: { status: StatusAcompanhamentoIndividual.ARQUIVADO },
+      data: {
+        status: StatusAcompanhamentoIndividual.ARQUIVADO,
+        statusAntesArquivamento: acompanhamento.status,
+      },
       include: ACOMPANHAMENTO_DETALHE_INCLUDE,
     });
 
@@ -289,9 +296,16 @@ export class AtendimentosIndividuaisService {
 
     if (acompanhamento.status !== StatusAcompanhamentoIndividual.ARQUIVADO) return this.sanitizarAcompanhamento(acompanhamento);
 
+    const statusRestaurado = acompanhamento.statusAntesArquivamento === StatusAcompanhamentoIndividual.FINALIZADO
+      ? StatusAcompanhamentoIndividual.FINALIZADO
+      : StatusAcompanhamentoIndividual.EM_ANDAMENTO;
+
     const atualizado = await this.prisma.acompanhamentoIndividual.update({
       where: { id },
-      data: { status: StatusAcompanhamentoIndividual.EM_ANDAMENTO },
+      data: {
+        status: statusRestaurado,
+        statusAntesArquivamento: null,
+      },
       include: ACOMPANHAMENTO_DETALHE_INCLUDE,
     });
 
@@ -669,10 +683,11 @@ export class AtendimentosIndividuaisService {
   }
 
   private resolverDuracaoAtendimento(dto: CriarAtendimentoIndividualDto): number | undefined {
-    if (dto.duracaoMinutos) return dto.duracaoMinutos;
-    if (!dto.horaInicio || !dto.horaFim) return undefined;
+    if (dto.horaInicio && dto.horaFim) {
+      return this.converterHoraParaMinutos(dto.horaFim) - this.converterHoraParaMinutos(dto.horaInicio);
+    }
 
-    return this.converterHoraParaMinutos(dto.horaFim) - this.converterHoraParaMinutos(dto.horaInicio);
+    return dto.duracaoMinutos;
   }
 
   private converterHoraParaMinutos(value: string): number {
@@ -698,25 +713,6 @@ export class AtendimentosIndividuaisService {
     }
   }
 
-  private quebrarTextoRelatorio(texto: string, maxChars: number): string[] {
-    const words = this.normalizarTextoRelatorio(texto).split(/\s+/);
-    const linhas: string[] = [];
-    let linha = '';
-
-    for (const word of words) {
-      const candidate = linha ? `${linha} ${word}` : word;
-      if (candidate.length <= maxChars) {
-        linha = candidate;
-        continue;
-      }
-      if (linha) linhas.push(linha);
-      linha = word;
-    }
-
-    if (linha) linhas.push(linha);
-    return linhas.length ? linhas : [''];
-  }
-
   private normalizarTextoRelatorio(texto: string): string {
     return String(texto ?? '')
       .normalize('NFC')
@@ -727,26 +723,6 @@ export class AtendimentosIndividuaisService {
       .replace(/\u00A0/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-  }
-
-  private formatarDataBR(value: string | Date): string {
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return 'Data nao informada';
-    return date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  }
-
-  private formatarDataHoraBR(date: Date): string {
-    return date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  }
-
-  private formatarTipoRegistro(tipo: TipoRegistroAtendimentoIndividual): string {
-    const labels: Record<TipoRegistroAtendimentoIndividual, string> = {
-      ATENDIMENTO_REALIZADO: 'Atendimento realizado',
-      FALTA_JUSTIFICADA: 'Falta justificada',
-      FALTA_NAO_JUSTIFICADA: 'Falta nao justificada',
-      CANCELADO: 'Cancelado',
-    };
-    return labels[tipo] ?? tipo;
   }
 
   private registrarAuditoria(
