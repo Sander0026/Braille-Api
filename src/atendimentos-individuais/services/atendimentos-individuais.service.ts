@@ -3,7 +3,6 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -15,7 +14,6 @@ import {
   TipoRegistroAtendimentoIndividual,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AuditLogService } from '../../audit-log/audit-log.service';
 import { UploadService } from '../../upload/upload.service';
 import { AuditUser } from '../../common/interfaces/audit-user.interface';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
@@ -27,6 +25,8 @@ import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-
 import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
 import { RelatorioAtendimentoPdfService } from './relatorio-atendimento-pdf.service';
+import { AtendimentosIndividuaisAuditService } from './atendimentos-individuais-audit.service';
+import { AtendimentosIndividuaisSanitizerService } from './atendimentos-individuais-sanitizer.service';
 
 const ACOMPANHAMENTO_INCLUDE = {
   aluno: { select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true } },
@@ -34,7 +34,6 @@ const ACOMPANHAMENTO_INCLUDE = {
   _count: { select: { atendimentos: true } },
 } as const;
 
-const ARQUIVO_ATENDIMENTO_PUBLIC_BASE = '/api/atendimentos-individuais/arquivos';
 const ARQUIVO_ATENDIMENTO_ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 const ARQUIVO_ATENDIMENTO_ALLOWED_MIMES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
 
@@ -53,14 +52,13 @@ const ACOMPANHAMENTO_DETALHE_INCLUDE = {
 
 @Injectable()
 export class AtendimentosIndividuaisService {
-  private readonly logger = new Logger(AtendimentosIndividuaisService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditService: AuditLogService,
     private readonly uploadService: UploadService,
     private readonly policy: AtendimentosIndividuaisPolicy,
     private readonly relatorioPdfService: RelatorioAtendimentoPdfService,
+    private readonly sanitizer: AtendimentosIndividuaisSanitizerService,
+    private readonly audit: AtendimentosIndividuaisAuditService,
   ) {}
 
   async criarAcompanhamento(
@@ -629,41 +627,15 @@ export class AtendimentosIndividuaisService {
   }
 
   private sanitizarAcompanhamento<T extends Record<string, any>>(acompanhamento: T): T {
-    if (!Array.isArray(acompanhamento.atendimentos)) return acompanhamento;
-
-    return {
-      ...acompanhamento,
-      atendimentos: acompanhamento.atendimentos.map((item: Record<string, any>) => this.sanitizarAtendimento(item)),
-    };
+    return this.sanitizer.sanitizarAcompanhamento(acompanhamento);
   }
 
   private sanitizarAtendimento<T extends Record<string, any>>(atendimento: T): T {
-    if (!Array.isArray(atendimento.arquivos)) {
-      if (atendimento.tipoRegistro !== TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA) return atendimento;
-      return {
-        ...atendimento,
-        temComprovante: false,
-      };
-    }
-
-    const arquivos = atendimento.arquivos.map((arquivo: Record<string, any>) => this.sanitizarArquivo(arquivo));
-    const temComprovante = atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA
-      ? atendimento.arquivos.some((arquivo: Record<string, any>) => arquivo.categoria === CategoriaArquivoAtendimentoIndividual.ATESTADO)
-      : undefined;
-
-    return {
-      ...atendimento,
-      arquivos,
-      ...(atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA && { temComprovante }),
-    };
+    return this.sanitizer.sanitizarAtendimento(atendimento);
   }
 
   private sanitizarArquivo<T extends Record<string, any>>(arquivo: T): Omit<T, 'urlArquivo'> & { downloadUrl: string } {
-    const { urlArquivo: _urlArquivo, ...rest } = arquivo;
-    return {
-      ...rest,
-      downloadUrl: `${ARQUIVO_ATENDIMENTO_PUBLIC_BASE}/${arquivo.id}/download`,
-    };
+    return this.sanitizer.sanitizarArquivo(arquivo);
   }
 
   private validarArquivoAtendimento(file: Express.Multer.File): void {
@@ -754,22 +726,6 @@ export class AtendimentosIndividuaisService {
     oldValue?: unknown,
     newValue?: unknown,
   ): void {
-    this.auditService
-      .registrar({
-        entidade,
-        registroId,
-        acao,
-        autorId: auditUser.sub,
-        autorNome: auditUser.nome,
-        autorRole: auditUser.role,
-        ip: auditUser.ip,
-        userAgent: auditUser.userAgent,
-        oldValue,
-        newValue,
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : JSON.stringify(error);
-        this.logger.warn(`Falha na auditoria de ${entidade}/${registroId}: ${message}`);
-      });
+    this.audit.registrar(entidade, registroId, acao, auditUser, oldValue, newValue);
   }
 }

@@ -6,8 +6,14 @@ import { AcompanhamentosIndividuaisController } from './controllers/acompanhamen
 import { AtendimentosIndividuaisController } from './controllers/atendimentos-individuais.controller';
 import { RelatoriosAtendimentosIndividuaisController } from './controllers/relatorios-atendimentos-individuais.controller';
 import { AtendimentosIndividuaisService } from './services/atendimentos-individuais.service';
+import { AcompanhamentosIndividuaisService } from './services/acompanhamentos-individuais.service';
+import { AtendimentosIndividuaisRegistrosService } from './services/atendimentos-individuais-registros.service';
+import { ArquivosAtendimentosIndividuaisService } from './services/arquivos-atendimentos-individuais.service';
+import { RelatoriosAtendimentosIndividuaisService } from './services/relatorios-atendimentos-individuais.service';
 import { RelatorioAtendimentoPdfService } from './services/relatorio-atendimento-pdf.service';
 import { ArquivoAtendimentoDownloadService } from './services/arquivo-atendimento-download.service';
+import { AtendimentosIndividuaisAuditService } from './services/atendimentos-individuais-audit.service';
+import { AtendimentosIndividuaisSanitizerService } from './services/atendimentos-individuais-sanitizer.service';
 import { AtendimentosIndividuaisPolicy } from './policies/atendimentos-individuais.policy';
 
 @Module({
@@ -19,8 +25,14 @@ import { AtendimentosIndividuaisPolicy } from './policies/atendimentos-individua
   ],
   providers: [
     AtendimentosIndividuaisService,
+    AcompanhamentosIndividuaisService,
+    AtendimentosIndividuaisRegistrosService,
+    ArquivosAtendimentosIndividuaisService,
+    RelatoriosAtendimentosIndividuaisService,
     RelatorioAtendimentoPdfService,
     ArquivoAtendimentoDownloadService,
+    AtendimentosIndividuaisAuditService,
+    AtendimentosIndividuaisSanitizerService,
     AtendimentosIndividuaisPolicy,
   ],
 })

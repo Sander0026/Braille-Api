@@ -29,7 +29,8 @@ import { Roles } from '../../auth/roles.decorator';
 import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 import { getAuditUser } from '../../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../../common/interfaces/authenticated-request.interface';
-import { AtendimentosIndividuaisService } from '../services/atendimentos-individuais.service';
+import { AtendimentosIndividuaisRegistrosService } from '../services/atendimentos-individuais-registros.service';
+import { ArquivosAtendimentosIndividuaisService } from '../services/arquivos-atendimentos-individuais.service';
 import { ArquivoAtendimentoDownloadService } from '../services/arquivo-atendimento-download.service';
 import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individual.dto';
 import { AnexarArquivoAtendimentoDto } from '../dto/anexar-arquivo-atendimento.dto';
@@ -51,7 +52,8 @@ const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 @Controller('atendimentos-individuais')
 export class AtendimentosIndividuaisController {
   constructor(
-    private readonly service: AtendimentosIndividuaisService,
+    private readonly registrosService: AtendimentosIndividuaisRegistrosService,
+    private readonly arquivosService: ArquivosAtendimentosIndividuaisService,
     private readonly downloadService: ArquivoAtendimentoDownloadService,
   ) {}
 
@@ -65,21 +67,21 @@ export class AtendimentosIndividuaisController {
     @Body() dto: CriarAtendimentoIndividualDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.criarAtendimento(acompanhamentoId, dto, req.user, getAuditUser(req));
+    return this.registrosService.criar(acompanhamentoId, dto, req.user, getAuditUser(req));
   }
 
   @Get('acompanhamentos/:id/atendimentos')
   @ApiOperation({ summary: 'Listar registros de um acompanhamento individual' })
   @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
   findByAcompanhamento(@Param('id') acompanhamentoId: string, @Req() req: AuthenticatedRequest) {
-    return this.service.listarAtendimentos(acompanhamentoId, req.user);
+    return this.registrosService.listar(acompanhamentoId, req.user);
   }
 
   @Get('atendimentos/:id')
   @ApiOperation({ summary: 'Buscar atendimento individual por ID' })
   @ApiParam({ name: 'id', description: 'UUID do atendimento' })
   findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.service.buscarAtendimento(id, req.user);
+    return this.registrosService.buscar(id, req.user);
   }
 
   @Get('arquivos/:id/download')
@@ -87,7 +89,7 @@ export class AtendimentosIndividuaisController {
   @ApiParam({ name: 'id', description: 'UUID do arquivo anexado ao atendimento' })
   @ApiResponse({ status: 200, description: 'Arquivo retornado pela API apos permissao validada.' })
   async downloadArquivo(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const arquivo = await this.service.obterArquivoParaDownload(id, req.user, getAuditUser(req));
+    const arquivo = await this.arquivosService.obterParaDownload(id, req.user, getAuditUser(req));
     const download = await this.downloadService.baixar(arquivo);
 
     res.setHeader('Content-Type', download.contentType);
@@ -138,7 +140,7 @@ export class AtendimentosIndividuaisController {
     @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado.');
-    return this.service.anexarArquivo(
+    return this.arquivosService.anexar(
       atendimentoId,
       file,
       dto.categoria ?? CategoriaArquivoAtendimentoIndividual.OUTRO,

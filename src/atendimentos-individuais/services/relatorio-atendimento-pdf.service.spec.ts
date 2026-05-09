@@ -95,4 +95,21 @@ describe('RelatorioAtendimentoPdfService', () => {
     expect(detalhes).toContain('Modalidade PRESENCIAL');
     expect(detalhes).toContain('Local Sala 3');
   });
+
+  it('descreverFiltros deve incluir periodo, status e tipo aplicados', () => {
+    const filtros = (service as any).descreverFiltros({
+      alunoId: 'aluno-1',
+      professorId: 'prof-1',
+      dataInicio: '2026-05-01',
+      dataFim: '2026-05-31',
+      status: 'EM_ANDAMENTO',
+      tipoRegistro: 'ATENDIMENTO_REALIZADO',
+    });
+
+    expect(filtros).toContain('aluno selecionado');
+    expect(filtros).toContain('professor selecionado');
+    expect(filtros).toContain('periodo 2026-05-01 a 2026-05-31');
+    expect(filtros).toContain('status EM_ANDAMENTO');
+    expect(filtros).toContain('tipo ATENDIMENTO_REALIZADO');
+  });
 });

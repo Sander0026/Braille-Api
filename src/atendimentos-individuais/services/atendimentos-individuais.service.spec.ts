@@ -5,6 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UploadService } from '../../upload/upload.service';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
 import { AtendimentosIndividuaisService } from './atendimentos-individuais.service';
+import { AtendimentosIndividuaisAuditService } from './atendimentos-individuais-audit.service';
+import { AtendimentosIndividuaisSanitizerService } from './atendimentos-individuais-sanitizer.service';
 import { RelatorioAtendimentoPdfService } from './relatorio-atendimento-pdf.service';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import type { AuditUser } from '../../common/interfaces/audit-user.interface';
@@ -84,15 +86,18 @@ describe('AtendimentosIndividuaisService', () => {
   };
 
   const policy = new AtendimentosIndividuaisPolicy();
+  const sanitizer = new AtendimentosIndividuaisSanitizerService();
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const audit = new AtendimentosIndividuaisAuditService(auditService as unknown as AuditLogService);
     service = new AtendimentosIndividuaisService(
       prisma as unknown as PrismaService,
-      auditService as unknown as AuditLogService,
       uploadService as unknown as UploadService,
       policy,
       relatorioPdfService as unknown as RelatorioAtendimentoPdfService,
+      sanitizer,
+      audit,
     );
   });
 
@@ -211,6 +216,15 @@ describe('AtendimentosIndividuaisService', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('deve impedir SECRETARIA de desarquivar acompanhamento', async () => {
+    const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.ARQUIVADO });
+    prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
+
+    await expect(
+      service.desarquivarAcompanhamento('acomp-1', makeUser(Role.SECRETARIA), makeAudit()),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
   // ─── 7. PROFESSOR não pode arquivar ───────────────────────────────
 
   it('deve impedir PROFESSOR de arquivar acompanhamento', async () => {
@@ -219,6 +233,15 @@ describe('AtendimentosIndividuaisService', () => {
 
     await expect(
       service.arquivarAcompanhamento('acomp-1', makeUser(Role.PROFESSOR, 'prof-1'), makeAudit()),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('deve impedir PROFESSOR de desarquivar acompanhamento', async () => {
+    const original = makeAcompanhamento({ status: StatusAcompanhamentoIndividual.ARQUIVADO });
+    prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
+
+    await expect(
+      service.desarquivarAcompanhamento('acomp-1', makeUser(Role.PROFESSOR, 'prof-1'), makeAudit()),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -300,6 +323,35 @@ describe('AtendimentosIndividuaisService', () => {
     );
   });
 
+  it('deve salvar modalidade e localAtendimento ao criar atendimento', async () => {
+    const original = makeAcompanhamento();
+    prisma.acompanhamentoIndividual.findFirst.mockResolvedValue(original);
+    prisma.atendimentoIndividual.create.mockResolvedValue({
+      id: 'atend-1',
+      tipoRegistro: TipoRegistroAtendimentoIndividual.FALTA_NAO_JUSTIFICADA,
+      dataAtendimento: new Date('2026-05-08'),
+      modalidade: 'PRESENCIAL',
+      localAtendimento: 'Sala 2',
+      arquivos: [],
+    });
+
+    await service.criarAtendimento('acomp-1', {
+      tipoRegistro: TipoRegistroAtendimentoIndividual.FALTA_NAO_JUSTIFICADA,
+      dataAtendimento: '2026-05-08',
+      modalidade: 'PRESENCIAL',
+      localAtendimento: 'Sala 2',
+    } as any, makeUser(Role.ADMIN), makeAudit());
+
+    expect(prisma.atendimentoIndividual.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          modalidade: 'PRESENCIAL',
+          localAtendimento: 'Sala 2',
+        }),
+      }),
+    );
+  });
+
   // ─── 12. Duração manual quando horaInicio/horaFim ausentes ────────
 
   it('deve usar duracaoMinutos do DTO quando horaInicio e horaFim nao sao informados', async () => {
@@ -373,6 +425,29 @@ describe('AtendimentosIndividuaisService', () => {
     );
   });
 
+  it('deve impedir download de arquivo para professor sem permissao', async () => {
+    prisma.arquivoAtendimentoIndividual.findUnique.mockResolvedValue({
+      id: 'arq-1',
+      atendimentoId: 'atend-1',
+      nomeOriginal: 'atestado.pdf',
+      urlArquivo: 'https://res.cloudinary.com/demo/raw/upload/atestado.pdf',
+      tipoArquivo: 'application/pdf',
+      tamanho: 2048,
+      categoria: CategoriaArquivoAtendimentoIndividual.ATESTADO,
+      atendimento: {
+        acompanhamento: {
+          id: 'acomp-1',
+          professorId: 'prof-outro',
+        },
+      },
+    });
+
+    await expect(
+      service.obterArquivoParaDownload('arq-1', makeUser(Role.PROFESSOR, 'prof-1'), makeAudit()),
+    ).rejects.toThrow(ForbiddenException);
+    expect(auditService.registrar).not.toHaveBeenCalledWith(expect.objectContaining({ acao: AuditAcao.DOWNLOAD }));
+  });
+
   it('deve sinalizar falta justificada com comprovante quando houver ATESTADO', async () => {
     prisma.atendimentoIndividual.findFirst.mockResolvedValue({
       id: 'atend-1',
@@ -414,6 +489,46 @@ describe('AtendimentosIndividuaisService', () => {
       mimetype: 'application/pdf',
       buffer: Buffer.from('NOT-A-REAL-PDF-FILE'),
       size: 19,
+    } as Express.Multer.File;
+
+    await expect(
+      service.anexarArquivo('atend-1', invalidFile, 'OUTRO' as any, makeUser(Role.ADMIN), makeAudit()),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('deve rejeitar upload com MIME invalido', async () => {
+    const fakeAtendimento = {
+      id: 'atend-1',
+      acompanhamento: { id: 'acomp-1', professorId: 'prof-1' },
+      arquivos: [],
+    };
+    prisma.atendimentoIndividual.findFirst.mockResolvedValue(fakeAtendimento);
+
+    const invalidFile = {
+      originalname: 'atestado.pdf',
+      mimetype: 'text/plain',
+      buffer: Buffer.from('%PDF-FAKE'),
+      size: 9,
+    } as Express.Multer.File;
+
+    await expect(
+      service.anexarArquivo('atend-1', invalidFile, 'OUTRO' as any, makeUser(Role.ADMIN), makeAudit()),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('deve rejeitar upload com extensao invalida', async () => {
+    const fakeAtendimento = {
+      id: 'atend-1',
+      acompanhamento: { id: 'acomp-1', professorId: 'prof-1' },
+      arquivos: [],
+    };
+    prisma.atendimentoIndividual.findFirst.mockResolvedValue(fakeAtendimento);
+
+    const invalidFile = {
+      originalname: 'script.exe',
+      mimetype: 'application/pdf',
+      buffer: Buffer.from('%PDF-FAKE'),
+      size: 9,
     } as Express.Multer.File;
 
     await expect(

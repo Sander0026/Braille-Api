@@ -13,7 +13,7 @@ import { Roles } from '../../auth/roles.decorator';
 import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 import { getAuditUser } from '../../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../../common/interfaces/authenticated-request.interface';
-import { AtendimentosIndividuaisService } from '../services/atendimentos-individuais.service';
+import { AcompanhamentosIndividuaisService } from '../services/acompanhamentos-individuais.service';
 import { CriarAcompanhamentoIndividualDto } from '../dto/criar-acompanhamento-individual.dto';
 import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-individual.dto';
 import { AtualizarAssuntoAcompanhamentoDto } from '../dto/atualizar-assunto-acompanhamento.dto';
@@ -26,7 +26,7 @@ import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto'
 @SkipAudit()
 @Controller('atendimentos-individuais/acompanhamentos')
 export class AcompanhamentosIndividuaisController {
-  constructor(private readonly service: AtendimentosIndividuaisService) {}
+  constructor(private readonly service: AcompanhamentosIndividuaisService) {}
 
   @Post()
   @ApiOperation({
@@ -38,7 +38,7 @@ export class AcompanhamentosIndividuaisController {
   @ApiResponse({ status: 400, description: 'Dados invalidos.' })
   @ApiResponse({ status: 403, description: 'Usuario sem permissao.' })
   create(@Body() dto: CriarAcompanhamentoIndividualDto, @Req() req: AuthenticatedRequest) {
-    return this.service.criarAcompanhamento(dto, req.user, getAuditUser(req));
+    return this.service.criar(dto, req.user, getAuditUser(req));
   }
 
   @Get()
@@ -49,7 +49,7 @@ export class AcompanhamentosIndividuaisController {
   })
   @ApiResponse({ status: 200, description: 'Lista paginada retornada.' })
   findAll(@Query() query: FiltroAcompanhamentoIndividualDto, @Req() req: AuthenticatedRequest) {
-    return this.service.listarAcompanhamentos(query, req.user);
+    return this.service.listar(query, req.user);
   }
 
   @Get(':id')
@@ -58,7 +58,7 @@ export class AcompanhamentosIndividuaisController {
   @ApiResponse({ status: 200, description: 'Acompanhamento encontrado.' })
   @ApiResponse({ status: 404, description: 'Acompanhamento nao encontrado.' })
   findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.service.buscarAcompanhamento(id, req.user);
+    return this.service.buscar(id, req.user);
   }
 
   @Patch(':id/assunto')
@@ -80,7 +80,7 @@ export class AcompanhamentosIndividuaisController {
   @ApiResponse({ status: 200, description: 'Acompanhamento finalizado.' })
   @ApiResponse({ status: 409, description: 'Acompanhamento ja finalizado ou arquivado.' })
   finalizar(@Param('id') id: string, @Body() dto: FinalizarAcompanhamentoDto, @Req() req: AuthenticatedRequest) {
-    return this.service.finalizarAcompanhamento(id, dto, req.user, getAuditUser(req));
+    return this.service.finalizar(id, dto, req.user, getAuditUser(req));
   }
 
   @Patch(':id/reabrir')
@@ -88,7 +88,7 @@ export class AcompanhamentosIndividuaisController {
   @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
   @ApiResponse({ status: 200, description: 'Acompanhamento reaberto.' })
   reabrir(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.service.reabrirAcompanhamento(id, req.user, getAuditUser(req));
+    return this.service.reabrir(id, req.user, getAuditUser(req));
   }
 
   @Patch(':id/arquivar')
@@ -96,7 +96,7 @@ export class AcompanhamentosIndividuaisController {
   @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
   @ApiResponse({ status: 200, description: 'Acompanhamento arquivado.' })
   arquivar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.service.arquivarAcompanhamento(id, req.user, getAuditUser(req));
+    return this.service.arquivar(id, req.user, getAuditUser(req));
   }
 
   @Patch(':id/desarquivar')
@@ -104,6 +104,6 @@ export class AcompanhamentosIndividuaisController {
   @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
   @ApiResponse({ status: 200, description: 'Acompanhamento desarquivado.' })
   desarquivar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.service.desarquivarAcompanhamento(id, req.user, getAuditUser(req));
+    return this.service.desarquivar(id, req.user, getAuditUser(req));
   }
 }

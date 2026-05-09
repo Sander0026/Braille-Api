@@ -7,7 +7,7 @@ import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 import type { AuthenticatedRequest } from '../../common/interfaces/authenticated-request.interface';
-import { AtendimentosIndividuaisService } from '../services/atendimentos-individuais.service';
+import { RelatoriosAtendimentosIndividuaisService } from '../services/relatorios-atendimentos-individuais.service';
 import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
 
 @ApiTags('Atendimentos Individuais - Relatorios')
@@ -17,7 +17,7 @@ import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimen
 @SkipAudit()
 @Controller('atendimentos-individuais/relatorios')
 export class RelatoriosAtendimentosIndividuaisController {
-  constructor(private readonly service: AtendimentosIndividuaisService) {}
+  constructor(private readonly service: RelatoriosAtendimentosIndividuaisService) {}
 
   @Get()
   @ApiOperation({
@@ -27,7 +27,7 @@ export class RelatoriosAtendimentosIndividuaisController {
   })
   @ApiResponse({ status: 200, description: 'Relatorio gerado.' })
   gerar(@Query() query: FiltroRelatorioAtendimentoDto, @Req() req: AuthenticatedRequest) {
-    return this.service.gerarRelatorio(query, req.user);
+    return this.service.gerar(query, req.user);
   }
 
   @Post('pdf')
@@ -42,7 +42,7 @@ export class RelatoriosAtendimentosIndividuaisController {
     @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const buffer = await this.service.gerarRelatorioPdf(body, req.user);
+    const buffer = await this.service.gerarPdf(body, req.user);
     const date = new Date().toISOString().slice(0, 10);
     res.set({
       'Content-Type': 'application/pdf',
