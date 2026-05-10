@@ -182,11 +182,11 @@ export class AcompanhamentosIndividuaisService {
     return this.atendimentosService.reabrirAcompanhamento(id, authUser, auditUser);
   }
 
-  arquivar(id: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
-    return this.atendimentosService.arquivarAcompanhamento(id, authUser, auditUser);
+  arquivar(id: string, motivo: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
+    return this.atendimentosService.arquivarAcompanhamento(id, motivo, authUser, auditUser);
   }
 
-  desarquivar(id: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
-    return this.atendimentosService.desarquivarAcompanhamento(id, authUser, auditUser);
+  desarquivar(id: string, motivo: string, authUser: AuthenticatedUser | undefined, auditUser: AuditUser) {
+    return this.atendimentosService.desarquivarAcompanhamento(id, motivo, authUser, auditUser);
   }
 }

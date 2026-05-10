@@ -699,6 +699,8 @@ model AcompanhamentoIndividual {
   arquivadoPorId  String?
   desarquivadoEm  DateTime?
   desarquivadoPorId String?
+  motivoArquivamento    String?
+  motivoDesarquivamento String?
   dataInicio      DateTime                       @default(now()) @db.Date
   dataFinalizacao DateTime?                      @db.Date
   resultadoFinal  String?

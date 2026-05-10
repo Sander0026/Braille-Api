@@ -19,6 +19,7 @@ import { FiltroAcompanhamentoIndividualDto } from '../dto/filtro-acompanhamento-
 import { AtualizarAssuntoAcompanhamentoDto } from '../dto/atualizar-assunto-acompanhamento.dto';
 import { FinalizarAcompanhamentoDto } from '../dto/finalizar-acompanhamento.dto';
 import { VerificarDuplicidadeAcompanhamentoDto } from '../dto/verificar-duplicidade-acompanhamento.dto';
+import { ArquivarAcompanhamentoDto, DesarquivarAcompanhamentoDto } from '../dto/arquivar-acompanhamento.dto';
 
 @ApiTags('Atendimentos Individuais - Acompanhamentos')
 @ApiBearerAuth()
@@ -111,15 +112,15 @@ export class AcompanhamentosIndividuaisController {
   @ApiOperation({ summary: 'Arquivar acompanhamento individual para ocultacao administrativa' })
   @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
   @ApiResponse({ status: 200, description: 'Acompanhamento arquivado.' })
-  arquivar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.service.arquivar(id, req.user, getAuditUser(req));
+  arquivar(@Param('id') id: string, @Body() dto: ArquivarAcompanhamentoDto, @Req() req: AuthenticatedRequest) {
+    return this.service.arquivar(id, dto.motivo, req.user, getAuditUser(req));
   }
 
   @Patch(':id/desarquivar')
   @ApiOperation({ summary: 'Desarquivar acompanhamento individual' })
   @ApiParam({ name: 'id', description: 'UUID do acompanhamento' })
   @ApiResponse({ status: 200, description: 'Acompanhamento desarquivado.' })
-  desarquivar(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.service.desarquivar(id, req.user, getAuditUser(req));
+  desarquivar(@Param('id') id: string, @Body() dto: DesarquivarAcompanhamentoDto, @Req() req: AuthenticatedRequest) {
+    return this.service.desarquivar(id, dto.motivo, req.user, getAuditUser(req));
   }
 }

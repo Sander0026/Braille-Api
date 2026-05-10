@@ -37,6 +37,14 @@ export class AtendimentosIndividuaisPolicy {
     return this.isProfessorOwner(user, recurso) && !!criadoPorId && criadoPorId === user?.sub;
   }
 
+  /**
+   * SECRETARIA pode baixar todos os anexos (incluindo atestados/laudos).
+   * Decisão confirmada pelo stakeholder — LGPD: download auditado.
+   */
+  canDownloadFile(user: AuthenticatedUser | undefined, recurso: RecursoComProfessor): boolean {
+    return this.isAdminOrSecretaria(user) || this.isProfessorOwner(user, recurso);
+  }
+
   canReopen(user?: AuthenticatedUser): boolean {
     return this.isAdmin(user);
   }
@@ -92,6 +100,12 @@ export class AtendimentosIndividuaisPolicy {
   assertCanRemoveFile(user: AuthenticatedUser | undefined, recurso: RecursoComProfessor, criadoPorId?: string | null): void {
     if (!this.canRemoveFile(user, recurso, criadoPorId)) {
       throw new ForbiddenException('Voce nao tem permissao para remover este arquivo de atendimento individual.');
+    }
+  }
+
+  assertCanDownloadFile(user: AuthenticatedUser | undefined, recurso: RecursoComProfessor): void {
+    if (!this.canDownloadFile(user, recurso)) {
+      throw new ForbiddenException('Voce nao tem permissao para baixar este arquivo de atendimento individual.');
     }
   }
 

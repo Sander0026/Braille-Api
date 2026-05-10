@@ -73,4 +73,15 @@ describe('AtendimentosIndividuaisPolicy', () => {
     expect(() => policy.assertCanArchive(makeUser(Role.SECRETARIA))).toThrow(ForbiddenException);
     expect(() => policy.assertCanArchive(makeUser(Role.PROFESSOR))).toThrow(ForbiddenException);
   });
+
+  // ─── canDownloadFile (LGPD: SECRETARIA tem acesso) ────────────────
+
+  it('canDownloadFile deve permitir ADMIN, SECRETARIA e PROFESSOR dono', () => {
+    const recurso = { professorId: 'prof-1' };
+    expect(policy.canDownloadFile(makeUser(Role.ADMIN), recurso)).toBe(true);
+    expect(policy.canDownloadFile(makeUser(Role.SECRETARIA), recurso)).toBe(true);
+    expect(policy.canDownloadFile(makeUser(Role.PROFESSOR, 'prof-1'), recurso)).toBe(true);
+    expect(policy.canDownloadFile(makeUser(Role.PROFESSOR, 'prof-outro'), recurso)).toBe(false);
+    expect(policy.canDownloadFile(undefined, recurso)).toBe(false);
+  });
 });

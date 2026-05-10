@@ -92,11 +92,11 @@ export class AtendimentosIndividuaisController {
   @ApiResponse({ status: 200, description: 'Arquivo retornado pela API apos permissao validada.' })
   async downloadArquivo(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
     const arquivo = await this.arquivosService.obterParaDownload(id, req.user, getAuditUser(req));
-    const download = await this.downloadService.baixar(arquivo);
+    const download = await this.downloadService.baixarStream(arquivo);
 
     res.setHeader('Content-Type', download.contentType);
     res.setHeader('Content-Disposition', `inline; filename="${download.fileName}"; filename*=UTF-8''${download.encodedFileName}`);
-    res.send(download.buffer);
+    download.stream.pipe(res);
   }
 
   @Patch('arquivos/:id/arquivar')
