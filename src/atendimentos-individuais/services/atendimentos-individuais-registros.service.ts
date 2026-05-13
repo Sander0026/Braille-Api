@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { AuditUser } from '../../common/interfaces/audit-user.interface';
 import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individual.dto';
+import { AtualizarAtendimentoIndividualDto } from '../dto/atualizar-atendimento-individual.dto';
 import { AtendimentosIndividuaisPolicy } from '../policies/atendimentos-individuais.policy';
 import { AtendimentosIndividuaisAuditService } from './atendimentos-individuais-audit.service';
 import {
@@ -104,7 +105,64 @@ export class AtendimentosIndividuaisRegistrosService {
     return this.sanitizer.sanitizarAtendimento(atendimento);
   }
 
+  async atualizar(
+    id: string,
+    dto: AtualizarAtendimentoIndividualDto,
+    authUser: AuthenticatedUser | undefined,
+    auditUser: AuditUser,
+  ): Promise<AtendimentoIndividualResponse> {
+    const atendimento = await this.prisma.atendimentoIndividual.findFirst({
+      where: { id, excluidoEm: null },
+      include: {
+        acompanhamento: true,
+        arquivos: { where: { excluidoEm: null } },
+      },
+    });
+
+    if (!atendimento) throw new NotFoundException('Atendimento individual nao encontrado.');
+    this.policy.assertCanCreateAtendimento(authUser, atendimento.acompanhamento);
+
+    // Valida regras de negócio apenas para os campos enviados
+    const dtoParaValidar: CriarAtendimentoIndividualDto = {
+      tipoRegistro: dto.tipoRegistro ?? atendimento.tipoRegistro,
+      dataAtendimento: dto.dataAtendimento ?? atendimento.dataAtendimento.toISOString().slice(0, 10),
+      horaInicio: dto.horaInicio,
+      horaFim: dto.horaFim,
+      duracaoMinutos: dto.duracaoMinutos,
+      assuntoDoDia: dto.assuntoDoDia ?? atendimento.assuntoDoDia ?? undefined,
+      observacao: dto.observacao ?? atendimento.observacao ?? undefined,
+    };
+    this.validarRegraAtendimento(dtoParaValidar);
+
+    const atualizado = await this.prisma.atendimentoIndividual.update({
+      where: { id },
+      data: {
+        ...(dto.dataAtendimento !== undefined && { dataAtendimento: this.parseDate(dto.dataAtendimento) }),
+        ...(dto.horaInicio !== undefined && { horaInicioMinutos: this.resolverHoraMinutos(dto.horaInicio) }),
+        ...(dto.horaFim !== undefined && { horaFimMinutos: this.resolverHoraMinutos(dto.horaFim) }),
+        ...(dto.duracaoMinutos !== undefined && { duracaoMinutos: dto.duracaoMinutos }),
+        ...(dto.modalidade !== undefined && { modalidade: dto.modalidade }),
+        ...(dto.localAtendimento !== undefined && { localAtendimento: dto.localAtendimento }),
+        ...(dto.tipoRegistro !== undefined && { tipoRegistro: dto.tipoRegistro }),
+        ...(dto.assuntoDoDia !== undefined && { assuntoDoDia: dto.assuntoDoDia }),
+        ...(dto.observacao !== undefined && { observacao: dto.observacao }),
+        ...(dto.evolucao !== undefined && { evolucao: dto.evolucao }),
+        ...(dto.dificuldades !== undefined && { dificuldades: dto.dificuldades }),
+        ...(dto.pendencias !== undefined && { pendencias: dto.pendencias }),
+        ...(dto.recomendacoes !== undefined && { recomendacoes: dto.recomendacoes }),
+      },
+      include: { arquivos: { where: { excluidoEm: null } } },
+    });
+
+    this.audit.registrar('AtendimentoIndividual', id, AuditAcao.ATUALIZAR, auditUser, undefined, {
+      campos: Object.keys(dto),
+    });
+
+    return this.sanitizer.sanitizarAtendimento(atualizado);
+  }
+
   // ─── Helpers privados ─────────────────────────────────────────────────
+
 
   private async buscarAcompanhamentoAtivo(id: string, authUser?: AuthenticatedUser) {
     const acompanhamento = await this.prisma.acompanhamentoIndividual.findFirst({

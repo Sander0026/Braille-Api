@@ -34,6 +34,7 @@ import { AtendimentosIndividuaisRegistrosService } from '../services/atendimento
 import { ArquivosAtendimentosIndividuaisService } from '../services/arquivos-atendimentos-individuais.service';
 import { ArquivoAtendimentoDownloadService } from '../services/arquivo-atendimento-download.service';
 import { CriarAtendimentoIndividualDto } from '../dto/criar-atendimento-individual.dto';
+import { AtualizarAtendimentoIndividualDto } from '../dto/atualizar-atendimento-individual.dto';
 import { AnexarArquivoAtendimentoDto } from '../dto/anexar-arquivo-atendimento.dto';
 import { ArquivarArquivoAtendimentoDto } from '../dto/arquivar-arquivo-atendimento.dto';
 
@@ -85,6 +86,20 @@ export class AtendimentosIndividuaisController {
   findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.registrosService.buscar(id, req.user);
   }
+
+  @Patch('atendimentos/:id')
+  @ApiOperation({ summary: 'Atualizar registro de atendimento individual' })
+  @ApiParam({ name: 'id', description: 'UUID do atendimento' })
+  @ApiResponse({ status: 200, description: 'Atendimento atualizado com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Atendimento nao encontrado.' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: AtualizarAtendimentoIndividualDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.registrosService.atualizar(id, dto, req.user, getAuditUser(req));
+  }
+
 
   @Get('arquivos/:id/download')
   @ApiOperation({ summary: 'Baixar arquivo de atendimento apos validacao de permissao' })
