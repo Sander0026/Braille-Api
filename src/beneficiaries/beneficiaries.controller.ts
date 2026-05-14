@@ -145,6 +145,14 @@ export class BeneficiariesController {
     await this.beneficiariesService.exportToXlsxStream(query, res);
   }
 
+  @Get('search')
+  @ApiOperation({ summary: 'Buscar alunos ativos para seletores e autocompletes' })
+  @ApiQuery({ name: 'busca', required: true, description: 'Nome, matricula ou CPF do aluno' })
+  @ApiResponse({ status: 200, description: 'Lista leve de alunos retornada.' })
+  search(@Query('busca') busca?: string) {
+    return this.beneficiariesService.searchResumo(busca);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Buscar aluno por ID' })
   @ApiParam({ name: 'id', description: 'UUID do aluno' })

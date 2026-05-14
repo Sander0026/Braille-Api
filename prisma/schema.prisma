@@ -2,11 +2,11 @@ generator client {
   provider = "prisma-client-js"
 }
 
-generator erd {
-  provider = "prisma-erd-generator"
-  output   = "./v1-erd.svg"
-  theme    = "neutral"
-}
+// generator erd {
+//   provider = "prisma-erd-generator"
+//   output   = "./v1-erd.svg"
+//   theme    = "neutral"
+// }
 
 datasource db {
   provider  = "postgresql"
@@ -102,6 +102,7 @@ enum AuditAcao {
   FECHAR_DIARIO
   REABRIR_DIARIO
   MUDAR_STATUS
+  DOWNLOAD
 }
 
 enum TipoApoiador {
@@ -151,6 +152,33 @@ enum CertificateBatchStatus {
   FAILED
 }
 
+enum StatusAcompanhamentoIndividual {
+  EM_ANDAMENTO
+  FINALIZADO
+}
+
+enum TipoRegistroAtendimentoIndividual {
+  ATENDIMENTO_REALIZADO
+  FALTA_JUSTIFICADA
+  FALTA_NAO_JUSTIFICADA
+  CANCELADO
+}
+
+enum CategoriaArquivoAtendimentoIndividual {
+  ATESTADO
+  LAUDO
+  MATERIAL_PEDAGOGICO
+  DOCUMENTO
+  OUTRO
+}
+
+enum ModalidadeAtendimentoIndividual {
+  PRESENCIAL
+  REMOTO
+  TELEFONE
+  OUTRO
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -184,6 +212,14 @@ model User {
   turmas       Turma[]       @relation("TurmaProfessorPrincipal")
   comunicados  Comunicado[]
   sessoes      UserSession[]
+  acompanhamentosIndividuaisProfessor AcompanhamentoIndividual[]      @relation("AcompanhamentoIndividualProfessor")
+  acompanhamentosIndividuaisArquivados AcompanhamentoIndividual[]     @relation("AcompanhamentoIndividualArquivadoPor")
+  acompanhamentosIndividuaisDesarquivados AcompanhamentoIndividual[]  @relation("AcompanhamentoIndividualDesarquivadoPor")
+  atendimentosIndividuaisProfessor    AtendimentoIndividual[]          @relation("AtendimentoIndividualProfessor")
+  atendimentosIndividuaisCriados      AtendimentoIndividual[]          @relation("AtendimentoIndividualCriadoPor")
+  arquivosAtendimentoIndividual       ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoCriadoPor")
+  arquivosAtendimentoIndividualExcluidos ArquivoAtendimentoIndividual[] @relation("ArquivoAtendimentoExcluidoPor")
+  historicosAssuntoAcompanhamento     HistoricoAssuntoAcompanhamento[] @relation("HistoricoAssuntoAlteradoPor")
 
   @@index([statusAtivo, excluido])
   @@index([role])
@@ -283,6 +319,8 @@ model Aluno {
   atestados            Atestado[]
   laudos               LaudoMedico[]
   certificadosEmitidos CertificadoEmitido[]
+  acompanhamentosIndividuais AcompanhamentoIndividual[]
+  atendimentosIndividuais    AtendimentoIndividual[]
 
   @@index([statusAtivo, excluido]) // Listagem de alunos ativos/inativos
   @@index([nomeCompleto]) // Busca por nome
@@ -647,6 +685,126 @@ model CertificadoEmitido {
   // Índice composto para a query mais frequente: certificados de um aluno em uma turma.
   // PostgreSQL usa este índice para WHERE alunoId = X AND turmaId = Y de forma eficiente.
   @@index([alunoId, turmaId])
+}
+
+model AcompanhamentoIndividual {
+  id              String                         @id @default(uuid())
+  alunoId         String
+  professorId     String
+  assuntoAtual    String
+  descricao       String?
+  status          StatusAcompanhamentoIndividual @default(EM_ANDAMENTO)
+  arquivado       Boolean                        @default(false)
+  arquivadoEm     DateTime?
+  arquivadoPorId  String?
+  desarquivadoEm  DateTime?
+  desarquivadoPorId String?
+  motivoArquivamento    String?
+  motivoDesarquivamento String?
+  dataInicio      DateTime                       @default(now()) @db.Date
+  dataFinalizacao DateTime?                      @db.Date
+  resultadoFinal  String?
+  resumoFinal     String?
+  criadoEm        DateTime                       @default(now())
+  atualizadoEm    DateTime                       @updatedAt
+  excluidoEm      DateTime?
+
+  aluno            Aluno                            @relation(fields: [alunoId], references: [id])
+  professor        User                             @relation("AcompanhamentoIndividualProfessor", fields: [professorId], references: [id])
+  arquivadoPor     User?                            @relation("AcompanhamentoIndividualArquivadoPor", fields: [arquivadoPorId], references: [id])
+  desarquivadoPor  User?                            @relation("AcompanhamentoIndividualDesarquivadoPor", fields: [desarquivadoPorId], references: [id])
+  atendimentos     AtendimentoIndividual[]
+  historicoAssuntos HistoricoAssuntoAcompanhamento[]
+
+  @@index([alunoId, status])
+  @@index([professorId, status])
+  @@index([arquivado])
+  @@index([alunoId, status, arquivado])
+  @@index([professorId, status, arquivado])
+  @@index([arquivadoPorId])
+  @@index([desarquivadoPorId])
+  @@index([dataInicio])
+  @@index([excluidoEm])
+}
+
+model AtendimentoIndividual {
+  id               String                          @id @default(uuid())
+  acompanhamentoId String
+  alunoId          String
+  professorId      String
+  dataAtendimento  DateTime                        @db.Date
+  horaInicioMinutos Int?
+  horaFimMinutos    Int?
+  duracaoMinutos   Int?
+  modalidade       ModalidadeAtendimentoIndividual?
+  localAtendimento String?
+  tipoRegistro     TipoRegistroAtendimentoIndividual
+  assuntoDoDia     String?
+  observacao       String?
+  evolucao         String?
+  dificuldades     String?
+  pendencias       String?
+  recomendacoes    String?
+  criadoPorId      String?
+  criadoEm         DateTime                        @default(now())
+  atualizadoEm     DateTime                        @updatedAt
+  excluidoEm       DateTime?
+
+  acompanhamento AcompanhamentoIndividual       @relation(fields: [acompanhamentoId], references: [id])
+  aluno          Aluno                          @relation(fields: [alunoId], references: [id])
+  professor      User                           @relation("AtendimentoIndividualProfessor", fields: [professorId], references: [id])
+  criadoPor      User?                          @relation("AtendimentoIndividualCriadoPor", fields: [criadoPorId], references: [id])
+  arquivos       ArquivoAtendimentoIndividual[]
+
+  @@index([acompanhamentoId, dataAtendimento])
+  @@index([alunoId, dataAtendimento])
+  @@index([professorId, dataAtendimento])
+  @@index([criadoPorId])
+  @@index([tipoRegistro])
+  @@index([excluidoEm])
+}
+
+model ArquivoAtendimentoIndividual {
+  id            String                               @id @default(uuid())
+  atendimentoId String
+  nomeOriginal  String
+  nomeArquivo   String
+  urlArquivo    String
+  tipoArquivo   String
+  tamanho       Int
+  categoria     CategoriaArquivoAtendimentoIndividual @default(OUTRO)
+  criadoPorId   String?
+  criadoEm      DateTime                             @default(now())
+  excluidoEm    DateTime?
+  excluidoPorId String?
+  motivoExclusao String?
+
+  atendimento AtendimentoIndividual @relation(fields: [atendimentoId], references: [id])
+  criadoPor   User?                 @relation("ArquivoAtendimentoCriadoPor", fields: [criadoPorId], references: [id])
+  excluidoPor User?                  @relation("ArquivoAtendimentoExcluidoPor", fields: [excluidoPorId], references: [id])
+
+  @@index([atendimentoId])
+  @@index([categoria])
+  @@index([criadoPorId])
+  @@index([excluidoEm])
+  @@index([excluidoPorId])
+}
+
+model HistoricoAssuntoAcompanhamento {
+  id               String   @id @default(uuid())
+  acompanhamentoId String
+  assuntoAnterior  String
+  assuntoNovo      String
+  motivoAlteracao  String?
+  alteradoPorId    String?
+  criadoEm         DateTime @default(now())
+
+  acompanhamento AcompanhamentoIndividual @relation(fields: [acompanhamentoId], references: [id])
+  alteradoPor     User?                    @relation("HistoricoAssuntoAlteradoPor", fields: [alteradoPorId], references: [id])
+
+  @@index([acompanhamentoId])
+  @@index([alteradoPorId])
+  @@index([criadoEm])
 }
 
 // Fase 2 - Certificados V2
