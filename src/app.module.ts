@@ -23,6 +23,7 @@ import { AtestadosModule } from './atestados/atestados.module';
 import { LaudosModule } from './laudos/laudos.module';
 import { ApoiadoresModule } from './apoiadores/apoiadores.module';
 import { CertificadosModule } from './certificados/certificados.module';
+import { AtendimentosIndividuaisModule } from './atendimentos-individuais/atendimentos-individuais.module';
 import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/prisma-exception.filter';
 import { validateEnv } from './common/config/env.validation';
 
@@ -69,6 +70,7 @@ import { validateEnv } from './common/config/env.validation';
     LaudosModule,
     ApoiadoresModule,
     CertificadosModule,
+    AtendimentosIndividuaisModule,
   ],
   controllers: [AppController],
   providers: [

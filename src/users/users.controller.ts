@@ -55,6 +55,7 @@ export class UsersController {
   }
 
   @Get('resumo')
+  @Roles(Role.ADMIN, Role.SECRETARIA)
   @ApiOperation({ summary: 'Listar usuarios com dados minimos para selecoes internas' })
   @ApiResponse({ status: 200, description: 'Resumo de usuários retornado.' })
   @ApiResponse({ status: 401, description: 'Token ausente ou expirado.' })
