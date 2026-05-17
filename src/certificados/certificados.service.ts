@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { Prisma, AuditAcao } from '@prisma/client';
+import { Prisma, AuditAcao, MotivoEncerramentoMatricula } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
@@ -781,6 +781,9 @@ export class CertificadosService {
           data: {
             status: 'CONCLUIDA',
             dataEncerramento: new Date(),
+            motivoEncerramento: MotivoEncerramentoMatricula.CONCLUSAO,
+            encerradoEm: new Date(),
+            encerradoPorId: auditUser?.sub ?? null,
             observacao: 'Concluida automaticamente por emissao manual de certificado academico.',
           },
         } as never);
@@ -795,6 +798,9 @@ export class CertificadosService {
         status: 'CONCLUIDA',
         dataEntrada: new Date(),
         dataEncerramento: new Date(),
+        motivoEncerramento: MotivoEncerramentoMatricula.CONCLUSAO,
+        encerradoEm: new Date(),
+        encerradoPorId: auditUser?.sub ?? null,
         observacao: 'Historico criado automaticamente por emissao manual de certificado academico.',
       },
     } as never);

@@ -27,6 +27,23 @@ enum MatriculaStatus {
   CONCLUIDA
   EVADIDA
   CANCELADA
+  TRANSFERIDA
+}
+
+enum MotivoEncerramentoMatricula {
+  CONCLUSAO
+  EVASAO_SEM_JUSTIFICATIVA
+  MUDANCA_DE_TURNO
+  TRANSFERENCIA_DE_TURMA
+  MUDANCA_DE_CIDADE
+  DIFICULDADE_TRANSPORTE
+  PROBLEMA_SAUDE
+  PROBLEMA_FAMILIAR
+  INCOMPATIBILIDADE_HORARIO
+  FALTA_DE_CONTATO
+  DESISTENCIA_VOLUNTARIA
+  CANCELAMENTO_DA_TURMA
+  OUTRO
 }
 
 enum DiaSemana {
@@ -364,13 +381,16 @@ model Turma {
 }
 
 model MatriculaOficina {
-  id               String          @id @default(uuid())
-  status           MatriculaStatus @default(ATIVA)
-  dataEntrada      DateTime        @default(now())
-  dataEncerramento DateTime? // Preenchida ao concluir, evadir ou cancelar
-  observacao       String? // Motivo do cancelamento/evasão etc.
-  criadoEm         DateTime        @default(now())
-  atualizadoEm     DateTime        @updatedAt
+  id                 String                       @id @default(uuid())
+  status             MatriculaStatus              @default(ATIVA)
+  dataEntrada        DateTime                     @default(now())
+  dataEncerramento   DateTime? // Preenchida ao concluir, evadir ou cancelar
+  motivoEncerramento MotivoEncerramentoMatricula?
+  observacao         String? // Complemento textual do encerramento
+  encerradoPorId     String?
+  encerradoEm        DateTime?
+  criadoEm           DateTime                     @default(now())
+  atualizadoEm       DateTime                     @updatedAt
 
   // Relacionamentos
   alunoId String
@@ -383,6 +403,8 @@ model MatriculaOficina {
   // Isso permite que o aluno volte à mesma turma após cancelamento/evasão.
   @@index([alunoId])
   @@index([turmaId, status])
+  @@index([motivoEncerramento])
+  @@index([encerradoPorId])
 }
 
 // ── Grade Horária estruturada ─────────────────────────────────────

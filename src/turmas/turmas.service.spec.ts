@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { AuditAcao, MatriculaStatus, Role, TurmaStatus } from '@prisma/client';
+import { AuditAcao, MatriculaStatus, MotivoEncerramentoMatricula, Role, TurmaStatus } from '@prisma/client';
 import { TurmasService } from './turmas.service';
 
 describe('TurmasService', () => {
@@ -34,6 +34,10 @@ describe('TurmasService', () => {
           professorId: 'prof-1',
           professorAuxiliarId: null,
         }),
+      },
+      matriculaOficina: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
@@ -126,7 +130,13 @@ describe('TurmasService', () => {
     );
     expect(tx.matriculaOficina.updateMany).toHaveBeenCalledWith({
       where: { turmaId: 'turma-1', status: MatriculaStatus.ATIVA },
-      data: { status: MatriculaStatus.CONCLUIDA, dataEncerramento: expect.any(Date) },
+      data: {
+        status: MatriculaStatus.CONCLUIDA,
+        dataEncerramento: expect.any(Date),
+        motivoEncerramento: MotivoEncerramentoMatricula.CONCLUSAO,
+        encerradoEm: expect.any(Date),
+        encerradoPorId: auditUser.sub,
+      },
     });
     expect(auditService.registrar).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -149,5 +159,61 @@ describe('TurmasService', () => {
 
     await expect(service.cancelar('turma-1', auditUser as never)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('encerra matricula ativa com status, motivo e auditoria', async () => {
+    const { service, prisma, auditService } = criarService();
+    prisma.matriculaOficina.findFirst.mockResolvedValue({
+      id: 'mat-1',
+      aluno: { nomeCompleto: 'Ana Silva' },
+      turma: { nome: 'Braille Basico' },
+    });
+    prisma.matriculaOficina.update.mockResolvedValue({
+      id: 'mat-1',
+      status: MatriculaStatus.EVADIDA,
+      motivoEncerramento: MotivoEncerramentoMatricula.FALTA_DE_CONTATO,
+    });
+
+    await service.encerrarMatricula(
+      'turma-1',
+      'aluno-1',
+      {
+        status: MatriculaStatus.EVADIDA,
+        motivoEncerramento: MotivoEncerramentoMatricula.FALTA_DE_CONTATO,
+        observacao: 'Nao respondeu aos contatos',
+        dataEncerramento: '2026-05-10',
+      } as never,
+      auditUser as never,
+    );
+
+    expect(prisma.matriculaOficina.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'mat-1' },
+        data: expect.objectContaining({
+          status: MatriculaStatus.EVADIDA,
+          motivoEncerramento: MotivoEncerramentoMatricula.FALTA_DE_CONTATO,
+          observacao: 'Nao respondeu aos contatos',
+          dataEncerramento: expect.any(Date),
+          encerradoEm: expect.any(Date),
+          encerradoPorId: auditUser.sub,
+        }),
+      }),
+    );
+    expect(auditService.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entidade: 'MatriculaOficina',
+        registroId: 'mat-1',
+        acao: AuditAcao.DESMATRICULAR,
+      }),
+    );
+  });
+
+  it('bloqueia remocao direta de aluno sem motivo estruturado', async () => {
+    const { service, prisma } = criarService();
+
+    await expect(service.removeAluno('turma-1', 'aluno-1', auditUser as never)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.matriculaOficina.update).not.toHaveBeenCalled();
   });
 });
