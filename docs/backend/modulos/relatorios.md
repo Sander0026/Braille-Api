@@ -112,7 +112,7 @@ Base: `/api/relatorios`
 | `GET` | `/alunos/resumo` | Contagens leves da aba Alunos |
 | `GET` | `/alunos/distribuicoes` | Rankings Top 10 da aba Alunos |
 | `GET` | `/alunos/lista?page=1&limit=20` | Lista paginada de alunos |
-| `GET` | `/alunos` | Relatorio legado/detalhado, usado em exportacao interna |
+| `GET` | `/alunos` | LEGADO: relatorio detalhado com limite de seguranca |
 | `GET` | `/turmas` | Relatorio detalhado de turmas |
 | `GET` | `/evasoes` | Encerramentos, evasoes, cancelamentos e transferencias |
 | `GET` | `/risco-evasao` | Alunos priorizados para busca ativa |
@@ -201,6 +201,10 @@ Metodos:
 
 - padrao: `page = 1`, `limit = 20`;
 - maximo: `limit = 50`.
+
+`GET /relatorios/alunos` existe apenas por compatibilidade e aplica limite padrao de 500 itens
+para reduzir risco de travamento. Nao use esse endpoint em novas telas; use os tres endpoints leves
+oficiais da aba Alunos.
 
 Se precisar adicionar um novo agrupamento, prefira incluir em `alunosDistribuicoes` com ranking
 limitado, nao no endpoint paginado.

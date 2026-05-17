@@ -20,6 +20,8 @@ type FiltroRelatorioAlunosListaQuery = FiltroRelatorioAlunosDto & {
   limit?: string;
 };
 
+const LIMITE_ENDPOINT_LEGADO_ALUNOS = 500;
+
 @ApiTags('Relatorios')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
@@ -60,10 +62,17 @@ export class RelatoriosController {
   }
 
   @Get('alunos')
-  @ApiOperation({ summary: 'Relatorio de alunos' })
-  @ApiResponse({ status: 200, description: 'Relatorio de alunos gerado.' })
+  @ApiOperation({
+    summary: 'LEGADO: relatorio detalhado de alunos',
+    description:
+      'Endpoint mantido apenas por compatibilidade. Para novas telas, use /alunos/resumo, /alunos/distribuicoes e /alunos/lista.',
+    deprecated: true,
+  })
+  @ApiResponse({ status: 200, description: 'Relatorio legado de alunos gerado com limite de seguranca.' })
   alunos(@Query() query: FiltroRelatorioAlunosDto, @Req() req: AuthenticatedRequest) {
-    return this.relatoriosService.alunos(query, req.user);
+    return this.relatoriosService.alunos(query, req.user, {
+      limiteDetalhes: LIMITE_ENDPOINT_LEGADO_ALUNOS,
+    });
   }
 
   @Get('turmas')

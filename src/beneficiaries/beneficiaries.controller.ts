@@ -174,9 +174,25 @@ export class BeneficiariesController {
     return this.beneficiariesService.update(id, dto, getAuditUser(req));
   }
 
+  @Patch(':id/inativar')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Inativar um aluno da instituicao' })
+  @ApiParam({ name: 'id', description: 'UUID do aluno' })
+  @ApiBody({ type: InativarAlunoDto })
+  @ApiResponse({ status: 400, description: 'Motivo de inativacao obrigatorio ou payload invalido.' })
+  @ApiResponse({ status: 200, description: 'Aluno inativado.' })
+  @ApiResponse({ status: 404, description: 'Aluno nao encontrado.' })
+  inativar(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: InativarAlunoDto) {
+    return this.beneficiariesService.remove(id, dto, getAuditUser(req));
+  }
+
   @Delete(':id')
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Inativar um aluno (Soft Delete)' })
+  @ApiOperation({
+    summary: 'LEGADO: inativar um aluno via DELETE',
+    description: 'Endpoint mantido por compatibilidade. Preferir PATCH /beneficiaries/:id/inativar.',
+    deprecated: true,
+  })
   @ApiParam({ name: 'id', description: 'UUID do aluno' })
   @ApiBody({ type: InativarAlunoDto })
   @ApiResponse({ status: 400, description: 'Motivo de inativação obrigatório ou payload inválido.' })
