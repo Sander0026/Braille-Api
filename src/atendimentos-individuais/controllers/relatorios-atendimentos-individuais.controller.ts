@@ -6,6 +6,7 @@ import { AuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
+import { getAuditUser } from '../../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../../common/interfaces/authenticated-request.interface';
 import { RelatoriosAtendimentosIndividuaisService } from '../services/relatorios-atendimentos-individuais.service';
 import { FiltroRelatorioAtendimentoDto } from '../dto/filtro-relatorio-atendimento.dto';
@@ -42,7 +43,7 @@ export class RelatoriosAtendimentosIndividuaisController {
     @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const buffer = await this.service.gerarPdf(body, req.user);
+    const buffer = await this.service.gerarPdf(body, req.user, getAuditUser(req));
     const date = new Date().toISOString().slice(0, 10);
     res.set({
       'Content-Type': 'application/pdf',

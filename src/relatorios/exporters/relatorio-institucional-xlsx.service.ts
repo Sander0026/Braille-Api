@@ -12,7 +12,13 @@ export class RelatorioInstitucionalXlsxService {
     workbook.creator = 'Braille API';
     workbook.created = new Date(relatorio.emitidoEm);
 
-    this.addSheet(workbook, 'Resumo', this.resumoRows(relatorio));
+    this.addSheet(workbook, 'Resumo Geral', this.resumoGeralRows(relatorio));
+    this.addSheet(workbook, 'Indicadores', this.indicadorRows(relatorio));
+    this.addSheet(workbook, 'Alunos', this.alunoRows(relatorio.alunos.data));
+    this.addSheet(workbook, 'Turmas', this.turmaRows(relatorio));
+    this.addSheet(workbook, 'Evasoes', this.encerramentoRows(relatorio));
+    this.addSheet(workbook, 'Atendimentos', this.atendimentoRows(relatorio));
+    this.addSheet(workbook, 'Frequencias', this.frequenciaRows(relatorio));
     this.addSheet(
       workbook,
       'Alunos ativos',
@@ -25,10 +31,6 @@ export class RelatorioInstitucionalXlsxService {
     );
     this.addSheet(workbook, 'Perfil social', this.perfilSocialRows(relatorio));
     this.addSheet(workbook, 'Perfil deficiencia', this.perfilDeficienciaRows(relatorio));
-    this.addSheet(workbook, 'Turmas', this.turmaRows(relatorio));
-    this.addSheet(workbook, 'Encerramentos', this.encerramentoRows(relatorio));
-    this.addSheet(workbook, 'Atendimentos', this.atendimentoRows(relatorio));
-    this.addSheet(workbook, 'Frequencias', this.frequenciaRows(relatorio));
 
     const workbookBuffer = await workbook.xlsx.writeBuffer();
     return Buffer.isBuffer(workbookBuffer) ? workbookBuffer : Buffer.from(workbookBuffer as ArrayBuffer);
@@ -62,8 +64,13 @@ export class RelatorioInstitucionalXlsxService {
     };
   }
 
-  private resumoRows(relatorio: RelatorioExportacao): SheetRow[] {
+  private resumoGeralRows(relatorio: RelatorioExportacao): SheetRow[] {
     return [
+      { grupo: 'Relatorio', indicador: 'Titulo', valor: 'Relatorio Institucional de Atendimento' },
+      { grupo: 'Relatorio', indicador: 'Instituicao', valor: 'Instituto Luiz Braille' },
+      { grupo: 'Relatorio', indicador: 'Emitido em', valor: this.formatarData(relatorio.emitidoEm) },
+      { grupo: 'Relatorio', indicador: 'Periodo inicial', valor: relatorio.filtros.dataInicio ?? 'Nao informado' },
+      { grupo: 'Relatorio', indicador: 'Periodo final', valor: relatorio.filtros.dataFim ?? 'Nao informado' },
       { grupo: 'Alunos', indicador: 'Total', valor: relatorio.resumo.alunos.total },
       { grupo: 'Alunos', indicador: 'Ativos', valor: relatorio.resumo.alunos.ativos },
       { grupo: 'Alunos', indicador: 'Inativos', valor: relatorio.resumo.alunos.inativos },
@@ -99,6 +106,67 @@ export class RelatorioInstitucionalXlsxService {
         indicador: 'Taxa de permanencia (%)',
         valor: relatorio.resumo.indicadores.taxaPermanencia,
       },
+    ];
+  }
+
+  private indicadorRows(relatorio: RelatorioExportacao): SheetRow[] {
+    return [
+      ...this.resumoGeralRows(relatorio),
+      { grupo: 'Alunos', indicador: 'Com laudo', valor: relatorio.alunos.indicadores.comLaudo },
+      { grupo: 'Alunos', indicador: 'Sem laudo', valor: relatorio.alunos.indicadores.semLaudo },
+      { grupo: 'Alunos', indicador: 'Precisam de acompanhante', valor: relatorio.alunos.indicadores.precisamAcompanhante },
+      { grupo: 'Alunos', indicador: 'Recebem beneficio do governo', valor: relatorio.alunos.indicadores.recebemBeneficioGov },
+      { grupo: 'Turmas', indicador: 'Total de vagas', valor: relatorio.turmas.indicadores.totalVagas },
+      { grupo: 'Turmas', indicador: 'Vagas ocupadas', valor: relatorio.turmas.indicadores.vagasOcupadas },
+      {
+        grupo: 'Turmas',
+        indicador: 'Taxa media de ocupacao (%)',
+        valor: relatorio.turmas.indicadores.taxaMediaOcupacao,
+      },
+      { grupo: 'Evasoes', indicador: 'Total de evasoes', valor: relatorio.evasoes.indicadores.totalEvasoes },
+      {
+        grupo: 'Evasoes',
+        indicador: 'Com atendimento individual',
+        valor: relatorio.evasoes.indicadores.evasoesComAtendimentoIndividual,
+      },
+      {
+        grupo: 'Evasoes',
+        indicador: 'Sem atendimento individual',
+        valor: relatorio.evasoes.indicadores.evasoesSemAtendimentoIndividual,
+      },
+      { grupo: 'Atendimentos', indicador: 'Total de registros', valor: relatorio.atendimentos.total },
+      {
+        grupo: 'Atendimentos',
+        indicador: 'Atendimentos realizados',
+        valor: relatorio.atendimentos.porTipoRegistro.ATENDIMENTO_REALIZADO ?? 0,
+      },
+      {
+        grupo: 'Atendimentos',
+        indicador: 'Faltas justificadas',
+        valor: relatorio.atendimentos.porTipoRegistro.FALTA_JUSTIFICADA ?? 0,
+      },
+      {
+        grupo: 'Atendimentos',
+        indicador: 'Faltas nao justificadas',
+        valor: relatorio.atendimentos.porTipoRegistro.FALTA_NAO_JUSTIFICADA ?? 0,
+      },
+      { grupo: 'Frequencias', indicador: 'Total de registros', valor: relatorio.frequencias.total },
+      { grupo: 'Frequencias', indicador: 'Presencas', valor: relatorio.frequencias.presentes },
+      { grupo: 'Frequencias', indicador: 'Faltas', valor: relatorio.frequencias.faltas },
+      { grupo: 'Frequencias', indicador: 'Faltas justificadas', valor: relatorio.frequencias.faltasJustificadas },
+      { grupo: 'Frequencias', indicador: 'Taxa de presenca (%)', valor: relatorio.frequencias.taxaPresenca },
+      ...this.indicadoresAgrupamentoRows('Alunos por cidade', relatorio.alunos.indicadores.porCidade),
+      ...this.indicadoresAgrupamentoRows('Alunos por bairro', relatorio.alunos.indicadores.porBairro),
+      ...this.indicadoresAgrupamentoRows(
+        'Alunos por tipo de deficiencia',
+        relatorio.alunos.indicadores.porTipoDeficiencia,
+      ),
+      ...this.indicadoresAgrupamentoRows('Evasoes por motivo', relatorio.evasoes.indicadores.porMotivo),
+      ...this.indicadoresAgrupamentoRows('Evasoes por turma', relatorio.evasoes.indicadores.porTurma),
+      ...this.indicadoresAgrupamentoRows('Evasoes por professor', relatorio.evasoes.indicadores.porProfessor),
+      ...this.indicadoresAgrupamentoRows('Evasoes por mes', relatorio.evasoes.indicadores.porMes),
+      ...this.indicadoresAgrupamentoRows('Atendimentos por tipo', relatorio.atendimentos.porTipoRegistro),
+      ...this.indicadoresAgrupamentoRows('Frequencias por status', relatorio.frequencias.porStatus),
     ];
   }
 
@@ -164,6 +232,15 @@ export class RelatorioInstitucionalXlsxService {
     return Object.entries(valores).map(([categoria, total]) => ({ perfil, categoria, total }));
   }
 
+  private indicadoresAgrupamentoRows(indicador: string, valores: Record<string, number>): SheetRow[] {
+    return Object.entries(valores).map(([categoria, valor]) => ({
+      grupo: 'Agrupamentos',
+      indicador,
+      categoria,
+      valor,
+    }));
+  }
+
   private turmaRows(relatorio: RelatorioExportacao): SheetRow[] {
     return relatorio.turmas.data.map((turma) => ({
       id: turma.id,
@@ -190,20 +267,29 @@ export class RelatorioInstitucionalXlsxService {
 
   private encerramentoRows(relatorio: RelatorioExportacao): SheetRow[] {
     return relatorio.evasoes.data.map((matricula) => ({
-      id: matricula.id,
-      aluno: matricula.aluno.nomeCompleto,
-      matriculaAluno: matricula.aluno.matricula,
-      turma: matricula.turma.nome,
-      professor: matricula.turma.professor?.nome,
-      status: matricula.status,
-      motivoEncerramento: matricula.motivoEncerramento,
-      observacao: matricula.observacao,
-      dataEntrada: this.formatarData(matricula.dataEntrada),
-      dataEncerramento: this.formatarData(matricula.dataEncerramento),
-      encerradoEm: this.formatarData(matricula.encerradoEm),
-      cidade: matricula.aluno.cidade,
-      bairro: matricula.aluno.bairro,
-      tipoDeficiencia: matricula.aluno.tipoDeficiencia,
+      ID: matricula.id,
+      Aluno: matricula.aluno.nomeCompleto,
+      Matricula: matricula.aluno.matricula,
+      Turma: matricula.turma.nome,
+      Professor: matricula.turma.professor?.nome,
+      'Data de entrada': this.formatarData(matricula.dataEntrada),
+      'Data de saida': this.formatarData(matricula.dataSaida ?? matricula.dataEncerramento ?? matricula.encerradoEm),
+      'Tempo de permanencia (dias)': matricula.tempoPermanenciaDias,
+      'Status final': matricula.status,
+      Motivo: matricula.motivoEncerramento,
+      Observacao: matricula.observacao,
+      'Registrado por': matricula.registradoPor?.nome,
+      'Data do registro': this.formatarData(matricula.encerradoEm),
+      'Possui atendimento individual': this.simNao(matricula.atendimentosIndividuais.possuiAtendimento),
+      'Total de atendimentos individuais': matricula.atendimentosIndividuais.totalAtendimentos,
+      'Faltas justificadas em atendimento': matricula.atendimentosIndividuais.faltasJustificadas,
+      'Faltas nao justificadas em atendimento': matricula.atendimentosIndividuais.faltasNaoJustificadas,
+      'Acompanhamentos em andamento': matricula.atendimentosIndividuais.acompanhamentosEmAndamento,
+      'Acompanhamentos finalizados': matricula.atendimentosIndividuais.acompanhamentosFinalizados,
+      'Acompanhamentos arquivados': matricula.atendimentosIndividuais.acompanhamentosArquivados,
+      Cidade: matricula.aluno.cidade,
+      Bairro: matricula.aluno.bairro,
+      'Tipo de deficiencia': matricula.aluno.tipoDeficiencia,
     }));
   }
 

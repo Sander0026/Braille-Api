@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ModalidadeAtendimentoIndividual,
   StatusAcompanhamentoIndividual,
   TipoRegistroAtendimentoIndividual,
 } from '@prisma/client';
@@ -37,4 +38,9 @@ export class FiltroRelatorioAtendimentoDto {
   @IsOptional()
   @IsEnum(TipoRegistroAtendimentoIndividual)
   tipoRegistro?: TipoRegistroAtendimentoIndividual;
+
+  @ApiPropertyOptional({ enum: ModalidadeAtendimentoIndividual })
+  @IsOptional()
+  @IsEnum(ModalidadeAtendimentoIndividual)
+  modalidade?: ModalidadeAtendimentoIndividual;
 }

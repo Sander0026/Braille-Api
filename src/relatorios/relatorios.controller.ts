@@ -6,6 +6,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { SkipAudit } from '../common/decorators/skip-audit.decorator';
+import { getAuditUser } from '../common/helpers/audit.helper';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 import { FiltroRelatorioAlunosDto } from './dto/filtro-relatorio-alunos.dto';
 import { FiltroRelatorioAtendimentosDto } from './dto/filtro-relatorio-atendimentos.dto';
@@ -66,10 +67,11 @@ export class RelatoriosController {
   }
 
   @Post('exportar/pdf')
+  @Roles(Role.ADMIN, Role.SECRETARIA, Role.COMUNICACAO)
   @ApiOperation({ summary: 'Exportar relatorio institucional em PDF' })
   @ApiResponse({ status: 200, description: 'PDF gerado.' })
   async exportarPdf(@Body() body: FiltroRelatorioGeralDto, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const buffer = await this.relatoriosService.exportarPdf(body, req.user);
+    const buffer = await this.relatoriosService.exportarPdf(body, req.user, getAuditUser(req));
     const date = new Date().toISOString().slice(0, 10);
     res.set({
       'Content-Type': 'application/pdf',
@@ -80,10 +82,11 @@ export class RelatoriosController {
   }
 
   @Post('exportar/xlsx')
+  @Roles(Role.ADMIN, Role.SECRETARIA)
   @ApiOperation({ summary: 'Exportar relatorio institucional em XLSX' })
   @ApiResponse({ status: 200, description: 'XLSX gerado.' })
   async exportarXlsx(@Body() body: FiltroRelatorioGeralDto, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const buffer = await this.relatoriosService.exportarXlsx(body, req.user);
+    const buffer = await this.relatoriosService.exportarXlsx(body, req.user, getAuditUser(req));
     const date = new Date().toISOString().slice(0, 10);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

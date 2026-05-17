@@ -1,14 +1,18 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
+  AuditAcao,
   MatriculaStatus,
   MotivoEncerramentoMatricula,
   Prisma,
   Role,
+  StatusAcompanhamentoIndividual,
   StatusFrequencia,
   TipoDeficiencia,
   TipoRegistroAtendimentoIndividual,
   TurmaStatus,
 } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import type { AuditUser } from '../common/interfaces/audit-user.interface';
 import type { AuthenticatedUser } from '../common/interfaces/authenticated-request.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { FiltroRelatorioAlunosDto } from './dto/filtro-relatorio-alunos.dto';
@@ -68,8 +72,24 @@ type RelatorioExportacao = {
   frequencias: Awaited<ReturnType<RelatoriosService['frequencias']>>;
 };
 
+type AcompanhamentoEvasao = {
+  alunoId: string;
+  status: StatusAcompanhamentoIndividual;
+  arquivado: boolean;
+  atendimentos: Array<{
+    tipoRegistro: TipoRegistroAtendimentoIndividual;
+    dataAtendimento: Date;
+  }>;
+};
+
 const STATUS_MATRICULA_ENCERRADA = [
   MatriculaStatus.CONCLUIDA,
+  MatriculaStatus.EVADIDA,
+  MatriculaStatus.CANCELADA,
+  MatriculaStatus.TRANSFERIDA,
+] as const;
+
+const STATUS_RELATORIO_EVASOES = [
   MatriculaStatus.EVADIDA,
   MatriculaStatus.CANCELADA,
   MatriculaStatus.TRANSFERIDA,
@@ -81,6 +101,7 @@ export class RelatoriosService {
     private readonly prisma: PrismaService,
     private readonly pdfExporter: RelatorioInstitucionalPdfService,
     private readonly xlsxExporter: RelatorioInstitucionalXlsxService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async resumo(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser): Promise<ResumoRelatorio> {
@@ -360,7 +381,7 @@ export class RelatoriosService {
 
   async evasoes(filtro: FiltroRelatorioEvasoesDto, authUser?: AuthenticatedUser) {
     this.validarPeriodo(filtro);
-    const statusPadrao = filtro.statusMatricula ? undefined : [...STATUS_MATRICULA_ENCERRADA];
+    const statusPadrao = filtro.statusMatricula ? undefined : [...STATUS_RELATORIO_EVASOES];
     const where = this.montarWhereMatricula(filtro, authUser, {
       aplicarPeriodo: true,
       statusPadrao,
@@ -377,6 +398,7 @@ export class RelatoriosService {
         dataEntrada: true,
         dataEncerramento: true,
         encerradoEm: true,
+        encerradoPorId: true,
         aluno: {
           select: {
             id: true,
@@ -404,13 +426,120 @@ export class RelatoriosService {
       orderBy: [{ encerradoEm: 'desc' }, { dataEncerramento: 'desc' }],
     });
 
+    const encerradoPorIds = [
+      ...new Set(matriculas.map((matricula) => matricula.encerradoPorId).filter(Boolean)),
+    ] as string[];
+    const usuarios = encerradoPorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: encerradoPorIds } },
+          select: {
+            id: true,
+            nome: true,
+            email: true,
+            matricula: true,
+          },
+        })
+      : [];
+    const usuariosPorId = new Map(usuarios.map((usuario) => [usuario.id, usuario]));
+    const alunoIds = [...new Set(matriculas.map((matricula) => matricula.aluno.id))];
+    const acompanhamentos = alunoIds.length
+      ? await this.prisma.acompanhamentoIndividual.findMany({
+          where: {
+            excluidoEm: null,
+            alunoId: { in: alunoIds },
+          },
+          select: {
+            alunoId: true,
+            status: true,
+            arquivado: true,
+            atendimentos: {
+              where: { excluidoEm: null },
+              select: {
+                tipoRegistro: true,
+                dataAtendimento: true,
+              },
+            },
+          },
+        })
+      : [];
+    const acompanhamentosPorAluno = this.agruparAcompanhamentosPorAluno(acompanhamentos);
+
+    const data = matriculas.map((matricula) => {
+      const dataSaida = matricula.dataEncerramento ?? matricula.encerradoEm;
+
+      return {
+        ...matricula,
+        dataSaida,
+        tempoPermanenciaDias: this.diasEntre(matricula.dataEntrada, dataSaida),
+        atendimentosIndividuais: this.resumirAtendimentosIndividuais(
+          matricula.aluno.id,
+          dataSaida,
+          acompanhamentosPorAluno,
+        ),
+        registradoPor: matricula.encerradoPorId ? (usuariosPorId.get(matricula.encerradoPorId) ?? null) : null,
+      };
+    });
+    const evasoes = data.filter((matricula) => matricula.status === MatriculaStatus.EVADIDA);
+    const porTurma = this.agruparPor(evasoes, (matricula) => matricula.turma.nome);
+    const porProfessor = this.agruparPor(
+      evasoes,
+      (matricula) => matricula.turma.professor?.nome ?? 'Nao informado',
+    );
+    const porMotivo = this.agruparPor(
+      evasoes,
+      (matricula) => matricula.motivoEncerramento ?? 'Sem motivo estruturado',
+    );
+
     return {
       filtros: filtro,
-      totalEncerramentos: matriculas.length,
-      totalEvasoes: matriculas.filter((matricula) => matricula.status === MatriculaStatus.EVADIDA).length,
-      porStatus: this.agruparPor(matriculas, (matricula) => matricula.status),
-      porMotivo: this.agruparPor(matriculas, (matricula) => matricula.motivoEncerramento ?? 'Nao informado'),
-      data: matriculas,
+      totalEncerramentos: data.length,
+      totalEvasoes: evasoes.length,
+      indicadores: {
+        totalEvasoes: evasoes.length,
+        totalCancelamentos: data.filter((matricula) => matricula.status === MatriculaStatus.CANCELADA).length,
+        totalTransferencias: data.filter((matricula) => matricula.status === MatriculaStatus.TRANSFERIDA).length,
+        semMotivoEstruturado: evasoes.filter((matricula) => !matricula.motivoEncerramento).length,
+        evasoesComAtendimentoIndividual: evasoes.filter(
+          (matricula) => matricula.atendimentosIndividuais.possuiAtendimento,
+        ).length,
+        evasoesSemAtendimentoIndividual: evasoes.filter(
+          (matricula) => !matricula.atendimentosIndividuais.possuiAtendimento,
+        ).length,
+        evasoesComFaltasEmAtendimento: evasoes.filter(
+          (matricula) =>
+            matricula.atendimentosIndividuais.faltasJustificadas +
+              matricula.atendimentosIndividuais.faltasNaoJustificadas >
+            0,
+        ).length,
+        evasoesComAcompanhamentoFinalizado: evasoes.filter(
+          (matricula) => matricula.atendimentosIndividuais.acompanhamentosFinalizados > 0,
+        ).length,
+        evasoesComAcompanhamentoArquivado: evasoes.filter(
+          (matricula) => matricula.atendimentosIndividuais.acompanhamentosArquivados > 0,
+        ).length,
+        porTurma,
+        porProfessor,
+        porMes: this.agruparPor(evasoes, (matricula) => this.chaveMes(matricula.dataSaida ?? matricula.encerradoEm)),
+        porMotivo,
+        porTipoDeficiencia: this.agruparPor(
+          evasoes,
+          (matricula) => matricula.aluno.tipoDeficiencia ?? 'Nao informado',
+        ),
+        porCidade: this.agruparPor(evasoes, (matricula) => matricula.aluno.cidade ?? 'Nao informado'),
+        porBairro: this.agruparPor(evasoes, (matricula) => matricula.aluno.bairro ?? 'Nao informado'),
+        porCidadeBairro: this.agruparPor(evasoes, (matricula) =>
+          [matricula.aluno.cidade, matricula.aluno.bairro].filter(Boolean).join(' / ') || 'Nao informado',
+        ),
+        tempoMedioPermanenciaDias: this.media(
+          evasoes
+            .map((matricula) => matricula.tempoPermanenciaDias)
+            .filter((dias): dias is number => typeof dias === 'number'),
+        ),
+        rankingTurmas: this.rankingPorGrupo(porTurma),
+      },
+      porStatus: this.agruparPor(data, (matricula) => matricula.status),
+      porMotivo,
+      data,
     };
   }
 
@@ -546,17 +675,32 @@ export class RelatoriosService {
     };
   }
 
-  async exportarPdf(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser): Promise<Buffer> {
-    const relatorio = await this.gerarConsolidado(filtro, authUser);
-    return this.pdfExporter.gerar(relatorio, {
+  async exportarPdf(
+    filtro: FiltroRelatorioGeralDto,
+    authUser?: AuthenticatedUser,
+    auditUser?: AuditUser,
+  ): Promise<Buffer> {
+    const filtroExportacao = this.filtroExportacaoPdf(filtro, authUser);
+    const relatorio = await this.gerarConsolidado(filtroExportacao, authUser);
+    const buffer = await this.pdfExporter.gerar(relatorio, {
       emissorNome: authUser?.nome || authUser?.email || authUser?.sub,
       emissorPerfil: authUser?.role,
     });
+
+    await this.registrarAuditoriaExportacao('PDF', filtroExportacao, authUser, auditUser);
+    return buffer;
   }
 
-  async exportarXlsx(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser): Promise<Buffer> {
+  async exportarXlsx(
+    filtro: FiltroRelatorioGeralDto,
+    authUser?: AuthenticatedUser,
+    auditUser?: AuditUser,
+  ): Promise<Buffer> {
     const relatorio = await this.gerarConsolidado(filtro, authUser);
-    return this.xlsxExporter.gerar(relatorio);
+    const buffer = await this.xlsxExporter.gerar(relatorio);
+
+    await this.registrarAuditoriaExportacao('XLSX', filtro, authUser, auditUser);
+    return buffer;
   }
 
   private montarWhereAluno(
@@ -576,6 +720,58 @@ export class RelatoriosService {
     }
 
     return where;
+  }
+
+  private filtroExportacaoPdf(
+    filtro: FiltroRelatorioGeralDto,
+    authUser: AuthenticatedUser | undefined,
+  ): FiltroRelatorioGeralDto {
+    if (authUser?.role !== Role.COMUNICACAO) return filtro;
+
+    return {
+      ...(filtro.dataInicio && { dataInicio: filtro.dataInicio }),
+      ...(filtro.dataFim && { dataFim: filtro.dataFim }),
+      statusAluno: 'TODOS',
+    };
+  }
+
+  private async registrarAuditoriaExportacao(
+    formato: 'PDF' | 'XLSX',
+    filtro: FiltroRelatorioGeralDto,
+    authUser?: AuthenticatedUser,
+    auditUser?: AuditUser,
+  ): Promise<void> {
+    const exportadoEm = new Date().toISOString();
+    await this.auditLogService.registrar({
+      entidade: 'RelatorioInstitucional',
+      registroId: 'institucional',
+      acao: AuditAcao.DOWNLOAD,
+      autorId: auditUser?.sub || authUser?.sub,
+      autorNome: auditUser?.nome || authUser?.nome || authUser?.email,
+      autorRole: auditUser?.role || authUser?.role,
+      ip: auditUser?.ip,
+      userAgent: auditUser?.userAgent,
+      newValue: {
+        relatorio: 'Relatorio Institucional de Atendimento',
+        formato,
+        filtros: this.filtrosAuditaveis(filtro),
+        perfilExportador: authUser?.role,
+        exportadoEm,
+        observacaoLgpd:
+          formato === 'PDF'
+            ? 'PDF institucional gerado somente com dados agregados.'
+            : 'XLSX detalhado restrito a perfis administrativos.',
+      },
+    });
+  }
+
+  private filtrosAuditaveis(filtro: FiltroRelatorioGeralDto): Record<string, string> {
+    return Object.entries(filtro).reduce<Record<string, string>>((acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = String(value);
+      }
+      return acc;
+    }, {});
   }
 
   private montarWhereAlunoBasico(
@@ -900,6 +1096,89 @@ export class RelatoriosService {
       acc[key] = (acc[key] ?? 0) + 1;
       return acc;
     }, {});
+  }
+
+  private rankingPorGrupo(grupo: Record<string, number>): Array<{ nome: string; total: number }> {
+    return Object.entries(grupo)
+      .map(([nome, total]) => ({ nome, total }))
+      .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+  }
+
+  private chaveMes(value?: Date | string | null): string {
+    if (!value) return 'Nao informado';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Nao informado';
+    return date.toISOString().slice(0, 7);
+  }
+
+  private diasEntre(inicio?: Date | string | null, fim?: Date | string | null): number | null {
+    if (!inicio || !fim) return null;
+    const dataInicio = inicio instanceof Date ? inicio : new Date(inicio);
+    const dataFim = fim instanceof Date ? fim : new Date(fim);
+    if (Number.isNaN(dataInicio.getTime()) || Number.isNaN(dataFim.getTime())) return null;
+    const diffMs = dataFim.getTime() - dataInicio.getTime();
+    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  }
+
+  private media(values: number[]): number {
+    if (!values.length) return 0;
+    const total = values.reduce((sum, value) => sum + value, 0);
+    return Number((total / values.length).toFixed(2));
+  }
+
+  private agruparAcompanhamentosPorAluno(acompanhamentos: AcompanhamentoEvasao[]): Map<string, AcompanhamentoEvasao[]> {
+    return acompanhamentos.reduce((acc, acompanhamento) => {
+      const atuais = acc.get(acompanhamento.alunoId) ?? [];
+      atuais.push(acompanhamento);
+      acc.set(acompanhamento.alunoId, atuais);
+      return acc;
+    }, new Map<string, AcompanhamentoEvasao[]>());
+  }
+
+  private resumirAtendimentosIndividuais(
+    alunoId: string,
+    dataSaida: Date | null,
+    acompanhamentosPorAluno: Map<string, AcompanhamentoEvasao[]>,
+  ) {
+    const acompanhamentos = acompanhamentosPorAluno.get(alunoId) ?? [];
+    const limiteSaida = dataSaida?.getTime();
+    const atendimentos = acompanhamentos
+      .flatMap((acompanhamento) => acompanhamento.atendimentos)
+      .filter((atendimento) => !limiteSaida || atendimento.dataAtendimento.getTime() <= limiteSaida);
+    const faltasJustificadas = this.contarTipoAtendimento(
+      atendimentos,
+      TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA,
+    );
+    const faltasNaoJustificadas = this.contarTipoAtendimento(
+      atendimentos,
+      TipoRegistroAtendimentoIndividual.FALTA_NAO_JUSTIFICADA,
+    );
+
+    return {
+      possuiAtendimento: atendimentos.length > 0 || acompanhamentos.length > 0,
+      totalAtendimentos: atendimentos.length,
+      faltasJustificadas,
+      faltasNaoJustificadas,
+      cancelados: this.contarTipoAtendimento(atendimentos, TipoRegistroAtendimentoIndividual.CANCELADO),
+      acompanhamentosTotal: acompanhamentos.length,
+      acompanhamentosEmAndamento: acompanhamentos.filter(
+        (acompanhamento) =>
+          !acompanhamento.arquivado && acompanhamento.status === StatusAcompanhamentoIndividual.EM_ANDAMENTO,
+      ).length,
+      acompanhamentosFinalizados: acompanhamentos.filter(
+        (acompanhamento) =>
+          !acompanhamento.arquivado && acompanhamento.status === StatusAcompanhamentoIndividual.FINALIZADO,
+      ).length,
+      acompanhamentosArquivados: acompanhamentos.filter((acompanhamento) => acompanhamento.arquivado).length,
+      teveFalta: faltasJustificadas + faltasNaoJustificadas > 0,
+    };
+  }
+
+  private contarTipoAtendimento(
+    atendimentos: Array<{ tipoRegistro: TipoRegistroAtendimentoIndividual }>,
+    tipo: TipoRegistroAtendimentoIndividual,
+  ): number {
+    return atendimentos.filter((atendimento) => atendimento.tipoRegistro === tipo).length;
   }
 
   private somarContagens<T extends string>(record: Partial<Record<T, number>>): number {
