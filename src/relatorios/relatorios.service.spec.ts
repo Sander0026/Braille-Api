@@ -3,6 +3,7 @@ import {
   MatriculaStatus,
   MotivoEncerramentoMatricula,
   Role,
+  StatusAcaoRiscoEvasao,
   StatusFrequencia,
   TipoDeficiencia,
   TurmaStatus,
@@ -50,6 +51,10 @@ describe('RelatoriosService', () => {
       groupBy: jest.fn().mockResolvedValue([]),
     },
     certificadoEmitido: {
+      count: jest.fn().mockResolvedValue(0),
+    },
+    acaoRiscoEvasao: {
+      findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
     },
     $transaction: jest.fn((operations: Array<Promise<unknown>>) => Promise.all(operations)),
@@ -650,6 +655,17 @@ describe('RelatoriosService', () => {
       },
     ]);
     prisma.atendimentoIndividual.findMany.mockResolvedValueOnce([]);
+    prisma.acaoRiscoEvasao.findMany.mockResolvedValueOnce([
+      {
+        id: 'acao-1',
+        alunoId: 'aluno-1',
+        turmaId: 'turma-1',
+        status: StatusAcaoRiscoEvasao.PENDENTE,
+        prazo: new Date('2000-01-01T23:59:59.999Z'),
+        responsavel: { nome: 'Secretaria' },
+      },
+    ]);
+    prisma.acaoRiscoEvasao.count.mockResolvedValueOnce(1);
 
     const relatorio = await service.riscoEvasao({ dataFim: '2026-05-31' }, authAdmin as never);
 
@@ -657,6 +673,9 @@ describe('RelatoriosService', () => {
     expect(relatorio.indicadores.alto).toBe(1);
     expect(relatorio.indicadores.tresFaltasSeguidas).toBe(1);
     expect(relatorio.indicadores.presencaAbaixo60).toBe(1);
+    expect(relatorio.indicadores.acoesPendentes).toBe(1);
+    expect(relatorio.indicadores.acoesVencidas).toBe(1);
+    expect(relatorio.indicadores.acoesResolvidasNoMes).toBe(1);
     expect(relatorio.data[0]).toEqual(
       expect.objectContaining({
         alunoId: 'aluno-1',
@@ -664,6 +683,12 @@ describe('RelatoriosService', () => {
         faltasSeguidas: 3,
         taxaPresenca: 25,
         nivel: 'ALTO',
+        acaoAberta: {
+          id: 'acao-1',
+          status: StatusAcaoRiscoEvasao.PENDENTE,
+          responsavel: 'Secretaria',
+          prazo: '2000-01-01T23:59:59.999Z',
+        },
       }),
     );
   });

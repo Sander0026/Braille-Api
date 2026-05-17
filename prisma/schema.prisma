@@ -135,6 +135,58 @@ enum AuditAcao {
   DOWNLOAD
 }
 
+enum NivelRiscoEvasao {
+  ALTO
+  MEDIO
+  BAIXO
+}
+
+enum StatusAcaoRiscoEvasao {
+  PENDENTE
+  EM_ANDAMENTO
+  RESOLVIDA
+  SEM_CONTATO
+  CANCELADA
+}
+
+enum TipoAcaoRiscoEvasao {
+  CONTATO_TELEFONICO
+  WHATSAPP
+  REUNIAO_PRESENCIAL
+  ENCAMINHAMENTO_ASSISTENCIAL
+  AJUSTE_DE_HORARIO
+  TRANSFERENCIA_DE_TURMA
+  JUSTIFICATIVA_DE_FALTA
+  VISITA_DOMICILIAR
+  OUTRO
+}
+
+enum StatusPdi {
+  ATIVO
+  CONCLUIDO
+  SUSPENSO
+  ARQUIVADO
+}
+
+enum AreaPdi {
+  BRAILLE
+  ORIENTACAO_MOBILIDADE
+  INFORMATICA_ACESSIVEL
+  AUTONOMIA
+  SOCIALIZACAO
+  ATIVIDADE_PEDAGOGICA
+  OUTRO
+}
+
+enum StatusMetaPdi {
+  NAO_INICIADA
+  EM_ANDAMENTO
+  ALCANCADA
+  PARCIALMENTE_ALCANCADA
+  NAO_ALCANCADA
+  CANCELADA
+}
+
 enum TipoApoiador {
   VOLUNTARIO
   EMPRESA
@@ -250,6 +302,9 @@ model User {
   arquivosAtendimentoIndividual       ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoCriadoPor")
   arquivosAtendimentoIndividualExcluidos ArquivoAtendimentoIndividual[] @relation("ArquivoAtendimentoExcluidoPor")
   historicosAssuntoAcompanhamento     HistoricoAssuntoAcompanhamento[] @relation("HistoricoAssuntoAlteradoPor")
+  acoesRiscoEvasaoResponsavel         AcaoRiscoEvasao[]                 @relation("AcaoRiscoEvasaoResponsavel")
+  pdisResponsavel                      PdiAluno[]                        @relation("PdiProfessorResponsavel")
+  pdiEvolucoesRegistradas              PdiEvolucao[]                     @relation("PdiEvolucaoRegistradoPor")
 
   @@index([statusAtivo, excluido])
   @@index([role])
@@ -358,6 +413,8 @@ model Aluno {
   certificadosEmitidos CertificadoEmitido[]
   acompanhamentosIndividuais AcompanhamentoIndividual[]
   atendimentosIndividuais    AtendimentoIndividual[]
+  acoesRiscoEvasao     AcaoRiscoEvasao[]
+  pdis                 PdiAluno[]
 
   @@index([statusAtivo, excluido]) // Listagem de alunos ativos/inativos
   @@index([motivoInativacao])
@@ -397,6 +454,7 @@ model Turma {
   modeloCertificadoId  String?
   modeloCertificado    ModeloCertificado?   @relation(fields: [modeloCertificadoId], references: [id])
   certificadosEmitidos CertificadoEmitido[]
+  acoesRiscoEvasao     AcaoRiscoEvasao[]
 
   @@index([statusAtivo, excluido])
   @@index([professorId])
@@ -427,6 +485,116 @@ model MatriculaOficina {
   @@index([turmaId, status])
   @@index([motivoEncerramento])
   @@index([encerradoPorId])
+}
+
+model AcaoRiscoEvasao {
+  id String @id @default(uuid())
+
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+
+  turmaId String?
+  turma   Turma? @relation(fields: [turmaId], references: [id])
+
+  responsavelId String?
+  responsavel   User?   @relation("AcaoRiscoEvasaoResponsavel", fields: [responsavelId], references: [id])
+
+  nivel    NivelRiscoEvasao
+  tipoAcao TipoAcaoRiscoEvasao
+  status   StatusAcaoRiscoEvasao @default(PENDENTE)
+
+  motivoRisco String
+  descricao   String?
+  prazo       DateTime?
+  resultado   String?
+
+  criadoPorId  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  resolvidoEm  DateTime?
+
+  @@index([alunoId])
+  @@index([turmaId])
+  @@index([responsavelId])
+  @@index([status])
+  @@index([nivel])
+  @@index([prazo])
+}
+
+model PdiAluno {
+  id String @id @default(uuid())
+
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+
+  professorResponsavelId String?
+  professorResponsavel   User?   @relation("PdiProfessorResponsavel", fields: [professorResponsavelId], references: [id])
+
+  titulo                     String
+  objetivoGeral              String
+  diagnosticoInicial         String?
+  necessidadesAcessibilidade String?
+  recursosUtilizados         String?
+  observacoesGerais          String?
+
+  dataInicio     DateTime @default(now())
+  dataFimPrevista DateTime?
+  dataConclusao  DateTime?
+
+  status StatusPdi @default(ATIVO)
+
+  criadoPorId  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  metas     PdiMeta[]
+  evolucoes PdiEvolucao[]
+
+  @@index([alunoId])
+  @@index([professorResponsavelId])
+  @@index([status])
+}
+
+model PdiMeta {
+  id String @id @default(uuid())
+
+  pdiId String
+  pdi   PdiAluno @relation(fields: [pdiId], references: [id], onDelete: Cascade)
+
+  area      AreaPdi
+  descricao String
+  estrategia String?
+  prazo     DateTime?
+  status    StatusMetaPdi @default(NAO_INICIADA)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([pdiId])
+  @@index([area])
+  @@index([status])
+}
+
+model PdiEvolucao {
+  id String @id @default(uuid())
+
+  pdiId String
+  pdi   PdiAluno @relation(fields: [pdiId], references: [id], onDelete: Cascade)
+
+  dataRegistro  DateTime @default(now())
+  descricao     String
+  dificuldades  String?
+  avancos       String?
+  proximosPassos String?
+
+  registradoPorId String?
+  registradoPor   User?   @relation("PdiEvolucaoRegistradoPor", fields: [registradoPorId], references: [id])
+
+  criadoEm DateTime @default(now())
+
+  @@index([pdiId])
+  @@index([registradoPorId])
+  @@index([dataRegistro])
 }
 
 // ── Grade Horária estruturada ─────────────────────────────────────

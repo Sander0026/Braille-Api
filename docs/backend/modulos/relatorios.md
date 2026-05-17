@@ -38,6 +38,7 @@ O backend e responsavel por:
 | DTOs especificos | `src/relatorios/dto/filtro-relatorio-*.dto.ts` | Extensoes por dominio |
 | PDF institucional | `src/relatorios/exporters/relatorio-institucional-pdf.service.ts` | Exportacao publica/agregada |
 | XLSX interno | `src/relatorios/exporters/relatorio-institucional-xlsx.service.ts` | Exportacao detalhada para uso interno |
+| Acoes de risco | `src/risco-evasao/` | Intervencoes criadas a partir do relatorio de risco |
 | Testes do service | `src/relatorios/relatorios.service.spec.ts` | Consultas, filtros, exportacoes, risco e impacto |
 | Testes do controller | `src/relatorios/relatorios.controller.spec.ts` | Permissoes das exportacoes |
 
@@ -50,6 +51,7 @@ Modelos Prisma mais usados:
 - `AtendimentoIndividual`
 - `CertificadoEmitido`
 - `User`
+- `AcaoRiscoEvasao`
 
 ---
 
@@ -242,15 +244,42 @@ Recortes importantes:
 - considera somente turmas `PREVISTA` ou `ANDAMENTO`;
 - olha uma janela recente de frequencias e atendimentos;
 - limita a quantidade de matriculas avaliadas e itens retornados.
+- consulta `AcaoRiscoEvasao` para indicar se ja existe acao aberta para o mesmo aluno/turma.
 
 O resultado possui:
 
 - `indicadores`: contagens por nivel e criterio;
+- indicadores de acompanhamento: `acoesPendentes`, `acoesVencidas`, `acoesResolvidasNoMes`;
 - `data`: lista priorizada por nivel de risco e quantidade de criterios.
+
+Cada item pode trazer:
+
+```ts
+acaoAberta?: {
+  id: string;
+  status: string;
+  responsavel?: string;
+  prazo?: string;
+}
+```
+
+A criacao, resolucao e cancelamento dessas acoes ficam no modulo proprio:
+
+```text
+GET    /api/risco-evasao/acoes
+POST   /api/risco-evasao/acoes
+GET    /api/risco-evasao/acoes/:id
+PATCH  /api/risco-evasao/acoes/:id
+PATCH  /api/risco-evasao/acoes/:id/status
+DELETE /api/risco-evasao/acoes/:id
+```
+
+Detalhes do fluxo ficam em `docs/backend/modulos/risco-evasao.md`.
 
 Se alterar criterios, atualize tambem:
 
 - `RelatorioRiscoEvasaoItem`;
+- `AcaoRiscoEvasao`, se a mudanca afetar acompanhamento;
 - testes em `relatorios.service.spec.ts`;
 - componente frontend `relatorio-evasoes`.
 
@@ -370,7 +399,7 @@ abas, exportacoes e rankings.
 Para validar este modulo:
 
 ```bash
-npm test -- relatorios.service.spec.ts relatorios.controller.spec.ts --runInBand
+npm test -- relatorios.service.spec.ts relatorios.controller.spec.ts risco-evasao.service.spec.ts --runInBand
 ```
 
 Para validar compilacao:
@@ -387,6 +416,7 @@ Cenarios que precisam permanecer cobertos:
 - PDF usa consolidado institucional leve;
 - XLSX usa consolidado detalhado com limite;
 - risco de evasao identifica criterios corretamente;
+- risco de evasao mostra acao aberta e indicadores de acompanhamento;
 - impacto social calcula periodo anterior e comparativo;
 - `COMUNICACAO` pode PDF mas nao XLSX.
 

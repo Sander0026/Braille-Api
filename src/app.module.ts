@@ -25,6 +25,9 @@ import { ApoiadoresModule } from './apoiadores/apoiadores.module';
 import { CertificadosModule } from './certificados/certificados.module';
 import { AtendimentosIndividuaisModule } from './atendimentos-individuais/atendimentos-individuais.module';
 import { RelatoriosModule } from './relatorios/relatorios.module';
+import { RiscoEvasaoModule } from './risco-evasao/risco-evasao.module';
+import { PdiModule } from './pdi/pdi.module';
+import { AlunoLinhaTempoModule } from './aluno-linha-tempo/aluno-linha-tempo.module';
 import { PrismaExceptionFilter, PrismaValidationFilter } from './common/filters/prisma-exception.filter';
 import { validateEnv } from './common/config/env.validation';
 
@@ -73,6 +76,9 @@ import { validateEnv } from './common/config/env.validation';
     CertificadosModule,
     AtendimentosIndividuaisModule,
     RelatoriosModule,
+    RiscoEvasaoModule,
+    PdiModule,
+    AlunoLinhaTempoModule,
   ],
   controllers: [AppController],
   providers: [

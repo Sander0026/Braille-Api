@@ -30,6 +30,9 @@
 | Frequências | [modulos/frequencias.md](modulos/frequencias.md) | 🔴 Alta |
 | Atendimentos Individuais | [modulos/atendimentos-individuais.md](modulos/atendimentos-individuais.md) | 🔴 Alta |
 | Relatorios | [modulos/relatorios.md](modulos/relatorios.md) | 🔴 Alta |
+| Risco de Evasao | [modulos/risco-evasao.md](modulos/risco-evasao.md) | 🔴 Alta |
+| PDI | [modulos/pdi.md](modulos/pdi.md) | 🔴 Alta |
+| Linha do Tempo do Aluno | [modulos/linha-tempo-aluno.md](modulos/linha-tempo-aluno.md) | 🔴 Alta |
 | Usuários (Funcionários) | [modulos/users.md](modulos/users.md) | 🔴 Alta |
 | Audit Log | [modulos/audit-log.md](modulos/audit-log.md) | 🔴 Alta |
 | Upload (Cloudinary) | [modulos/upload.md](modulos/upload.md) | 🟡 Importante |

@@ -7,6 +7,7 @@ import {
   Prisma,
   Role,
   StatusAcompanhamentoIndividual,
+  StatusAcaoRiscoEvasao,
   StatusFrequencia,
   TipoDeficiencia,
   TipoRegistroAtendimentoIndividual,
@@ -101,6 +102,12 @@ type RelatorioRiscoEvasaoItem = {
   diasSemRegistro: number | null;
   criterios: string[];
   nivel: NivelRiscoEvasao;
+  acaoAberta?: {
+    id: string;
+    status: string;
+    responsavel?: string;
+    prazo?: string;
+  };
 };
 
 type RelatorioRiscoEvasao = {
@@ -114,6 +121,9 @@ type RelatorioRiscoEvasao = {
     presencaAbaixo60: number;
     semRegistro30Dias: number;
     matriculaAtivaSemFrequenciaRecente: number;
+    acoesPendentes: number;
+    acoesVencidas: number;
+    acoesResolvidasNoMes: number;
   };
   data: RelatorioRiscoEvasaoItem[];
 };
@@ -226,6 +236,11 @@ const LIMITE_MATRICULAS_RISCO_EVASAO = 1000;
 const LIMITE_ITENS_RISCO_EVASAO = 50;
 const DIAS_SEM_REGISTRO_RISCO_EVASAO = 30;
 const DIAS_JANELA_RISCO_EVASAO = 120;
+const STATUS_ACAO_RISCO_ABERTA = [
+  StatusAcaoRiscoEvasao.PENDENTE,
+  StatusAcaoRiscoEvasao.EM_ANDAMENTO,
+  StatusAcaoRiscoEvasao.SEM_CONTATO,
+] as const;
 
 @Injectable()
 export class RelatoriosService {
@@ -364,7 +379,8 @@ export class RelatoriosService {
 
     const alunoIds = [...new Set(matriculas.map((matricula) => matricula.alunoId))];
     const turmaIds = [...new Set(matriculas.map((matricula) => matricula.turmaId))];
-    const [frequencias, atendimentos] = await Promise.all([
+    const inicioMesReferencia = new Date(Date.UTC(referencia.getUTCFullYear(), referencia.getUTCMonth(), 1, 0, 0, 0, 0));
+    const [frequencias, atendimentos, acoesAbertas, acoesResolvidasNoMes] = await Promise.all([
       this.prisma.frequencia.findMany({
         where: {
           alunoId: { in: alunoIds },
@@ -391,6 +407,30 @@ export class RelatoriosService {
         },
         orderBy: [{ dataAtendimento: 'desc' }],
       }),
+      this.prisma.acaoRiscoEvasao.findMany({
+        where: {
+          alunoId: { in: alunoIds },
+          turmaId: { in: turmaIds },
+          status: { in: [...STATUS_ACAO_RISCO_ABERTA] },
+        },
+        select: {
+          id: true,
+          alunoId: true,
+          turmaId: true,
+          status: true,
+          prazo: true,
+          responsavel: { select: { nome: true } },
+        },
+        orderBy: [{ criadoEm: 'desc' }],
+      }),
+      this.prisma.acaoRiscoEvasao.count({
+        where: {
+          alunoId: { in: alunoIds },
+          turmaId: { in: turmaIds },
+          status: StatusAcaoRiscoEvasao.RESOLVIDA,
+          resolvidoEm: { gte: inicioMesReferencia, lte: referencia },
+        },
+      }),
     ]);
 
     const frequenciasPorMatricula = new Map<string, typeof frequencias>();
@@ -408,6 +448,15 @@ export class RelatoriosService {
       }
     });
 
+    const acaoAbertaPorMatricula = new Map<string, (typeof acoesAbertas)[number]>();
+    acoesAbertas.forEach((acao) => {
+      if (!acao.turmaId) return;
+      const chave = this.chaveAlunoTurma(acao.alunoId, acao.turmaId);
+      if (!acaoAbertaPorMatricula.has(chave)) {
+        acaoAbertaPorMatricula.set(chave, acao);
+      }
+    });
+
     const itens = matriculas
       .map((matricula): RelatorioRiscoEvasaoItem | null => {
         const freqs = frequenciasPorMatricula.get(this.chaveAlunoTurma(matricula.alunoId, matricula.turmaId)) ?? [];
@@ -417,6 +466,7 @@ export class RelatoriosService {
         const faltasSeguidas = this.contarFaltasSeguidas(freqs);
         const ultimaFrequencia = freqs[0]?.dataAula ?? null;
         const ultimoAtendimento = ultimoAtendimentoPorAluno.get(matricula.alunoId) ?? null;
+        const acaoAberta = acaoAbertaPorMatricula.get(this.chaveAlunoTurma(matricula.alunoId, matricula.turmaId));
         const ultimaAtividade = this.dataMaisRecente([ultimaFrequencia, ultimoAtendimento]);
         const diasSemRegistro = ultimaAtividade ? this.diasEntreDatas(ultimaAtividade, referencia) : null;
         const diasSemFrequencia = ultimaFrequencia ? this.diasEntreDatas(ultimaFrequencia, referencia) : null;
@@ -449,6 +499,14 @@ export class RelatoriosService {
           diasSemRegistro,
           criterios,
           nivel: this.nivelRisco(criterios.length, faltasSeguidas),
+          ...(acaoAberta && {
+            acaoAberta: {
+              id: acaoAberta.id,
+              status: acaoAberta.status,
+              responsavel: acaoAberta.responsavel?.nome,
+              prazo: acaoAberta.prazo?.toISOString(),
+            },
+          }),
         };
       })
       .filter((item): item is RelatorioRiscoEvasaoItem => Boolean(item));
@@ -478,6 +536,14 @@ export class RelatoriosService {
         matriculaAtivaSemFrequenciaRecente: ordenados.filter((item) =>
           item.criterios.includes('Matrícula ativa sem frequência recente'),
         ).length,
+        acoesPendentes: acoesAbertas.filter((acao) => acao.status === StatusAcaoRiscoEvasao.PENDENTE).length,
+        acoesVencidas: acoesAbertas.filter(
+          (acao) =>
+            acao.prazo &&
+            acao.prazo < this.inicioDoDia(new Date()) &&
+            acao.status !== StatusAcaoRiscoEvasao.RESOLVIDA,
+        ).length,
+        acoesResolvidasNoMes,
       },
       data: ordenados.slice(0, LIMITE_ITENS_RISCO_EVASAO),
     };
@@ -1546,6 +1612,9 @@ export class RelatoriosService {
       presencaAbaixo60: 0,
       semRegistro30Dias: 0,
       matriculaAtivaSemFrequenciaRecente: 0,
+      acoesPendentes: 0,
+      acoesVencidas: 0,
+      acoesResolvidasNoMes: 0,
     };
   }
 
