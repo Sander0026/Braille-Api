@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   AuditAcao,
+  CertificateStatus,
   MatriculaStatus,
   MotivoEncerramentoMatricula,
   Prisma,
@@ -72,6 +73,126 @@ type RelatorioExportacao = {
   frequencias: Awaited<ReturnType<RelatoriosService['frequencias']>>;
 };
 
+type RelatorioOpcao = {
+  id: string;
+  label: string;
+};
+
+type RelatorioRankingItem = {
+  label: string;
+  total: number;
+};
+
+type NivelRiscoEvasao = 'ALTO' | 'MEDIO' | 'BAIXO';
+
+type RelatorioRiscoEvasaoItem = {
+  alunoId: string;
+  nomeCompleto: string;
+  matricula: string | null;
+  cidade: string | null;
+  bairro: string | null;
+  turmaId: string;
+  turma: string;
+  professor: string | null;
+  faltasSeguidas: number;
+  taxaPresenca: number;
+  ultimaFrequencia: string | null;
+  ultimoAtendimento: string | null;
+  diasSemRegistro: number | null;
+  criterios: string[];
+  nivel: NivelRiscoEvasao;
+};
+
+type RelatorioRiscoEvasao = {
+  filtros: FiltroRelatorioGeralDto;
+  total: number;
+  indicadores: {
+    alto: number;
+    medio: number;
+    baixo: number;
+    tresFaltasSeguidas: number;
+    presencaAbaixo60: number;
+    semRegistro30Dias: number;
+    matriculaAtivaSemFrequenciaRecente: number;
+  };
+  data: RelatorioRiscoEvasaoItem[];
+};
+
+type RelatorioImpactoMetricas = {
+  totalAlunosAtendidos: number;
+  totalAtendimentosIndividuais: number;
+  totalTurmasOfertadas: number;
+  totalCertificadosEmitidos: number;
+  totalAlunosDeficienciaVisualAtendidos: number;
+  totalBairrosAlcancados: number;
+  totalCidadesAlcancadas: number;
+  taxaPermanencia: number;
+  taxaConclusao: number;
+};
+
+type RelatorioComparativoItem = {
+  atual: number;
+  anterior: number;
+  variacaoPercentual: number;
+  direcao: 'SUBIU' | 'DESCEU' | 'ESTAVEL';
+};
+
+type RelatorioImpactoSocial = {
+  filtros: FiltroRelatorioGeralDto;
+  periodo: {
+    atual: { dataInicio: string; dataFim: string };
+    anterior: { dataInicio: string; dataFim: string };
+  };
+  metricas: RelatorioImpactoMetricas;
+  comparativo: Record<keyof RelatorioImpactoMetricas, RelatorioComparativoItem>;
+};
+
+type RelatorioInstitucionalPdf = {
+  emitidoEm: string;
+  filtros: FiltroRelatorioGeralDto;
+  resumo: ResumoRelatorio;
+  alunos: {
+    porCidadeTop10: RelatorioRankingItem[];
+  };
+  evasoes: {
+    totalEvasoes: number;
+    totalCancelamentos: number;
+    totalTransferencias: number;
+    porMotivoTop10: RelatorioRankingItem[];
+    porTurmaTop10: RelatorioRankingItem[];
+  };
+  atendimentos: {
+    total: number;
+    porTipoRegistro: Record<string, number>;
+  };
+  frequencias: {
+    total: number;
+    presentes: number;
+    faltas: number;
+    faltasJustificadas: number;
+    taxaPresenca: number;
+    porStatus: Record<string, number>;
+  };
+  taxas: {
+    taxaEvasao: number;
+    taxaConclusao: number;
+    taxaPermanencia: number;
+    taxaPresenca: number;
+  };
+  impacto?: RelatorioImpactoMetricas;
+};
+
+type CampoRankingAluno = 'tipoDeficiencia' | 'cidade' | 'bairro' | 'escolaridade' | 'rendaFamiliar';
+
+type FiltroRelatorioAlunosListaDto = FiltroRelatorioAlunosDto & {
+  page?: string | number;
+  limit?: string | number;
+};
+
+type RelatorioDetalhadoOptions = {
+  limiteDetalhes?: number;
+};
+
 type AcompanhamentoEvasao = {
   alunoId: string;
   status: StatusAcompanhamentoIndividual;
@@ -94,6 +215,17 @@ const STATUS_RELATORIO_EVASOES = [
   MatriculaStatus.CANCELADA,
   MatriculaStatus.TRANSFERIDA,
 ] as const;
+
+const MIN_CARACTERES_BUSCA_OPCOES = 2;
+const LIMITE_OPCOES_RELATORIO = 20;
+const LIMITE_PADRAO_LISTA_ALUNOS = 20;
+const LIMITE_MAXIMO_LISTA_ALUNOS = 50;
+const LIMITE_EXPORTACAO_XLSX_DETALHADA = 5000;
+const LIMITE_RELACOES_EXPORTACAO_XLSX = 200;
+const LIMITE_MATRICULAS_RISCO_EVASAO = 1000;
+const LIMITE_ITENS_RISCO_EVASAO = 50;
+const DIAS_SEM_REGISTRO_RISCO_EVASAO = 30;
+const DIAS_JANELA_RISCO_EVASAO = 120;
 
 @Injectable()
 export class RelatoriosService {
@@ -174,13 +306,372 @@ export class RelatoriosService {
     };
   }
 
-  async alunos(filtro: FiltroRelatorioAlunosDto, authUser?: AuthenticatedUser) {
+  async riscoEvasao(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser): Promise<RelatorioRiscoEvasao> {
+    this.validarPeriodo(filtro);
+
+    const referencia = this.obterReferenciaRisco(filtro);
+    const inicioJanela = this.subtrairDias(referencia, DIAS_JANELA_RISCO_EVASAO);
+    const matriculaWhere = this.montarWhereMatricula(filtro, authUser, {
+      aplicarPeriodo: false,
+      incluirAluno: true,
+      incluirTurma: true,
+    });
+    matriculaWhere.status = MatriculaStatus.ATIVA;
+    matriculaWhere.aluno = this.combinarWhereAluno(matriculaWhere.aluno as Prisma.AlunoWhereInput, {
+      excluido: false,
+      statusAtivo: true,
+    });
+    matriculaWhere.turma = this.combinarWhereTurma(matriculaWhere.turma as Prisma.TurmaWhereInput, {
+      excluido: false,
+      status: { in: [TurmaStatus.PREVISTA, TurmaStatus.ANDAMENTO] },
+    });
+
+    const matriculas = await this.prisma.matriculaOficina.findMany({
+      where: matriculaWhere,
+      select: {
+        id: true,
+        alunoId: true,
+        turmaId: true,
+        aluno: {
+          select: {
+            id: true,
+            nomeCompleto: true,
+            matricula: true,
+            cidade: true,
+            bairro: true,
+          },
+        },
+        turma: {
+          select: {
+            id: true,
+            nome: true,
+            professor: { select: { nome: true } },
+          },
+        },
+      },
+      orderBy: { dataEntrada: 'desc' },
+      take: LIMITE_MATRICULAS_RISCO_EVASAO,
+    });
+
+    if (!matriculas.length) {
+      return {
+        filtros: filtro,
+        total: 0,
+        indicadores: this.indicadoresRiscoVazios(),
+        data: [],
+      };
+    }
+
+    const alunoIds = [...new Set(matriculas.map((matricula) => matricula.alunoId))];
+    const turmaIds = [...new Set(matriculas.map((matricula) => matricula.turmaId))];
+    const [frequencias, atendimentos] = await Promise.all([
+      this.prisma.frequencia.findMany({
+        where: {
+          alunoId: { in: alunoIds },
+          turmaId: { in: turmaIds },
+          dataAula: { gte: inicioJanela, lte: referencia },
+        },
+        select: {
+          alunoId: true,
+          turmaId: true,
+          dataAula: true,
+          status: true,
+        },
+        orderBy: [{ dataAula: 'desc' }],
+      }),
+      this.prisma.atendimentoIndividual.findMany({
+        where: {
+          alunoId: { in: alunoIds },
+          excluidoEm: null,
+          dataAtendimento: { gte: inicioJanela, lte: referencia },
+        },
+        select: {
+          alunoId: true,
+          dataAtendimento: true,
+        },
+        orderBy: [{ dataAtendimento: 'desc' }],
+      }),
+    ]);
+
+    const frequenciasPorMatricula = new Map<string, typeof frequencias>();
+    frequencias.forEach((frequencia) => {
+      const chave = this.chaveAlunoTurma(frequencia.alunoId, frequencia.turmaId);
+      const lista = frequenciasPorMatricula.get(chave) ?? [];
+      lista.push(frequencia);
+      frequenciasPorMatricula.set(chave, lista);
+    });
+
+    const ultimoAtendimentoPorAluno = new Map<string, Date>();
+    atendimentos.forEach((atendimento) => {
+      if (!ultimoAtendimentoPorAluno.has(atendimento.alunoId)) {
+        ultimoAtendimentoPorAluno.set(atendimento.alunoId, atendimento.dataAtendimento);
+      }
+    });
+
+    const itens = matriculas
+      .map((matricula): RelatorioRiscoEvasaoItem | null => {
+        const freqs = frequenciasPorMatricula.get(this.chaveAlunoTurma(matricula.alunoId, matricula.turmaId)) ?? [];
+        const totalFrequencias = freqs.length;
+        const presentes = freqs.filter((freq) => freq.status === StatusFrequencia.PRESENTE).length;
+        const taxaPresenca = totalFrequencias ? this.percentual(presentes, totalFrequencias) : 0;
+        const faltasSeguidas = this.contarFaltasSeguidas(freqs);
+        const ultimaFrequencia = freqs[0]?.dataAula ?? null;
+        const ultimoAtendimento = ultimoAtendimentoPorAluno.get(matricula.alunoId) ?? null;
+        const ultimaAtividade = this.dataMaisRecente([ultimaFrequencia, ultimoAtendimento]);
+        const diasSemRegistro = ultimaAtividade ? this.diasEntreDatas(ultimaAtividade, referencia) : null;
+        const diasSemFrequencia = ultimaFrequencia ? this.diasEntreDatas(ultimaFrequencia, referencia) : null;
+        const criterios: string[] = [];
+
+        if (faltasSeguidas >= 3) criterios.push('3 faltas seguidas');
+        if (totalFrequencias >= 3 && taxaPresenca < 60) criterios.push('Presença abaixo de 60%');
+        if (diasSemRegistro === null || diasSemRegistro > DIAS_SEM_REGISTRO_RISCO_EVASAO) {
+          criterios.push('Sem atendimento/frequência há mais de 30 dias');
+        }
+        if (diasSemFrequencia === null || diasSemFrequencia > DIAS_SEM_REGISTRO_RISCO_EVASAO) {
+          criterios.push('Matrícula ativa sem frequência recente');
+        }
+
+        if (!criterios.length) return null;
+
+        return {
+          alunoId: matricula.aluno.id,
+          nomeCompleto: matricula.aluno.nomeCompleto,
+          matricula: matricula.aluno.matricula,
+          cidade: matricula.aluno.cidade,
+          bairro: matricula.aluno.bairro,
+          turmaId: matricula.turma.id,
+          turma: matricula.turma.nome,
+          professor: matricula.turma.professor?.nome ?? null,
+          faltasSeguidas,
+          taxaPresenca,
+          ultimaFrequencia: ultimaFrequencia?.toISOString() ?? null,
+          ultimoAtendimento: ultimoAtendimento?.toISOString() ?? null,
+          diasSemRegistro,
+          criterios,
+          nivel: this.nivelRisco(criterios.length, faltasSeguidas),
+        };
+      })
+      .filter((item): item is RelatorioRiscoEvasaoItem => Boolean(item));
+
+    const ordenados = itens.sort((a, b) => {
+      const pesoNivel: Record<NivelRiscoEvasao, number> = { ALTO: 3, MEDIO: 2, BAIXO: 1 };
+      return (
+        pesoNivel[b.nivel] - pesoNivel[a.nivel] ||
+        b.criterios.length - a.criterios.length ||
+        b.faltasSeguidas - a.faltasSeguidas ||
+        a.nomeCompleto.localeCompare(b.nomeCompleto)
+      );
+    });
+
+    return {
+      filtros: filtro,
+      total: ordenados.length,
+      indicadores: {
+        alto: ordenados.filter((item) => item.nivel === 'ALTO').length,
+        medio: ordenados.filter((item) => item.nivel === 'MEDIO').length,
+        baixo: ordenados.filter((item) => item.nivel === 'BAIXO').length,
+        tresFaltasSeguidas: ordenados.filter((item) => item.criterios.includes('3 faltas seguidas')).length,
+        presencaAbaixo60: ordenados.filter((item) => item.criterios.includes('Presença abaixo de 60%')).length,
+        semRegistro30Dias: ordenados.filter((item) =>
+          item.criterios.includes('Sem atendimento/frequência há mais de 30 dias'),
+        ).length,
+        matriculaAtivaSemFrequenciaRecente: ordenados.filter((item) =>
+          item.criterios.includes('Matrícula ativa sem frequência recente'),
+        ).length,
+      },
+      data: ordenados.slice(0, LIMITE_ITENS_RISCO_EVASAO),
+    };
+  }
+
+  async impactoSocial(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser): Promise<RelatorioImpactoSocial> {
+    this.validarPeriodo(filtro);
+
+    const periodo = this.periodoAtualEAnterior(filtro);
+    const filtroAtual = this.filtroComPeriodo(filtro, periodo.atual.inicio, periodo.atual.fim);
+    const filtroAnterior = this.filtroComPeriodo(filtro, periodo.anterior.inicio, periodo.anterior.fim);
+
+    const [metricas, metricasAnteriores] = await Promise.all([
+      this.calcularImpactoMetricas(filtroAtual, authUser),
+      this.calcularImpactoMetricas(filtroAnterior, authUser),
+    ]);
+
+    return {
+      filtros: filtro,
+      periodo: {
+        atual: {
+          dataInicio: this.formatarDataIso(periodo.atual.inicio),
+          dataFim: this.formatarDataIso(periodo.atual.fim),
+        },
+        anterior: {
+          dataInicio: this.formatarDataIso(periodo.anterior.inicio),
+          dataFim: this.formatarDataIso(periodo.anterior.fim),
+        },
+      },
+      metricas,
+      comparativo: this.compararMetricas(metricas, metricasAnteriores),
+    };
+  }
+
+  async opcoesTurmas(busca?: string): Promise<RelatorioOpcao[]> {
+    const termo = this.normalizarBuscaOpcao(busca);
+    if (!termo) return [];
+
+    const turmas = await this.prisma.turma.findMany({
+      where: {
+        excluido: false,
+        nome: { contains: termo, mode: Prisma.QueryMode.insensitive },
+      },
+      select: {
+        id: true,
+        nome: true,
+      },
+      orderBy: { nome: 'asc' },
+      take: LIMITE_OPCOES_RELATORIO,
+    });
+
+    return turmas.map((turma) => ({
+      id: turma.id,
+      label: turma.nome,
+    }));
+  }
+
+  async opcoesProfessores(busca?: string): Promise<RelatorioOpcao[]> {
+    const termo = this.normalizarBuscaOpcao(busca);
+    if (!termo) return [];
+
+    const professores = await this.prisma.user.findMany({
+      where: {
+        role: Role.PROFESSOR,
+        statusAtivo: true,
+        excluido: false,
+        OR: [
+          { nome: { contains: termo, mode: Prisma.QueryMode.insensitive } },
+          { matricula: { contains: termo, mode: Prisma.QueryMode.insensitive } },
+          { email: { contains: termo, mode: Prisma.QueryMode.insensitive } },
+        ],
+      },
+      select: {
+        id: true,
+        nome: true,
+        matricula: true,
+      },
+      orderBy: { nome: 'asc' },
+      take: LIMITE_OPCOES_RELATORIO,
+    });
+
+    return professores.map((professor) => ({
+      id: professor.id,
+      label: professor.matricula ? `${professor.nome} (${professor.matricula})` : professor.nome,
+    }));
+  }
+
+  async opcoesAlunos(busca?: string): Promise<RelatorioOpcao[]> {
+    const termo = this.normalizarBuscaOpcao(busca);
+    if (!termo) return [];
+    const termoCpf = termo.replaceAll(/\D/g, '');
+    const or: Prisma.AlunoWhereInput[] = [
+      { nomeCompleto: { contains: termo, mode: Prisma.QueryMode.insensitive } },
+      { matricula: { contains: termo, mode: Prisma.QueryMode.insensitive } },
+    ];
+
+    if (termoCpf.length >= MIN_CARACTERES_BUSCA_OPCOES) {
+      or.push({ cpf: { contains: termoCpf, mode: Prisma.QueryMode.insensitive } });
+    }
+
+    const alunos = await this.prisma.aluno.findMany({
+      where: {
+        excluido: false,
+        OR: or,
+      },
+      select: {
+        id: true,
+        nomeCompleto: true,
+        matricula: true,
+      },
+      orderBy: { nomeCompleto: 'asc' },
+      take: LIMITE_OPCOES_RELATORIO,
+    });
+
+    return alunos.map((aluno) => ({
+      id: aluno.id,
+      label: aluno.matricula ? `${aluno.nomeCompleto} (${aluno.matricula})` : aluno.nomeCompleto,
+    }));
+  }
+
+  async opcoesCidades(busca?: string): Promise<RelatorioOpcao[]> {
+    const termo = this.normalizarBuscaOpcao(busca);
+    if (!termo) return [];
+
+    const cidades = await this.prisma.aluno.findMany({
+      where: {
+        excluido: false,
+        cidade: {
+          startsWith: termo,
+          mode: Prisma.QueryMode.insensitive,
+        },
+      },
+      distinct: ['cidade'],
+      select: {
+        cidade: true,
+      },
+      orderBy: { cidade: 'asc' },
+      take: LIMITE_OPCOES_RELATORIO,
+    });
+
+    return cidades.flatMap((aluno) => {
+      const cidade = aluno.cidade?.trim();
+      return cidade ? [{ id: cidade, label: cidade }] : [];
+    });
+  }
+
+  async opcoesBairros(busca?: string, cidade?: string): Promise<RelatorioOpcao[]> {
+    const termo = this.normalizarBuscaOpcao(busca);
+    if (!termo) return [];
+    const cidadeFiltro = cidade?.trim();
+
+    const bairros = await this.prisma.aluno.findMany({
+      where: {
+        excluido: false,
+        ...(cidadeFiltro
+          ? {
+              cidade: {
+                equals: cidadeFiltro,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            }
+          : {}),
+        bairro: {
+          startsWith: termo,
+          mode: Prisma.QueryMode.insensitive,
+        },
+      },
+      distinct: ['bairro'],
+      select: {
+        bairro: true,
+      },
+      orderBy: { bairro: 'asc' },
+      take: LIMITE_OPCOES_RELATORIO,
+    });
+
+    return bairros.flatMap((aluno) => {
+      const bairro = aluno.bairro?.trim();
+      return bairro ? [{ id: bairro, label: bairro }] : [];
+    });
+  }
+
+  async alunos(
+    filtro: FiltroRelatorioAlunosDto,
+    authUser?: AuthenticatedUser,
+    options: RelatorioDetalhadoOptions = {},
+  ) {
     this.validarPeriodo(filtro);
     const where = this.montarWhereAluno(filtro, authUser, { aplicarPeriodo: true });
     const matriculaWhere = this.montarWhereMatricula(filtro, authUser, {
       aplicarPeriodo: false,
       incluirAluno: false,
     });
+    const limiteDetalhes = this.normalizarLimiteDetalhes(options.limiteDetalhes);
+    const limiteRelacoes = limiteDetalhes ? Math.min(limiteDetalhes, LIMITE_RELACOES_EXPORTACAO_XLSX) : undefined;
 
     const alunos = await this.prisma.aluno.findMany({
       where,
@@ -222,9 +713,11 @@ export class RelatoriosService {
             },
           },
           orderBy: { dataEntrada: 'desc' },
+          ...(limiteRelacoes && { take: limiteRelacoes }),
         },
       },
       orderBy: { nomeCompleto: 'asc' },
+      ...(limiteDetalhes && { take: limiteDetalhes }),
     });
 
     const ativos = alunos.filter((aluno) => aluno.statusAtivo).length;
@@ -268,13 +761,122 @@ export class RelatoriosService {
     };
   }
 
-  async turmas(filtro: FiltroRelatorioTurmasDto, authUser?: AuthenticatedUser) {
+  async alunosResumo(filtro: FiltroRelatorioAlunosDto, authUser?: AuthenticatedUser) {
+    this.validarPeriodo(filtro);
+    const where = this.montarWhereAluno(filtro, authUser, { aplicarPeriodo: true });
+    const whereComLaudo = this.combinarWhereAluno(where, {
+      OR: [{ possuiLaudo: true }, { laudoUrl: { not: null } }],
+    });
+
+    const [totalCadastrados, ativos, inativos, comLaudo, precisamAcompanhante, lgpdAceito] =
+      await this.prisma.$transaction([
+        this.prisma.aluno.count({ where }),
+        this.prisma.aluno.count({ where: this.combinarWhereAluno(where, { statusAtivo: true }) }),
+        this.prisma.aluno.count({ where: this.combinarWhereAluno(where, { statusAtivo: false }) }),
+        this.prisma.aluno.count({ where: whereComLaudo }),
+        this.prisma.aluno.count({ where: this.combinarWhereAluno(where, { precisaAcompanhante: true }) }),
+        this.prisma.aluno.count({ where: this.combinarWhereAluno(where, { termoLgpdAceito: true }) }),
+      ]);
+
+    return {
+      totalCadastrados,
+      ativos,
+      inativos,
+      comLaudo,
+      semLaudo: Math.max(0, totalCadastrados - comLaudo),
+      precisamAcompanhante,
+      lgpdAceito,
+    };
+  }
+
+  async alunosDistribuicoes(filtro: FiltroRelatorioAlunosDto, authUser?: AuthenticatedUser) {
+    this.validarPeriodo(filtro);
+    const where = this.montarWhereAluno(filtro, authUser, { aplicarPeriodo: true });
+    const [porTipoDeficiencia, porCidadeTop10, porBairroTop10, porEscolaridadeTop10, porRendaFamiliarTop10] =
+      await Promise.all([
+        this.rankingAlunosPorCampo(where, 'tipoDeficiencia'),
+        this.rankingAlunosPorCampo(where, 'cidade'),
+        this.rankingAlunosPorCampo(where, 'bairro'),
+        this.rankingAlunosPorCampo(where, 'escolaridade'),
+        this.rankingAlunosPorCampo(where, 'rendaFamiliar'),
+      ]);
+
+    return {
+      porTipoDeficiencia,
+      porCidadeTop10,
+      porBairroTop10,
+      porEscolaridadeTop10,
+      porRendaFamiliarTop10,
+    };
+  }
+
+  async alunosLista(filtro: FiltroRelatorioAlunosListaDto, authUser?: AuthenticatedUser) {
+    this.validarPeriodo(filtro);
+    const page = this.normalizarInteiroPositivo(filtro.page, 1);
+    const limit = this.normalizarInteiroPositivo(
+      filtro.limit,
+      LIMITE_PADRAO_LISTA_ALUNOS,
+      LIMITE_MAXIMO_LISTA_ALUNOS,
+    );
+    const where = this.montarWhereAluno(filtro, authUser, { aplicarPeriodo: true });
+    const skip = (page - 1) * limit;
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.aluno.count({ where }),
+      this.prisma.aluno.findMany({
+        where,
+        select: {
+          id: true,
+          matricula: true,
+          nomeCompleto: true,
+          dataNascimento: true,
+          cpf: true,
+          telefoneContato: true,
+          cidade: true,
+          bairro: true,
+          tipoDeficiencia: true,
+          causaDeficiencia: true,
+          prefAcessibilidade: true,
+          possuiLaudo: true,
+          laudoUrl: true,
+          escolaridade: true,
+          rendaFamiliar: true,
+          beneficiosGov: true,
+          precisaAcompanhante: true,
+          termoLgpdAceito: true,
+          statusAtivo: true,
+          criadoEm: true,
+        },
+        orderBy: { nomeCompleto: 'asc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        lastPage: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  }
+
+  async turmas(
+    filtro: FiltroRelatorioTurmasDto,
+    authUser?: AuthenticatedUser,
+    options: RelatorioDetalhadoOptions = {},
+  ) {
     this.validarPeriodo(filtro);
     const where = this.montarWhereTurma(filtro, authUser, { aplicarPeriodo: true });
     const matriculaWhere = this.montarWhereMatricula(filtro, authUser, {
       aplicarPeriodo: false,
       incluirTurma: false,
     });
+    const limiteDetalhes = this.normalizarLimiteDetalhes(options.limiteDetalhes);
+    const limiteRelacoes = limiteDetalhes ? Math.min(limiteDetalhes, LIMITE_RELACOES_EXPORTACAO_XLSX) : undefined;
 
     const turmas = await this.prisma.turma.findMany({
       where,
@@ -312,6 +914,7 @@ export class RelatoriosService {
             },
           },
           orderBy: { dataEntrada: 'desc' },
+          ...(limiteRelacoes && { take: limiteRelacoes }),
         },
         _count: {
           select: {
@@ -320,6 +923,7 @@ export class RelatoriosService {
         },
       },
       orderBy: [{ status: 'asc' }, { nome: 'asc' }],
+      ...(limiteDetalhes && { take: limiteDetalhes }),
     });
 
     const data = turmas.map((turma) => {
@@ -379,7 +983,11 @@ export class RelatoriosService {
     };
   }
 
-  async evasoes(filtro: FiltroRelatorioEvasoesDto, authUser?: AuthenticatedUser) {
+  async evasoes(
+    filtro: FiltroRelatorioEvasoesDto,
+    authUser?: AuthenticatedUser,
+    options: RelatorioDetalhadoOptions = {},
+  ) {
     this.validarPeriodo(filtro);
     const statusPadrao = filtro.statusMatricula ? undefined : [...STATUS_RELATORIO_EVASOES];
     const where = this.montarWhereMatricula(filtro, authUser, {
@@ -387,6 +995,7 @@ export class RelatoriosService {
       statusPadrao,
       periodoCampos: ['dataEncerramento', 'encerradoEm'],
     });
+    const limiteDetalhes = this.normalizarLimiteDetalhes(options.limiteDetalhes);
 
     const matriculas = await this.prisma.matriculaOficina.findMany({
       where,
@@ -424,6 +1033,7 @@ export class RelatoriosService {
         },
       },
       orderBy: [{ encerradoEm: 'desc' }, { dataEncerramento: 'desc' }],
+      ...(limiteDetalhes && { take: limiteDetalhes }),
     });
 
     const encerradoPorIds = [
@@ -543,9 +1153,14 @@ export class RelatoriosService {
     };
   }
 
-  async atendimentos(filtro: FiltroRelatorioAtendimentosDto, authUser?: AuthenticatedUser) {
+  async atendimentos(
+    filtro: FiltroRelatorioAtendimentosDto,
+    authUser?: AuthenticatedUser,
+    options: RelatorioDetalhadoOptions = {},
+  ) {
     this.validarPeriodo(filtro);
     const where = this.montarWhereAtendimento(filtro, authUser);
+    const limiteDetalhes = this.normalizarLimiteDetalhes(options.limiteDetalhes);
 
     const atendimentos = await this.prisma.atendimentoIndividual.findMany({
       where,
@@ -586,6 +1201,7 @@ export class RelatoriosService {
         },
       },
       orderBy: [{ dataAtendimento: 'desc' }, { criadoEm: 'desc' }],
+      ...(limiteDetalhes && { take: limiteDetalhes }),
     });
 
     return {
@@ -596,9 +1212,14 @@ export class RelatoriosService {
     };
   }
 
-  async frequencias(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser) {
+  async frequencias(
+    filtro: FiltroRelatorioGeralDto,
+    authUser?: AuthenticatedUser,
+    options: RelatorioDetalhadoOptions = {},
+  ) {
     this.validarPeriodo(filtro);
     const where = this.montarWhereFrequencia(filtro, authUser);
+    const limiteDetalhes = this.normalizarLimiteDetalhes(options.limiteDetalhes);
 
     const frequencias = await this.prisma.frequencia.findMany({
       where,
@@ -633,6 +1254,7 @@ export class RelatoriosService {
         },
       },
       orderBy: [{ dataAula: 'desc' }],
+      ...(limiteDetalhes && { take: limiteDetalhes }),
     });
 
     const presentes = frequencias.filter((frequencia) => frequencia.status === StatusFrequencia.PRESENTE).length;
@@ -653,14 +1275,18 @@ export class RelatoriosService {
     };
   }
 
-  async gerarConsolidado(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser): Promise<RelatorioExportacao> {
+  async gerarConsolidado(
+    filtro: FiltroRelatorioGeralDto,
+    authUser?: AuthenticatedUser,
+    options: RelatorioDetalhadoOptions = {},
+  ): Promise<RelatorioExportacao> {
     const [resumo, alunos, turmas, evasoes, atendimentos, frequencias] = await Promise.all([
       this.resumo(filtro, authUser),
-      this.alunos(filtro, authUser),
-      this.turmas(filtro, authUser),
-      this.evasoes(filtro, authUser),
-      this.atendimentos(filtro, authUser),
-      this.frequencias(filtro, authUser),
+      this.alunos(filtro, authUser, options),
+      this.turmas(filtro, authUser, options),
+      this.evasoes(filtro, authUser, options),
+      this.atendimentos(filtro, authUser, options),
+      this.frequencias(filtro, authUser, options),
     ]);
 
     return {
@@ -675,13 +1301,46 @@ export class RelatoriosService {
     };
   }
 
+  async gerarConsolidadoInstitucional(
+    filtro: FiltroRelatorioGeralDto,
+    authUser?: AuthenticatedUser,
+  ): Promise<RelatorioInstitucionalPdf> {
+    const [resumo, distribuicoesAlunos, evasoes, atendimentos, frequencias, impactoSocial] = await Promise.all([
+      this.resumo(filtro, authUser),
+      this.alunosDistribuicoes(filtro, authUser),
+      this.evasoesInstitucionais(filtro, authUser),
+      this.atendimentosInstitucionais(filtro, authUser),
+      this.frequenciasInstitucionais(filtro, authUser),
+      this.impactoSocial(filtro, authUser),
+    ]);
+
+    return {
+      emitidoEm: new Date().toISOString(),
+      filtros: filtro,
+      resumo,
+      alunos: {
+        porCidadeTop10: distribuicoesAlunos.porCidadeTop10,
+      },
+      evasoes,
+      atendimentos,
+      frequencias,
+      taxas: {
+        taxaEvasao: resumo.indicadores.taxaEvasao,
+        taxaConclusao: resumo.indicadores.taxaConclusao,
+        taxaPermanencia: resumo.indicadores.taxaPermanencia,
+        taxaPresenca: frequencias.taxaPresenca,
+      },
+      impacto: impactoSocial.metricas,
+    };
+  }
+
   async exportarPdf(
     filtro: FiltroRelatorioGeralDto,
     authUser?: AuthenticatedUser,
     auditUser?: AuditUser,
   ): Promise<Buffer> {
     const filtroExportacao = this.filtroExportacaoPdf(filtro, authUser);
-    const relatorio = await this.gerarConsolidado(filtroExportacao, authUser);
+    const relatorio = await this.gerarConsolidadoInstitucional(filtroExportacao, authUser);
     const buffer = await this.pdfExporter.gerar(relatorio, {
       emissorNome: authUser?.nome || authUser?.email || authUser?.sub,
       emissorPerfil: authUser?.role,
@@ -696,11 +1355,110 @@ export class RelatoriosService {
     authUser?: AuthenticatedUser,
     auditUser?: AuditUser,
   ): Promise<Buffer> {
-    const relatorio = await this.gerarConsolidado(filtro, authUser);
+    const relatorio = await this.gerarConsolidado(filtro, authUser, {
+      limiteDetalhes: LIMITE_EXPORTACAO_XLSX_DETALHADA,
+    });
     const buffer = await this.xlsxExporter.gerar(relatorio);
 
     await this.registrarAuditoriaExportacao('XLSX', filtro, authUser, auditUser);
     return buffer;
+  }
+
+  private async evasoesInstitucionais(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser) {
+    const encerramentosWhere = this.montarWhereMatricula(filtro, authUser, {
+      aplicarPeriodo: true,
+      statusPadrao: [...STATUS_RELATORIO_EVASOES],
+    });
+    const evasoesWhere = this.combinarWhereMatricula(encerramentosWhere, { status: MatriculaStatus.EVADIDA });
+
+    const [statusRows, motivoRows, turmaRows] = await Promise.all([
+      this.prisma.matriculaOficina.groupBy({
+        by: ['status'],
+        where: encerramentosWhere,
+        orderBy: { status: 'asc' },
+        _count: { _all: true },
+      }),
+      this.prisma.matriculaOficina.groupBy({
+        by: ['motivoEncerramento'],
+        where: this.combinarWhereMatricula(evasoesWhere, {
+          motivoEncerramento: { not: null },
+        }),
+        orderBy: { _count: { motivoEncerramento: 'desc' } },
+        _count: { _all: true },
+        take: 10,
+      }),
+      this.prisma.matriculaOficina.groupBy({
+        by: ['turmaId'],
+        where: evasoesWhere,
+        orderBy: { _count: { turmaId: 'desc' } },
+        _count: { _all: true },
+        take: 10,
+      }),
+    ]);
+
+    const status = this.contagensPorChave<MatriculaStatus>(statusRows, 'status');
+    const turmaIds = turmaRows.map((row) => row.turmaId).filter((id): id is string => Boolean(id));
+    const turmas = turmaIds.length
+      ? await this.prisma.turma.findMany({
+          where: { id: { in: turmaIds } },
+          select: { id: true, nome: true },
+        })
+      : [];
+    const turmaPorId = new Map(turmas.map((turma) => [turma.id, turma.nome]));
+
+    return {
+      totalEvasoes: status[MatriculaStatus.EVADIDA] ?? 0,
+      totalCancelamentos: status[MatriculaStatus.CANCELADA] ?? 0,
+      totalTransferencias: status[MatriculaStatus.TRANSFERIDA] ?? 0,
+      porMotivoTop10: motivoRows.map((row) => ({
+        label: this.valorRankingAluno(row.motivoEncerramento),
+        total: row._count._all,
+      })),
+      porTurmaTop10: turmaRows.map((row) => ({
+        label: turmaPorId.get(row.turmaId) ?? 'Turma nao encontrada',
+        total: row._count._all,
+      })),
+    };
+  }
+
+  private async atendimentosInstitucionais(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser) {
+    const where = this.montarWhereAtendimento(filtro, authUser);
+    const rows = await this.prisma.atendimentoIndividual.groupBy({
+      by: ['tipoRegistro'],
+      where,
+      orderBy: { tipoRegistro: 'asc' },
+      _count: { _all: true },
+    });
+    const porTipoRegistro = this.contagensPorChave<string>(rows, 'tipoRegistro');
+
+    return {
+      total: this.somarContagens(porTipoRegistro),
+      porTipoRegistro,
+    };
+  }
+
+  private async frequenciasInstitucionais(filtro: FiltroRelatorioGeralDto, authUser?: AuthenticatedUser) {
+    const where = this.montarWhereFrequencia(filtro, authUser);
+    const rows = await this.prisma.frequencia.groupBy({
+      by: ['status'],
+      where,
+      orderBy: { status: 'asc' },
+      _count: { _all: true },
+    });
+    const porStatus = this.contagensPorChave<StatusFrequencia>(rows, 'status');
+    const total = this.somarContagens(porStatus);
+    const presentes = porStatus[StatusFrequencia.PRESENTE] ?? 0;
+    const faltas = porStatus[StatusFrequencia.FALTA] ?? 0;
+    const faltasJustificadas = porStatus[StatusFrequencia.FALTA_JUSTIFICADA] ?? 0;
+
+    return {
+      total,
+      presentes,
+      faltas,
+      faltasJustificadas,
+      taxaPresenca: this.percentual(presentes, total),
+      porStatus,
+    };
   }
 
   private montarWhereAluno(
@@ -772,6 +1530,317 @@ export class RelatoriosService {
       }
       return acc;
     }, {});
+  }
+
+  private normalizarBuscaOpcao(busca?: string): string | null {
+    const termo = busca?.trim();
+    return termo && termo.length >= MIN_CARACTERES_BUSCA_OPCOES ? termo : null;
+  }
+
+  private indicadoresRiscoVazios(): RelatorioRiscoEvasao['indicadores'] {
+    return {
+      alto: 0,
+      medio: 0,
+      baixo: 0,
+      tresFaltasSeguidas: 0,
+      presencaAbaixo60: 0,
+      semRegistro30Dias: 0,
+      matriculaAtivaSemFrequenciaRecente: 0,
+    };
+  }
+
+  private obterReferenciaRisco(filtro: FiltroRelatorioGeralDto): Date {
+    const periodo = this.obterPeriodo(filtro);
+    return periodo.fim ?? this.fimDoDia(new Date());
+  }
+
+  private chaveAlunoTurma(alunoId: string, turmaId: string): string {
+    return `${alunoId}:${turmaId}`;
+  }
+
+  private contarFaltasSeguidas(frequencias: Array<{ status: StatusFrequencia }>): number {
+    let total = 0;
+    for (const frequencia of frequencias) {
+      if (frequencia.status !== StatusFrequencia.FALTA) break;
+      total += 1;
+    }
+    return total;
+  }
+
+  private dataMaisRecente(datas: Array<Date | null | undefined>): Date | null {
+    return datas.reduce<Date | null>((maisRecente, data) => {
+      if (!data) return maisRecente;
+      if (!maisRecente || data.getTime() > maisRecente.getTime()) return data;
+      return maisRecente;
+    }, null);
+  }
+
+  private diasEntreDatas(inicio: Date, fim: Date): number {
+    const msDia = 24 * 60 * 60 * 1000;
+    return Math.max(0, Math.floor((fim.getTime() - inicio.getTime()) / msDia));
+  }
+
+  private diasCalendarioInclusivo(inicio: Date, fim: Date): number {
+    const msDia = 24 * 60 * 60 * 1000;
+    const inicioUtc = Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth(), inicio.getUTCDate());
+    const fimUtc = Date.UTC(fim.getUTCFullYear(), fim.getUTCMonth(), fim.getUTCDate());
+    return Math.max(1, Math.floor((fimUtc - inicioUtc) / msDia) + 1);
+  }
+
+  private nivelRisco(totalCriterios: number, faltasSeguidas: number): NivelRiscoEvasao {
+    if (faltasSeguidas >= 3 || totalCriterios >= 3) return 'ALTO';
+    if (totalCriterios >= 2) return 'MEDIO';
+    return 'BAIXO';
+  }
+
+  private async calcularImpactoMetricas(
+    filtro: FiltroRelatorioGeralDto,
+    authUser?: AuthenticatedUser,
+  ): Promise<RelatorioImpactoMetricas> {
+    const matriculaWhere = this.montarWhereMatricula(filtro, authUser, { aplicarPeriodo: true });
+    const atendimentoWhere = this.montarWhereAtendimento(filtro, authUser);
+    const frequenciaWhere = this.montarWhereFrequencia(filtro, authUser);
+    const turmaWhere = this.montarWhereTurma(filtro, authUser, { aplicarPeriodo: true });
+    const certificadoWhere = this.montarWhereCertificado(filtro, authUser);
+
+    const [
+      alunosComMatricula,
+      alunosComAtendimento,
+      alunosComFrequencia,
+      totalAtendimentosIndividuais,
+      totalTurmasOfertadas,
+      totalCertificadosEmitidos,
+      resumo,
+    ] = await Promise.all([
+      this.prisma.matriculaOficina.findMany({
+        where: matriculaWhere,
+        distinct: ['alunoId'],
+        select: { alunoId: true },
+      }),
+      this.prisma.atendimentoIndividual.findMany({
+        where: atendimentoWhere,
+        distinct: ['alunoId'],
+        select: { alunoId: true },
+      }),
+      this.prisma.frequencia.findMany({
+        where: frequenciaWhere,
+        distinct: ['alunoId'],
+        select: { alunoId: true },
+      }),
+      this.prisma.atendimentoIndividual.count({ where: atendimentoWhere }),
+      this.prisma.turma.count({ where: turmaWhere }),
+      this.prisma.certificadoEmitido.count({ where: certificadoWhere }),
+      this.resumo(filtro, authUser),
+    ]);
+
+    const alunoIds = [
+      ...new Set([
+        ...alunosComMatricula.map((aluno) => aluno.alunoId),
+        ...alunosComAtendimento.map((aluno) => aluno.alunoId),
+        ...alunosComFrequencia.map((aluno) => aluno.alunoId),
+      ]),
+    ];
+
+    let totalAlunosDeficienciaVisualAtendidos = 0;
+    let totalCidadesAlcancadas = 0;
+    let totalBairrosAlcancados = 0;
+
+    if (alunoIds.length) {
+      const alunoWhere = this.combinarWhereAluno(this.montarWhereAlunoBasico(filtro, {
+        aplicarPeriodo: false,
+        ignorarAlunoId: true,
+      }), {
+        id: { in: alunoIds },
+      });
+
+      const [alunosDeficienciaVisual, cidades, bairros] = await Promise.all([
+        this.prisma.aluno.count({
+          where: this.combinarWhereAluno(alunoWhere, { tipoDeficiencia: { not: null } }),
+        }),
+        this.prisma.aluno.findMany({
+          where: this.combinarWhereAluno(alunoWhere, {
+            cidade: { not: null },
+          }),
+          distinct: ['cidade'],
+          select: { cidade: true },
+        }),
+        this.prisma.aluno.findMany({
+          where: this.combinarWhereAluno(alunoWhere, {
+            bairro: { not: null },
+          }),
+          distinct: ['bairro'],
+          select: { bairro: true },
+        }),
+      ]);
+
+      totalAlunosDeficienciaVisualAtendidos = alunosDeficienciaVisual;
+      totalCidadesAlcancadas = cidades.filter((aluno) => this.temTexto(aluno.cidade)).length;
+      totalBairrosAlcancados = bairros.filter((aluno) => this.temTexto(aluno.bairro)).length;
+    }
+
+    return {
+      totalAlunosAtendidos: alunoIds.length,
+      totalAtendimentosIndividuais,
+      totalTurmasOfertadas,
+      totalCertificadosEmitidos,
+      totalAlunosDeficienciaVisualAtendidos,
+      totalBairrosAlcancados,
+      totalCidadesAlcancadas,
+      taxaPermanencia: resumo.indicadores.taxaPermanencia,
+      taxaConclusao: resumo.indicadores.taxaConclusao,
+    };
+  }
+
+  private montarWhereCertificado(
+    filtro: FiltroRelatorioGeralDto,
+    authUser: AuthenticatedUser | undefined,
+  ): Prisma.CertificadoEmitidoWhereInput {
+    const periodo = this.obterPeriodo(filtro);
+    const range = this.montarRange(periodo);
+    const where: Prisma.CertificadoEmitidoWhereInput = {
+      status: { in: [CertificateStatus.VALID, CertificateStatus.REISSUED] },
+      aluno: this.montarWhereAlunoBasico(filtro, { aplicarPeriodo: false, ignorarAlunoId: true }),
+      turma: this.montarWhereTurma(filtro, authUser, { aplicarPeriodo: false }),
+    };
+
+    if (range) where.dataEmissao = range;
+    if (filtro.alunoId) where.alunoId = filtro.alunoId;
+    if (filtro.turmaId) where.turmaId = filtro.turmaId;
+
+    return where;
+  }
+
+  private periodoAtualEAnterior(filtro: FiltroRelatorioGeralDto): {
+    atual: PeriodoRelatorio & { inicio: Date; fim: Date };
+    anterior: PeriodoRelatorio & { inicio: Date; fim: Date };
+  } {
+    const periodo = this.obterPeriodo(filtro);
+    const fimAtual = this.fimDoDia(periodo.fim ?? new Date());
+    const inicioAtual = this.inicioDoDia(
+      periodo.inicio ?? new Date(Date.UTC(fimAtual.getUTCFullYear(), fimAtual.getUTCMonth(), 1)),
+    );
+    const diasPeriodo = this.diasCalendarioInclusivo(inicioAtual, fimAtual);
+    const fimAnterior = this.fimDoDia(this.subtrairDias(inicioAtual, 1));
+    const inicioAnterior = this.inicioDoDia(this.subtrairDias(fimAnterior, diasPeriodo - 1));
+
+    return {
+      atual: { inicio: inicioAtual, fim: fimAtual },
+      anterior: { inicio: inicioAnterior, fim: fimAnterior },
+    };
+  }
+
+  private filtroComPeriodo(filtro: FiltroRelatorioGeralDto, inicio: Date, fim: Date): FiltroRelatorioGeralDto {
+    return {
+      ...filtro,
+      dataInicio: this.formatarDataIso(inicio),
+      dataFim: this.formatarDataIso(fim),
+    };
+  }
+
+  private compararMetricas(
+    atual: RelatorioImpactoMetricas,
+    anterior: RelatorioImpactoMetricas,
+  ): Record<keyof RelatorioImpactoMetricas, RelatorioComparativoItem> {
+    return (Object.keys(atual) as Array<keyof RelatorioImpactoMetricas>).reduce(
+      (acc, chave) => ({
+        ...acc,
+        [chave]: this.compararMetrica(atual[chave], anterior[chave]),
+      }),
+      {} as Record<keyof RelatorioImpactoMetricas, RelatorioComparativoItem>,
+    );
+  }
+
+  private compararMetrica(atual: number, anterior: number): RelatorioComparativoItem {
+    const variacaoPercentual = anterior ? this.percentual(atual - anterior, anterior) : atual > 0 ? 100 : 0;
+    return {
+      atual,
+      anterior,
+      variacaoPercentual,
+      direcao: variacaoPercentual > 0 ? 'SUBIU' : variacaoPercentual < 0 ? 'DESCEU' : 'ESTAVEL',
+    };
+  }
+
+  private inicioDoDia(date: Date): Date {
+    const clone = new Date(date);
+    clone.setUTCHours(0, 0, 0, 0);
+    return clone;
+  }
+
+  private fimDoDia(date: Date): Date {
+    const clone = new Date(date);
+    clone.setUTCHours(23, 59, 59, 999);
+    return clone;
+  }
+
+  private subtrairDias(date: Date, dias: number): Date {
+    const clone = new Date(date);
+    clone.setUTCDate(clone.getUTCDate() - dias);
+    return clone;
+  }
+
+  private formatarDataIso(date: Date): string {
+    return date.toISOString().slice(0, 10);
+  }
+
+  private combinarWhereAluno(base: Prisma.AlunoWhereInput, extra: Prisma.AlunoWhereInput): Prisma.AlunoWhereInput {
+    return { AND: [base, extra] };
+  }
+
+  private combinarWhereTurma(base: Prisma.TurmaWhereInput, extra: Prisma.TurmaWhereInput): Prisma.TurmaWhereInput {
+    return { AND: [base, extra] };
+  }
+
+  private combinarWhereMatricula(
+    base: Prisma.MatriculaOficinaWhereInput,
+    extra: Prisma.MatriculaOficinaWhereInput,
+  ): Prisma.MatriculaOficinaWhereInput {
+    return { AND: [base, extra] };
+  }
+
+  private async rankingAlunosPorCampo(
+    where: Prisma.AlunoWhereInput,
+    campo: CampoRankingAluno,
+  ): Promise<RelatorioRankingItem[]> {
+    const filtroCampo: Prisma.AlunoWhereInput[] = [{ [campo]: { not: null } } as Prisma.AlunoWhereInput];
+
+    if (campo !== 'tipoDeficiencia') {
+      filtroCampo.push({ [campo]: { not: '' } } as Prisma.AlunoWhereInput);
+    }
+
+    const args = {
+      by: [campo],
+      where: this.combinarWhereAluno(where, { AND: filtroCampo }),
+      orderBy: { _count: { [campo]: 'desc' } },
+      _count: { _all: true },
+      take: 10,
+    };
+    const groupBy = this.prisma.aluno.groupBy as unknown as (
+      this: typeof this.prisma.aluno,
+      params: typeof args,
+    ) => Promise<Array<Record<string, unknown> & { _count?: Record<string, number | undefined> }>>;
+    const grupos = await groupBy.call(this.prisma.aluno, args);
+
+    return grupos.map((grupo) => ({
+      label: this.valorRankingAluno(grupo[campo]),
+      total: grupo._count?._all ?? 0,
+    }));
+  }
+
+  private valorRankingAluno(value: unknown): string {
+    return String(value ?? '').trim() || 'Nao informado';
+  }
+
+  private normalizarInteiroPositivo(value: string | number | undefined, fallback: number, max?: number): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+    const inteiro = Math.floor(parsed);
+    return max ? Math.min(inteiro, max) : inteiro;
+  }
+
+  private normalizarLimiteDetalhes(value?: number): number | undefined {
+    if (!value) return undefined;
+    if (!Number.isFinite(value) || value < 1) return undefined;
+    return Math.floor(value);
   }
 
   private montarWhereAlunoBasico(
@@ -1199,4 +2268,10 @@ export class RelatoriosService {
   }
 }
 
-export type { RelatorioExportacao, ResumoRelatorio };
+export type {
+  RelatorioExportacao,
+  RelatorioImpactoSocial,
+  RelatorioInstitucionalPdf,
+  RelatorioRiscoEvasao,
+  ResumoRelatorio,
+};

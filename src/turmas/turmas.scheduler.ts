@@ -22,7 +22,7 @@ export class TurmasScheduler {
           status: TurmaStatus.PREVISTA,
           dataInicio: { lte: hoje },
         },
-        data: { status: TurmaStatus.ANDAMENTO },
+        data: { status: TurmaStatus.ANDAMENTO, statusAtivo: true },
       });
 
       if (iniciarResult.count > 0) {
@@ -34,7 +34,7 @@ export class TurmasScheduler {
           status: TurmaStatus.ANDAMENTO,
           dataFim: { lt: hoje },
         },
-        data: { status: TurmaStatus.CONCLUIDA },
+        data: { status: TurmaStatus.CONCLUIDA, statusAtivo: false },
       });
 
       if (concluirResult.count > 0) {

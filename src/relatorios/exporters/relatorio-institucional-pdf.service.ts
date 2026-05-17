@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
-import type { RelatorioExportacao } from '../relatorios.service';
+import type { RelatorioInstitucionalPdf } from '../relatorios.service';
 
 type PdfOptions = {
   emissorNome?: string;
@@ -22,7 +22,7 @@ const INSTITUICAO = {
 
 @Injectable()
 export class RelatorioInstitucionalPdfService {
-  async gerar(relatorio: RelatorioExportacao, options: PdfOptions = {}): Promise<Buffer> {
+  async gerar(relatorio: RelatorioInstitucionalPdf, options: PdfOptions = {}): Promise<Buffer> {
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -155,10 +155,10 @@ export class RelatorioInstitucionalPdfService {
     const alunosAtivos = relatorio.resumo.alunos.ativos;
     const atendimentosRealizados = relatorio.atendimentos.porTipoRegistro.ATENDIMENTO_REALIZADO ?? 0;
     const turmasOfertadas = relatorio.resumo.turmas.total;
-    const totalEvasoes = relatorio.evasoes.indicadores.totalEvasoes;
-    const principaisMotivos = this.topEntries(relatorio.evasoes.indicadores.porMotivo, 3);
+    const totalEvasoes = relatorio.evasoes.totalEvasoes;
+    const principaisMotivos = relatorio.evasoes.porMotivoTop10.slice(0, 3);
     const textoMotivos = principaisMotivos.length
-      ? principaisMotivos.map(([motivo]) => this.formatarEnum(motivo)).join(', ')
+      ? principaisMotivos.map((item) => this.formatarEnum(item.label)).join(', ')
       : 'sem motivo predominante informado';
 
     drawHeader();
@@ -194,68 +194,67 @@ export class RelatorioInstitucionalPdfService {
       ['Alunos inativos', relatorio.resumo.alunos.inativos],
       ['Novos no periodo', relatorio.resumo.alunos.novosNoPeriodo],
       ['Turmas ofertadas', turmasOfertadas],
-      ['Vagas ocupadas', relatorio.turmas.indicadores.vagasOcupadas],
-      ['Ocupacao media', `${relatorio.turmas.indicadores.taxaMediaOcupacao}%`],
+      ['Matriculas ativas', relatorio.resumo.matriculas.ativas],
+      ['Matriculas encerradas', relatorio.resumo.matriculas.concluidas + relatorio.resumo.matriculas.evadidas],
       ['Atendimentos realizados', atendimentosRealizados],
       ['Evasoes', totalEvasoes],
-      ['Taxa de evasao', `${relatorio.resumo.indicadores.taxaEvasao}%`],
-      ['Taxa de conclusao', `${relatorio.resumo.indicadores.taxaConclusao}%`],
-      ['Taxa de permanencia', `${relatorio.resumo.indicadores.taxaPermanencia}%`],
-      ['Taxa de presenca', `${relatorio.frequencias.taxaPresenca}%`],
+      ['Taxa de evasao', `${relatorio.taxas.taxaEvasao}%`],
+      ['Taxa de conclusao', `${relatorio.taxas.taxaConclusao}%`],
+      ['Taxa de permanencia', `${relatorio.taxas.taxaPermanencia}%`],
+      ['Taxa de presenca', `${relatorio.taxas.taxaPresenca}%`],
     ]);
+
+    if (relatorio.impacto) {
+      drawSectionTitle('Impacto social');
+      drawParagraph(
+        'Indicadores agregados para leitura publica, prestacao de contas e dialogo com apoiadores, governo e parceiros.',
+      );
+      drawMetrics([
+        ['Alunos atendidos', relatorio.impacto.totalAlunosAtendidos],
+        ['Atendimentos individuais', relatorio.impacto.totalAtendimentosIndividuais],
+        ['Turmas ofertadas', relatorio.impacto.totalTurmasOfertadas],
+        ['Certificados emitidos', relatorio.impacto.totalCertificadosEmitidos],
+        ['Alunos com deficiencia visual', relatorio.impacto.totalAlunosDeficienciaVisualAtendidos],
+        ['Cidades alcancadas', relatorio.impacto.totalCidadesAlcancadas],
+        ['Bairros alcancados', relatorio.impacto.totalBairrosAlcancados],
+        ['Taxa de permanencia', `${relatorio.impacto.taxaPermanencia}%`],
+        ['Taxa de conclusao', `${relatorio.impacto.taxaConclusao}%`],
+      ]);
+    }
 
     drawSectionTitle('Perfil dos alunos');
     drawParagraph(
-      `O cadastro institucional registra ${relatorio.resumo.alunos.total} alunos, com ${relatorio.alunos.indicadores.comLaudo} aluno(s) com laudo, ${relatorio.alunos.indicadores.semLaudo} sem laudo informado e ${relatorio.alunos.indicadores.precisamAcompanhante} que necessitam de acompanhante.`,
+      `O cadastro institucional registra ${relatorio.resumo.alunos.total} aluno(s), sendo ${relatorio.resumo.alunos.ativos} ativo(s), ${relatorio.resumo.alunos.inativos} inativo(s) e ${relatorio.resumo.alunos.novosNoPeriodo} novo(s) no periodo analisado.`,
     );
-    drawMetrics([
-      ['Com laudo', relatorio.alunos.indicadores.comLaudo],
-      ['Sem laudo', relatorio.alunos.indicadores.semLaudo],
-      ['Acompanhante', relatorio.alunos.indicadores.precisamAcompanhante],
-      ['Beneficio governo', relatorio.alunos.indicadores.recebemBeneficioGov],
-      ['LGPD aceito', relatorio.alunos.indicadores.lgpdAceito],
-      ['Ativos', relatorio.resumo.alunos.ativos],
-    ]);
     drawList(
-      'Principais perfis dos alunos',
-      [
-        ...this.topEntries(relatorio.alunos.indicadores.porTipoDeficiencia, 5).map(
-          ([tipo, total]) => `${this.formatarEnum(tipo)}: ${total} aluno(s)`,
-        ),
-        ...this.topEntries(relatorio.alunos.indicadores.porCidade, 5).map(
-          ([cidade, total]) => `${cidade}: ${total} aluno(s)`,
-        ),
-      ],
+      'Top 10 cidades dos alunos',
+      relatorio.alunos.porCidadeTop10.map((item) => `${item.label}: ${item.total} aluno(s)`),
     );
 
     drawSectionTitle('Turmas ofertadas');
     drawParagraph(
-      `Foram consideradas ${relatorio.turmas.indicadores.totalTurmas} turmas, com ${relatorio.turmas.indicadores.totalVagas} vagas totais e ${relatorio.turmas.indicadores.vagasOcupadas} vagas ocupadas. A taxa media de ocupacao foi de ${relatorio.turmas.indicadores.taxaMediaOcupacao}%.`,
+      `Foram consideradas ${relatorio.resumo.turmas.total} turma(s), com ${relatorio.resumo.turmas.previstas} prevista(s), ${relatorio.resumo.turmas.andamento} em andamento, ${relatorio.resumo.turmas.concluidas} concluida(s) e ${relatorio.resumo.turmas.canceladas} cancelada(s).`,
     );
     drawMetrics([
-      ['Previstas', relatorio.turmas.indicadores.previstas],
-      ['Em andamento', relatorio.turmas.indicadores.andamento],
-      ['Concluidas', relatorio.turmas.indicadores.concluidas],
-      ['Canceladas', relatorio.turmas.indicadores.canceladas],
-      ['Arquivadas', relatorio.turmas.indicadores.arquivadas],
-      ['Vagas totais', relatorio.turmas.indicadores.totalVagas],
+      ['Previstas', relatorio.resumo.turmas.previstas],
+      ['Em andamento', relatorio.resumo.turmas.andamento],
+      ['Concluidas', relatorio.resumo.turmas.concluidas],
+      ['Canceladas', relatorio.resumo.turmas.canceladas],
+      ['Matriculas ativas', relatorio.resumo.matriculas.ativas],
+      ['Matriculas totais', relatorio.resumo.matriculas.total],
     ]);
 
     drawSectionTitle('Evasoes e motivos');
     drawParagraph(
-      `O periodo apresentou ${totalEvasoes} evasao(oes), ${relatorio.evasoes.indicadores.totalTransferencias} transferencia(s) e ${relatorio.evasoes.indicadores.totalCancelamentos} cancelamento(s). O registro estruturado dos motivos permite diferenciar evasao, transferencia e cancelamento administrativo.`,
+      `O periodo apresentou ${totalEvasoes} evasao(oes), ${relatorio.evasoes.totalTransferencias} transferencia(s) e ${relatorio.evasoes.totalCancelamentos} cancelamento(s). O registro estruturado dos motivos permite diferenciar evasao, transferencia e cancelamento administrativo.`,
     );
-    drawMetrics([
-      ['Com atendimento individual', relatorio.evasoes.indicadores.evasoesComAtendimentoIndividual],
-      ['Sem atendimento individual', relatorio.evasoes.indicadores.evasoesSemAtendimentoIndividual],
-      ['Com faltas no atendimento', relatorio.evasoes.indicadores.evasoesComFaltasEmAtendimento],
-      ['Acompanhamento finalizado', relatorio.evasoes.indicadores.evasoesComAcompanhamentoFinalizado],
-      ['Acompanhamento arquivado', relatorio.evasoes.indicadores.evasoesComAcompanhamentoArquivado],
-      ['Permanencia media', `${relatorio.evasoes.indicadores.tempoMedioPermanenciaDias} dias`],
-    ]);
     drawList(
-      'Principais motivos de evasao',
-      principaisMotivos.map(([motivo, total]) => `${this.formatarEnum(motivo)}: ${total} registro(s)`),
+      'Top 10 motivos de evasao',
+      relatorio.evasoes.porMotivoTop10.map((item) => `${this.formatarEnum(item.label)}: ${item.total} registro(s)`),
+    );
+    drawList(
+      'Top 10 turmas por evasao',
+      relatorio.evasoes.porTurmaTop10.map((item) => `${item.label}: ${item.total} evasao(oes)`),
     );
 
     drawSectionTitle('Atendimentos individuais');
@@ -264,15 +263,20 @@ export class RelatorioInstitucionalPdfService {
     );
     drawList(
       'Distribuicao dos atendimentos individuais',
-      [
-        ...this.topEntries(relatorio.atendimentos.porTipoRegistro, 6).map(
-          ([tipo, total]) => `${this.formatarEnum(tipo)}: ${total} registro(s)`,
-        ),
-        ...this.topEntries(
-          this.agruparPor(relatorio.atendimentos.data, (item) => item.modalidade ?? 'Nao informado'),
-          6,
-        ).map(([modalidade, total]) => `${this.formatarEnum(modalidade)}: ${total} registro(s)`),
-      ],
+      this.topEntries(relatorio.atendimentos.porTipoRegistro, 10).map(
+        ([tipo, total]) => `${this.formatarEnum(tipo)}: ${total} registro(s)`,
+      ),
+    );
+
+    drawSectionTitle('Frequencias');
+    drawParagraph(
+      `O modulo de frequencias registrou ${relatorio.frequencias.total} presenca(s)/falta(s), com ${relatorio.frequencias.presentes} presenca(s), ${relatorio.frequencias.faltas} falta(s), ${relatorio.frequencias.faltasJustificadas} falta(s) justificada(s) e taxa de presenca de ${relatorio.frequencias.taxaPresenca}%.`,
+    );
+    drawList(
+      'Distribuicao das frequencias',
+      this.topEntries(relatorio.frequencias.porStatus, 10).map(
+        ([status, total]) => `${this.formatarEnum(status)}: ${total} registro(s)`,
+      ),
     );
 
     drawSectionTitle('Conclusao institucional');

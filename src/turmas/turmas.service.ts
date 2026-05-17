@@ -24,6 +24,10 @@ const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
   CANCELADA: ['PREVISTA'], // Cancela → pode reativar como Prevista
 };
 
+const STATUS_TURMA_EM_OPERACAO: TurmaStatus[] = [TurmaStatus.PREVISTA, TurmaStatus.ANDAMENTO];
+const STATUS_TURMA_ACEITA_MATRICULA: TurmaStatus[] = STATUS_TURMA_EM_OPERACAO;
+const STATUS_TURMA_CONSIDERA_CONFLITO: TurmaStatus[] = STATUS_TURMA_EM_OPERACAO;
+
 // ─── Helpers de Colisão ──────────────────────────────────────────────────────
 
 type HorarioGrade = { dia: DiaSemana; horaInicio: number; horaFim: number };
@@ -70,10 +74,14 @@ export class TurmasService {
       cargaFinalStr = calcularCargaHorariaTotal(start, end, gradeHoraria as any);
     }
 
+    const statusInicial = (dadosTurma.status as TurmaStatus | undefined) ?? TurmaStatus.PREVISTA;
+
     try {
       const turmaNova = await this.prisma.turma.create({
         data: {
           ...dadosTurma,
+          status: statusInicial,
+          statusAtivo: this.statusAtivoPorStatus(statusInicial),
           ...(start && { dataInicio: start }),
           ...(end && { dataFim: end }),
           ...(cargaFinalStr && { cargaHoraria: cargaFinalStr }),
@@ -272,36 +280,23 @@ export class TurmasService {
     if (!turma) throw new NotFoundException('Turma não encontrada.');
     if (!turma.statusAtivo) throw new BadRequestException('A turma já está arquivada.');
 
-    try {
-      const result = await this.prisma.turma.update({ where: { id }, data: { statusAtivo: false, excluido: false } });
-      this.auditService
-        .registrar({
-          entidade: 'Turma',
-          registroId: id,
-          acao: AuditAcao.ARQUIVAR,
-          autorId: auditUser.sub,
-          autorNome: auditUser.nome,
-          autorRole: auditUser.role,
-          ip: auditUser.ip,
-          userAgent: auditUser.userAgent,
-          oldValue: { statusAtivo: true },
-          newValue: { statusAtivo: false },
-        })
-        .catch((e) => this.logger.warn(`Failure auditing Turma arquivar: ${e.message}`));
-      return result;
-    } catch (err) {
-      this.logger.error(`Tentativa corrompida de arquivamento da turma ${id}`, err);
-      throw new InternalServerErrorException('Não foi possível arquivar turma.');
-    }
+    return this.mudarStatus(id, TurmaStatus.CANCELADA, auditUser);
   }
 
   async restaurar(id: string, auditUser: AuditUser) {
     const turma = await this.prisma.turma.findUnique({ where: { id } });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
+    if (turma.status === TurmaStatus.CANCELADA) {
+      return this.mudarStatus(id, TurmaStatus.PREVISTA, auditUser);
+    }
+    if (turma.status === TurmaStatus.CONCLUIDA) {
+      throw new BadRequestException('Turma concluida nao pode ser restaurada; mantenha o historico ou crie nova turma.');
+    }
     if (turma.statusAtivo && !turma.excluido) throw new BadRequestException('A turma já está ativa.');
 
     try {
-      const result = await this.prisma.turma.update({ where: { id }, data: { statusAtivo: true, excluido: false } });
+      const statusAtivo = this.statusAtivoPorStatus(turma.status);
+      const result = await this.prisma.turma.update({ where: { id }, data: { statusAtivo, excluido: false } });
       this.auditService
         .registrar({
           entidade: 'Turma',
@@ -313,7 +308,7 @@ export class TurmasService {
           ip: auditUser.ip,
           userAgent: auditUser.userAgent,
           oldValue: { statusAtivo: false },
-          newValue: { statusAtivo: true },
+          newValue: { statusAtivo },
         })
         .catch((e) => this.logger.warn(e));
       return result;
@@ -368,6 +363,13 @@ export class TurmasService {
       },
     });
     if (!turma) throw new NotFoundException('Turma não encontrada.');
+
+    if (!STATUS_TURMA_ACEITA_MATRICULA.includes(turma.status)) {
+      throw new BadRequestException(
+        `Não é possível matricular alunos em turma com status ${turma.status}. ` +
+          'Somente turmas previstas ou em andamento aceitam novas matrículas.',
+      );
+    }
 
     const aluno = await this.prisma.aluno.findUnique({ where: { id: alunoId } });
     if (!aluno) throw new NotFoundException('Aluno não encontrado.');
@@ -550,7 +552,11 @@ export class TurmasService {
     let turmasComConflitoIds: string[] = [];
     if (gradeDestino.length > 0) {
       const turmasAtivas = await this.prisma.turma.findMany({
-        where: { excluido: false, statusAtivo: true, id: { not: turmaId } },
+        where: {
+          excluido: false,
+          status: { in: STATUS_TURMA_CONSIDERA_CONFLITO },
+          id: { not: turmaId },
+        },
         include: { gradeHoraria: true },
       });
 
@@ -575,7 +581,7 @@ export class TurmasService {
         ...(nome ? { nomeCompleto: { contains: nome, mode: 'insensitive' } } : {}),
         matriculasOficina: {
           none: {
-            status: 'ATIVA',
+            status: MatriculaStatus.ATIVA,
             turmaId: { in: turmasComConflitoIds },
           },
         },
@@ -629,12 +635,16 @@ export class TurmasService {
    * @param turmaIdExcluir  ID da própria turma (para ignorar caso de rematrícula)
    */
   private async validarColisaoAluno(alunoId: string, novosHorarios: HorarioGrade[], turmaIdExcluir: string) {
-    // Busca todas as turmas ativas do aluno com sua grade horária
+    // Busca matrículas ativas apenas em turmas que ainda podem gerar conflito acadêmico.
     const matriculasAtivas = await this.prisma.matriculaOficina.findMany({
       where: {
         alunoId,
-        status: 'ATIVA',
+        status: MatriculaStatus.ATIVA,
         turmaId: { not: turmaIdExcluir },
+        turma: {
+          excluido: false,
+          status: { in: STATUS_TURMA_CONSIDERA_CONFLITO },
+        },
       },
       include: {
         turma: { include: { gradeHoraria: true } },
@@ -667,8 +677,8 @@ export class TurmasService {
     const turmasDoProfessor = await this.prisma.turma.findMany({
       where: {
         professorId,
-        statusAtivo: true,
         excluido: false,
+        status: { in: STATUS_TURMA_CONSIDERA_CONFLITO },
         ...(turmaIdExcluir && { id: { not: turmaIdExcluir } }),
       },
       include: { gradeHoraria: true },
@@ -706,7 +716,7 @@ export class TurmasService {
   }
 
   private statusAtivoPorStatus(status: TurmaStatus): boolean {
-    return status === TurmaStatus.ANDAMENTO || status === TurmaStatus.PREVISTA;
+    return STATUS_TURMA_EM_OPERACAO.includes(status);
   }
 
   private statusMatriculaPorStatus(status: TurmaStatus): MatriculaStatus | null {

@@ -3,6 +3,7 @@ import {
   MatriculaStatus,
   MotivoEncerramentoMatricula,
   Role,
+  StatusFrequencia,
   TipoDeficiencia,
   TurmaStatus,
 } from '@prisma/client';
@@ -22,8 +23,10 @@ describe('RelatoriosService', () => {
     aluno: {
       count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([]),
+      groupBy: jest.fn().mockResolvedValue([]),
     },
     turma: {
+      count: jest.fn().mockResolvedValue(0),
       groupBy: jest.fn().mockResolvedValue([]),
       findMany: jest.fn().mockResolvedValue([]),
     },
@@ -38,10 +41,16 @@ describe('RelatoriosService', () => {
       findMany: jest.fn().mockResolvedValue([]),
     },
     atendimentoIndividual: {
+      count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([]),
+      groupBy: jest.fn().mockResolvedValue([]),
     },
     frequencia: {
       findMany: jest.fn().mockResolvedValue([]),
+      groupBy: jest.fn().mockResolvedValue([]),
+    },
+    certificadoEmitido: {
+      count: jest.fn().mockResolvedValue(0),
     },
     $transaction: jest.fn((operations: Array<Promise<unknown>>) => Promise.all(operations)),
   });
@@ -116,6 +125,179 @@ describe('RelatoriosService', () => {
       taxaConclusao: 50,
       taxaPermanencia: 50,
     });
+  });
+
+  it('busca opcoes de turma sob demanda sem carregar lista grande', async () => {
+    const { service, prisma } = criarService();
+    prisma.turma.findMany.mockResolvedValue([{ id: 'turma-1', nome: 'Braille Basico' }]);
+
+    const opcoes = await service.opcoesTurmas('bra');
+
+    expect(opcoes).toEqual([{ id: 'turma-1', label: 'Braille Basico' }]);
+    expect(prisma.turma.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          excluido: false,
+          nome: { contains: 'bra', mode: 'insensitive' },
+        },
+        select: { id: true, nome: true },
+        take: 20,
+      }),
+    );
+  });
+
+  it('nao consulta opcoes de alunos quando a busca e curta', async () => {
+    const { service, prisma } = criarService();
+
+    await expect(service.opcoesAlunos('a')).resolves.toEqual([]);
+
+    expect(prisma.aluno.findMany).not.toHaveBeenCalled();
+  });
+
+  it('busca opcoes de alunos ativos e inativos nao excluidos', async () => {
+    const { service, prisma } = criarService();
+    prisma.aluno.findMany.mockResolvedValue([{ id: 'aluno-1', nomeCompleto: 'Ana Silva', matricula: 'A001' }]);
+
+    const opcoes = await service.opcoesAlunos('ana');
+
+    expect(opcoes).toEqual([{ id: 'aluno-1', label: 'Ana Silva (A001)' }]);
+    expect(prisma.aluno.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          excluido: false,
+          OR: expect.arrayContaining([
+            { nomeCompleto: { contains: 'ana', mode: 'insensitive' } },
+            { matricula: { contains: 'ana', mode: 'insensitive' } },
+          ]),
+        }),
+        take: 20,
+      }),
+    );
+  });
+
+  it('busca cidades existentes por prefixo', async () => {
+    const { service, prisma } = criarService();
+    prisma.aluno.findMany.mockResolvedValue([{ cidade: 'Serra' }, { cidade: 'Serrana' }]);
+
+    const opcoes = await service.opcoesCidades('ser');
+
+    expect(opcoes).toEqual([
+      { id: 'Serra', label: 'Serra' },
+      { id: 'Serrana', label: 'Serrana' },
+    ]);
+    expect(prisma.aluno.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          excluido: false,
+          cidade: { startsWith: 'ser', mode: 'insensitive' },
+        },
+        distinct: ['cidade'],
+        select: { cidade: true },
+        take: 20,
+      }),
+    );
+  });
+
+  it('busca bairros existentes refinando pela cidade selecionada', async () => {
+    const { service, prisma } = criarService();
+    prisma.aluno.findMany.mockResolvedValue([{ bairro: 'Jardim Limoeiro' }]);
+
+    const opcoes = await service.opcoesBairros('jar', 'Serra');
+
+    expect(opcoes).toEqual([{ id: 'Jardim Limoeiro', label: 'Jardim Limoeiro' }]);
+    expect(prisma.aluno.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          excluido: false,
+          cidade: { equals: 'Serra', mode: 'insensitive' },
+          bairro: { startsWith: 'jar', mode: 'insensitive' },
+        },
+        distinct: ['bairro'],
+        select: { bairro: true },
+        take: 20,
+      }),
+    );
+  });
+
+  it('gera resumo leve de alunos com contagens sem carregar a lista completa', async () => {
+    const { service, prisma } = criarService();
+    prisma.aluno.count
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(6);
+
+    const resumo = await service.alunosResumo({}, authAdmin as never);
+
+    expect(resumo).toEqual({
+      totalCadastrados: 7,
+      ativos: 5,
+      inativos: 2,
+      comLaudo: 4,
+      semLaudo: 3,
+      precisamAcompanhante: 3,
+      lgpdAceito: 6,
+    });
+    expect(prisma.aluno.findMany).not.toHaveBeenCalled();
+  });
+
+  it('gera distribuicoes de alunos em rankings limitados', async () => {
+    const { service, prisma } = criarService();
+    prisma.aluno.groupBy
+      .mockResolvedValueOnce([{ tipoDeficiencia: TipoDeficiencia.CEGUEIRA_TOTAL, _count: { _all: 3 } }])
+      .mockResolvedValueOnce([{ cidade: 'Serra', _count: { _all: 5 } }])
+      .mockResolvedValueOnce([{ bairro: 'Jardim Limoeiro', _count: { _all: 4 } }])
+      .mockResolvedValueOnce([{ escolaridade: 'Ensino medio', _count: { _all: 2 } }])
+      .mockResolvedValueOnce([{ rendaFamiliar: '1 salario', _count: { _all: 1 } }]);
+
+    const distribuicoes = await service.alunosDistribuicoes({}, authAdmin as never);
+
+    expect(distribuicoes).toEqual({
+      porTipoDeficiencia: [{ label: TipoDeficiencia.CEGUEIRA_TOTAL, total: 3 }],
+      porCidadeTop10: [{ label: 'Serra', total: 5 }],
+      porBairroTop10: [{ label: 'Jardim Limoeiro', total: 4 }],
+      porEscolaridadeTop10: [{ label: 'Ensino medio', total: 2 }],
+      porRendaFamiliarTop10: [{ label: '1 salario', total: 1 }],
+    });
+    expect(prisma.aluno.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['cidade'],
+        take: 10,
+      }),
+    );
+  });
+
+  it('pagina a lista detalhada de alunos e limita o tamanho da pagina', async () => {
+    const { service, prisma } = criarService();
+    const aluno = {
+      id: 'aluno-1',
+      matricula: 'A001',
+      nomeCompleto: 'Ana Silva',
+      statusAtivo: true,
+    };
+    prisma.aluno.count.mockResolvedValueOnce(120);
+    prisma.aluno.findMany.mockResolvedValueOnce([aluno]);
+
+    const lista = await service.alunosLista({ page: '2', limit: '500' }, authAdmin as never);
+
+    expect(lista).toEqual({
+      data: [aluno],
+      meta: {
+        page: 2,
+        limit: 50,
+        total: 120,
+        lastPage: 3,
+      },
+    });
+    expect(prisma.aluno.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 50,
+        take: 50,
+        select: expect.not.objectContaining({ matriculasOficina: expect.anything() }),
+      }),
+    );
   });
 
   it('aplica filtro por periodo nas contagens consolidadas', async () => {
@@ -364,10 +546,179 @@ describe('RelatoriosService', () => {
     );
   });
 
+  it('gera consolidado institucional para PDF sem carregar listas detalhadas', async () => {
+    const { service, prisma } = criarService();
+    prisma.aluno.count
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1);
+    prisma.turma.groupBy.mockResolvedValueOnce([
+      { status: TurmaStatus.ANDAMENTO, _count: { _all: 2 } },
+      { status: TurmaStatus.CONCLUIDA, _count: { _all: 1 } },
+    ]);
+    prisma.aluno.groupBy
+      .mockResolvedValueOnce([{ tipoDeficiencia: TipoDeficiencia.CEGUEIRA_TOTAL, _count: { _all: 4 } }])
+      .mockResolvedValueOnce([{ cidade: 'Serra', _count: { _all: 6 } }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    prisma.matriculaOficina.groupBy
+      .mockResolvedValueOnce([
+        { status: MatriculaStatus.ATIVA, _count: { _all: 8 } },
+        { status: MatriculaStatus.CONCLUIDA, _count: { _all: 3 } },
+        { status: MatriculaStatus.EVADIDA, _count: { _all: 2 } },
+      ])
+      .mockResolvedValueOnce([
+        { status: MatriculaStatus.EVADIDA, _count: { _all: 2 } },
+        { status: MatriculaStatus.CANCELADA, _count: { _all: 1 } },
+      ])
+      .mockResolvedValueOnce([
+        { motivoEncerramento: MotivoEncerramentoMatricula.DIFICULDADE_TRANSPORTE, _count: { _all: 2 } },
+      ])
+      .mockResolvedValueOnce([{ turmaId: 'turma-1', _count: { _all: 2 } }]);
+    prisma.turma.findMany.mockResolvedValueOnce([{ id: 'turma-1', nome: 'Braille Basico' }]);
+    prisma.atendimentoIndividual.groupBy.mockResolvedValueOnce([
+      { tipoRegistro: 'ATENDIMENTO_REALIZADO', _count: { _all: 5 } },
+    ]);
+    prisma.frequencia.groupBy.mockResolvedValueOnce([
+      { status: StatusFrequencia.PRESENTE, _count: { _all: 9 } },
+      { status: StatusFrequencia.FALTA, _count: { _all: 1 } },
+    ]);
+
+    const relatorio = await service.gerarConsolidadoInstitucional({}, authAdmin as never);
+
+    expect(relatorio.alunos.porCidadeTop10).toEqual([{ label: 'Serra', total: 6 }]);
+    expect(relatorio.evasoes.porMotivoTop10).toEqual([
+      { label: MotivoEncerramentoMatricula.DIFICULDADE_TRANSPORTE, total: 2 },
+    ]);
+    expect(relatorio.evasoes.porTurmaTop10).toEqual([{ label: 'Braille Basico', total: 2 }]);
+    expect(relatorio.atendimentos.total).toBe(5);
+    expect(relatorio.frequencias).toEqual(
+      expect.objectContaining({
+        total: 10,
+        presentes: 9,
+        faltas: 1,
+        taxaPresenca: 90,
+      }),
+    );
+    expect(prisma.aluno.findMany).not.toHaveBeenCalled();
+    expect(prisma.atendimentoIndividual.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        distinct: ['alunoId'],
+        select: { alunoId: true },
+      }),
+    );
+    expect(prisma.frequencia.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        distinct: ['alunoId'],
+        select: { alunoId: true },
+      }),
+    );
+  });
+
+  it('identifica alunos com risco de evasao por faltas e baixa presenca', async () => {
+    const { service, prisma } = criarService();
+    prisma.matriculaOficina.findMany.mockResolvedValueOnce([
+      {
+        id: 'mat-1',
+        alunoId: 'aluno-1',
+        turmaId: 'turma-1',
+        aluno: {
+          id: 'aluno-1',
+          nomeCompleto: 'Ana Silva',
+          matricula: 'A001',
+          cidade: 'Serra',
+          bairro: 'Centro',
+        },
+        turma: {
+          id: 'turma-1',
+          nome: 'Braille Basico',
+          professor: { nome: 'Professora Ana' },
+        },
+      },
+    ]);
+    prisma.frequencia.findMany.mockResolvedValueOnce([
+      { alunoId: 'aluno-1', turmaId: 'turma-1', dataAula: new Date('2026-05-30'), status: StatusFrequencia.FALTA },
+      { alunoId: 'aluno-1', turmaId: 'turma-1', dataAula: new Date('2026-05-29'), status: StatusFrequencia.FALTA },
+      { alunoId: 'aluno-1', turmaId: 'turma-1', dataAula: new Date('2026-05-28'), status: StatusFrequencia.FALTA },
+      {
+        alunoId: 'aluno-1',
+        turmaId: 'turma-1',
+        dataAula: new Date('2026-05-20'),
+        status: StatusFrequencia.PRESENTE,
+      },
+    ]);
+    prisma.atendimentoIndividual.findMany.mockResolvedValueOnce([]);
+
+    const relatorio = await service.riscoEvasao({ dataFim: '2026-05-31' }, authAdmin as never);
+
+    expect(relatorio.total).toBe(1);
+    expect(relatorio.indicadores.alto).toBe(1);
+    expect(relatorio.indicadores.tresFaltasSeguidas).toBe(1);
+    expect(relatorio.indicadores.presencaAbaixo60).toBe(1);
+    expect(relatorio.data[0]).toEqual(
+      expect.objectContaining({
+        alunoId: 'aluno-1',
+        turma: 'Braille Basico',
+        faltasSeguidas: 3,
+        taxaPresenca: 25,
+        nivel: 'ALTO',
+      }),
+    );
+  });
+
+  it('gera impacto social com comparativo de periodo anterior', async () => {
+    const { service } = criarService();
+    const metricasAtuais = {
+      totalAlunosAtendidos: 10,
+      totalAtendimentosIndividuais: 12,
+      totalTurmasOfertadas: 4,
+      totalCertificadosEmitidos: 3,
+      totalAlunosDeficienciaVisualAtendidos: 9,
+      totalBairrosAlcancados: 6,
+      totalCidadesAlcancadas: 2,
+      taxaPermanencia: 80,
+      taxaConclusao: 50,
+    };
+    const metricasAnteriores = {
+      totalAlunosAtendidos: 8,
+      totalAtendimentosIndividuais: 10,
+      totalTurmasOfertadas: 4,
+      totalCertificadosEmitidos: 1,
+      totalAlunosDeficienciaVisualAtendidos: 8,
+      totalBairrosAlcancados: 3,
+      totalCidadesAlcancadas: 2,
+      taxaPermanencia: 70,
+      taxaConclusao: 40,
+    };
+    jest
+      .spyOn(service as any, 'calcularImpactoMetricas')
+      .mockResolvedValueOnce(metricasAtuais as never)
+      .mockResolvedValueOnce(metricasAnteriores as never);
+
+    const relatorio = await service.impactoSocial(
+      { dataInicio: '2026-05-01', dataFim: '2026-05-31' },
+      authAdmin as never,
+    );
+
+    expect(relatorio.metricas.totalAlunosAtendidos).toBe(10);
+    expect(relatorio.periodo.anterior).toEqual({ dataInicio: '2026-03-31', dataFim: '2026-04-30' });
+    expect(relatorio.comparativo.totalAlunosAtendidos).toEqual({
+      atual: 10,
+      anterior: 8,
+      variacaoPercentual: 25,
+      direcao: 'SUBIU',
+    });
+    expect(relatorio.comparativo.taxaConclusao.variacaoPercentual).toBe(25);
+  });
+
   it('exporta PDF institucional com filtros publicos para COMUNICACAO e registra auditoria', async () => {
     const { service, pdfExporter, auditLogService } = criarService();
     const relatorio = { emitidoEm: new Date().toISOString(), filtros: { statusAluno: 'TODOS' } };
-    const gerarConsolidado = jest.spyOn(service, 'gerarConsolidado').mockResolvedValue(relatorio as never);
+    const gerarConsolidadoInstitucional = jest
+      .spyOn(service, 'gerarConsolidadoInstitucional')
+      .mockResolvedValue(relatorio as never);
 
     const buffer = await service.exportarPdf(
       {
@@ -383,7 +734,7 @@ describe('RelatoriosService', () => {
     );
 
     expect(buffer).toEqual(Buffer.from('%PDF-test'));
-    expect(gerarConsolidado).toHaveBeenCalledWith(
+    expect(gerarConsolidadoInstitucional).toHaveBeenCalledWith(
       { dataInicio: '2026-05-01', dataFim: '2026-05-31', statusAluno: 'TODOS' },
       { sub: 'com-1', nome: 'Comunicacao', role: Role.COMUNICACAO },
     );
@@ -409,11 +760,12 @@ describe('RelatoriosService', () => {
     const { service, xlsxExporter, auditLogService } = criarService();
     const filtro = { turmaId: 'turma-1', motivoEncerramento: MotivoEncerramentoMatricula.FALTA_DE_CONTATO };
     const relatorio = { emitidoEm: new Date().toISOString(), filtros: filtro };
-    jest.spyOn(service, 'gerarConsolidado').mockResolvedValue(relatorio as never);
+    const gerarConsolidado = jest.spyOn(service, 'gerarConsolidado').mockResolvedValue(relatorio as never);
 
     const buffer = await service.exportarXlsx(filtro, authAdmin as never, auditUser as never);
 
     expect(buffer).toEqual(Buffer.from('xlsx-test'));
+    expect(gerarConsolidado).toHaveBeenCalledWith(filtro, authAdmin, { limiteDetalhes: 5000 });
     expect(xlsxExporter.gerar).toHaveBeenCalledWith(relatorio);
     expect(auditLogService.registrar).toHaveBeenCalledWith(
       expect.objectContaining({

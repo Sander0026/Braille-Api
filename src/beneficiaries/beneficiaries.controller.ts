@@ -22,6 +22,7 @@ import * as ExcelJS from 'exceljs';
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { ImportBeneficiariesBatchDto } from './dto/import-beneficiaries-batch.dto';
+import { InativarAlunoDto } from './dto/inativar-aluno.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
 import { AuthGuard } from '../auth/auth.guard';
@@ -177,10 +178,12 @@ export class BeneficiariesController {
   @Roles('ADMIN', 'SECRETARIA')
   @ApiOperation({ summary: 'Inativar um aluno (Soft Delete)' })
   @ApiParam({ name: 'id', description: 'UUID do aluno' })
+  @ApiBody({ type: InativarAlunoDto })
+  @ApiResponse({ status: 400, description: 'Motivo de inativação obrigatório ou payload inválido.' })
   @ApiResponse({ status: 200, description: 'Aluno inativado.' })
   @ApiResponse({ status: 404, description: 'Aluno não encontrado.' })
-  remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.beneficiariesService.remove(id, getAuditUser(req));
+  remove(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: InativarAlunoDto) {
+    return this.beneficiariesService.remove(id, dto, getAuditUser(req));
   }
 
   @Post(':id/reactivate')

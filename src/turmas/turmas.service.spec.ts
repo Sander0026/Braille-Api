@@ -23,20 +23,35 @@ describe('TurmasService', () => {
     const prisma = {
       user: {
         findMany: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ id: 'prof-1', role: Role.PROFESSOR }),
+      },
+      aluno: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
       },
       turma: {
+        create: jest.fn().mockResolvedValue({
+          id: 'turma-nova',
+          nome: 'Braille Basico',
+          status: TurmaStatus.PREVISTA,
+          statusAtivo: true,
+        }),
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue({
           id: 'turma-1',
           nome: 'Braille Basico',
           status: TurmaStatus.ANDAMENTO,
+          statusAtivo: true,
+          excluido: false,
           professorId: 'prof-1',
           professorAuxiliarId: null,
         }),
       },
       matriculaOficina: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn(),
         update: jest.fn(),
       },
       $transaction: jest.fn((callback) => callback(tx)),
@@ -62,6 +77,28 @@ describe('TurmasService', () => {
           role: Role.PROFESSOR,
           statusAtivo: true,
           excluido: false,
+        }),
+      }),
+    );
+  });
+
+  it('deriva statusAtivo do status academico ao criar turma', async () => {
+    const { service, prisma } = criarService();
+
+    await service.create(
+      {
+        nome: 'Turma Cancelada',
+        professorId: 'prof-1',
+        status: TurmaStatus.CANCELADA,
+      } as never,
+      auditUser as never,
+    );
+
+    expect(prisma.turma.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: TurmaStatus.CANCELADA,
+          statusAtivo: false,
         }),
       }),
     );
@@ -149,6 +186,81 @@ describe('TurmasService', () => {
     );
   });
 
+  it('arquiva turma em operacao mudando status academico para cancelada', async () => {
+    const { service, tx } = criarService();
+    tx.turma.update.mockResolvedValueOnce({
+      id: 'turma-1',
+      nome: 'Braille Basico',
+      status: TurmaStatus.CANCELADA,
+      statusAtivo: false,
+    });
+
+    const result = await service.arquivar('turma-1', auditUser as never);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: TurmaStatus.CANCELADA,
+        statusAtivo: false,
+      }),
+    );
+    expect(tx.turma.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: TurmaStatus.CANCELADA, statusAtivo: false },
+      }),
+    );
+  });
+
+  it('restaura turma cancelada reabrindo como prevista', async () => {
+    const { service, prisma, tx } = criarService();
+    prisma.turma.findUnique
+      .mockResolvedValueOnce({
+        id: 'turma-1',
+        nome: 'Braille Basico',
+        status: TurmaStatus.CANCELADA,
+        statusAtivo: false,
+        excluido: false,
+      })
+      .mockResolvedValueOnce({
+        id: 'turma-1',
+        nome: 'Braille Basico',
+        status: TurmaStatus.CANCELADA,
+      });
+    tx.turma.update.mockResolvedValueOnce({
+      id: 'turma-1',
+      nome: 'Braille Basico',
+      status: TurmaStatus.PREVISTA,
+      statusAtivo: true,
+    });
+
+    const result = await service.restaurar('turma-1', auditUser as never);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: TurmaStatus.PREVISTA,
+        statusAtivo: true,
+      }),
+    );
+    expect(tx.turma.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: TurmaStatus.PREVISTA, statusAtivo: true },
+      }),
+    );
+  });
+
+  it('bloqueia restauracao de turma concluida', async () => {
+    const { service, prisma } = criarService();
+    prisma.turma.findUnique.mockResolvedValueOnce({
+      id: 'turma-1',
+      nome: 'Braille Basico',
+      status: TurmaStatus.CONCLUIDA,
+      statusAtivo: false,
+      excluido: false,
+    });
+
+    await expect(service.restaurar('turma-1', auditUser as never)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('bloqueia atalho que tenta furar transicao invalida', async () => {
     const { service, prisma } = criarService();
     prisma.turma.findUnique.mockResolvedValueOnce({
@@ -159,6 +271,148 @@ describe('TurmasService', () => {
 
     await expect(service.cancelar('turma-1', auditUser as never)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([TurmaStatus.CONCLUIDA, TurmaStatus.CANCELADA])(
+    'bloqueia matricula de aluno em turma com status %s',
+    async (status) => {
+      const { service, prisma } = criarService();
+      prisma.turma.findUnique.mockResolvedValueOnce({
+        id: 'turma-1',
+        nome: 'Braille Basico',
+        status,
+        capacidadeMaxima: 10,
+        gradeHoraria: [],
+        _count: { matriculasOficina: 0 },
+      });
+
+      await expect(service.addAluno('turma-1', 'aluno-1', auditUser as never)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(prisma.aluno.findUnique).not.toHaveBeenCalled();
+      expect(prisma.matriculaOficina.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('valida conflito de professor apenas contra turmas previstas ou em andamento', async () => {
+    const { service, prisma } = criarService();
+    prisma.turma.findUnique.mockResolvedValueOnce({
+      id: 'turma-1',
+      nome: 'Braille Basico',
+      status: TurmaStatus.ANDAMENTO,
+      professorId: 'prof-1',
+      professorAuxiliarId: null,
+      gradeHoraria: [],
+      dataInicio: null,
+      dataFim: null,
+      cargaHoraria: null,
+    });
+    prisma.turma.findMany.mockResolvedValueOnce([]);
+
+    await service.update(
+      'turma-1',
+      {
+        professorId: 'prof-1',
+        gradeHoraria: [{ dia: 'SEG', horaInicio: 480, horaFim: 660 }],
+      } as never,
+      auditUser as never,
+    );
+
+    expect(prisma.turma.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          professorId: 'prof-1',
+          excluido: false,
+          status: { in: [TurmaStatus.PREVISTA, TurmaStatus.ANDAMENTO] },
+          id: { not: 'turma-1' },
+        },
+        include: { gradeHoraria: true },
+      }),
+    );
+    expect(prisma.turma.findMany).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        where: expect.objectContaining({ statusAtivo: true }),
+      }),
+    );
+  });
+
+  it('valida conflito de aluno apenas contra matriculas ativas em turmas previstas ou em andamento', async () => {
+    const { service, prisma } = criarService();
+    prisma.turma.findUnique.mockResolvedValueOnce({
+      id: 'turma-1',
+      nome: 'Braille Basico',
+      status: TurmaStatus.ANDAMENTO,
+      capacidadeMaxima: null,
+      gradeHoraria: [{ dia: 'SEG', horaInicio: 480, horaFim: 660 }],
+      _count: { matriculasOficina: 0 },
+    });
+    prisma.aluno.findUnique.mockResolvedValueOnce({ id: 'aluno-1', nomeCompleto: 'Ana Silva' });
+    prisma.matriculaOficina.findFirst.mockResolvedValueOnce(null);
+    prisma.matriculaOficina.findMany.mockResolvedValueOnce([]);
+    prisma.matriculaOficina.create.mockResolvedValueOnce({
+      id: 'mat-1',
+      aluno: { id: 'aluno-1', nomeCompleto: 'Ana Silva', matricula: 'A001' },
+    });
+
+    await service.addAluno('turma-1', 'aluno-1', auditUser as never);
+
+    expect(prisma.matriculaOficina.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          alunoId: 'aluno-1',
+          status: MatriculaStatus.ATIVA,
+          turmaId: { not: 'turma-1' },
+          turma: {
+            excluido: false,
+            status: { in: [TurmaStatus.PREVISTA, TurmaStatus.ANDAMENTO] },
+          },
+        },
+        include: {
+          turma: { include: { gradeHoraria: true } },
+        },
+      }),
+    );
+  });
+
+  it('lista alunos disponiveis desconsiderando conflitos de turmas concluidas ou canceladas', async () => {
+    const { service, prisma } = criarService();
+    prisma.turma.findUnique.mockResolvedValueOnce({
+      id: 'turma-1',
+      gradeHoraria: [{ dia: 'SEG', horaInicio: 480, horaFim: 660 }],
+    });
+    prisma.turma.findMany.mockResolvedValueOnce([]);
+    prisma.aluno.findMany.mockResolvedValueOnce([]);
+
+    await service.findAlunosDisponiveis('turma-1');
+
+    expect(prisma.turma.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          excluido: false,
+          status: { in: [TurmaStatus.PREVISTA, TurmaStatus.ANDAMENTO] },
+          id: { not: 'turma-1' },
+        },
+        include: { gradeHoraria: true },
+      }),
+    );
+    expect(prisma.turma.findMany).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        where: expect.objectContaining({ statusAtivo: true }),
+      }),
+    );
+    expect(prisma.aluno.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          matriculasOficina: {
+            none: {
+              status: MatriculaStatus.ATIVA,
+              turmaId: { in: ['turma-1'] },
+            },
+          },
+        }),
+      }),
+    );
   });
 
   it('encerra matricula ativa com status, motivo e auditoria', async () => {

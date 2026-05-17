@@ -46,6 +46,19 @@ enum MotivoEncerramentoMatricula {
   OUTRO
 }
 
+enum MotivoInativacaoAluno {
+  EVASAO_INSTITUCIONAL
+  MUDANCA_DE_CIDADE
+  PROBLEMA_SAUDE
+  PROBLEMA_FAMILIAR
+  DIFICULDADE_TRANSPORTE
+  FALECIMENTO
+  SOLICITACAO_DO_ALUNO
+  FALTA_DE_CONTATO
+  CADASTRO_DUPLICADO
+  OUTRO
+}
+
 enum DiaSemana {
   SEG
   TER
@@ -325,10 +338,17 @@ model Aluno {
   prefAcessibilidade PreferenciaAcessibilidade?
 
   // Controles do sistema
-  statusAtivo  Boolean  @default(true)
-  excluido     Boolean  @default(false)
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  statusAtivo          Boolean                 @default(true)
+  excluido             Boolean                 @default(false)
+  motivoInativacao     MotivoInativacaoAluno?
+  observacaoInativacao String?
+  inativadoEm          DateTime?
+  inativadoPorId       String?
+  reativadoEm          DateTime?
+  reativadoPorId       String?
+  motivoReativacao     String?
+  criadoEm             DateTime                @default(now())
+  atualizadoEm         DateTime                @updatedAt
 
   // Relacionamentos
   matriculasOficina    MatriculaOficina[]
@@ -340,6 +360,8 @@ model Aluno {
   atendimentosIndividuais    AtendimentoIndividual[]
 
   @@index([statusAtivo, excluido]) // Listagem de alunos ativos/inativos
+  @@index([motivoInativacao])
+  @@index([inativadoPorId])
   @@index([nomeCompleto]) // Busca por nome
   @@index([matricula]) // Busca por número de matrícula
   @@index([cpf]) // Busca numérica frequente
@@ -353,7 +375,7 @@ model Turma {
   descricao        String?
   horario          String? // Campo legado textual; a grade oficial fica em GradeHoraria
   capacidadeMaxima Int?
-  statusAtivo      Boolean     @default(true)
+  statusAtivo      Boolean     @default(true) // Derivado do status: PREVISTA/ANDAMENTO=true; CONCLUIDA/CANCELADA=false
   excluido         Boolean     @default(false)
   status           TurmaStatus @default(PREVISTA) // Status acadêmico da turma
   criadoEm         DateTime    @default(now())
