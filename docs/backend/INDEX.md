@@ -29,6 +29,7 @@
 | Turmas | [modulos/turmas.md](modulos/turmas.md) | 🔴 Alta |
 | Frequências | [modulos/frequencias.md](modulos/frequencias.md) | 🔴 Alta |
 | Atendimentos Individuais | [modulos/atendimentos-individuais.md](modulos/atendimentos-individuais.md) | 🔴 Alta |
+| Relatorios | [modulos/relatorios.md](modulos/relatorios.md) | 🔴 Alta |
 | Usuários (Funcionários) | [modulos/users.md](modulos/users.md) | 🔴 Alta |
 | Audit Log | [modulos/audit-log.md](modulos/audit-log.md) | 🔴 Alta |
 | Upload (Cloudinary) | [modulos/upload.md](modulos/upload.md) | 🟡 Importante |
