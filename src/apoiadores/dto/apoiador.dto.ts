@@ -12,6 +12,7 @@ import {
 import { Type, Transform } from 'class-transformer';
 import { PartialType, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TipoApoiador } from '@prisma/client';
+import { IsCpfOuCnpj } from '../../common/validators/documento.validator';
 
 // ── Helpers de Sanitização ───────────────────────────────────────────────────
 
@@ -112,6 +113,7 @@ export class CreateApoiadorDto {
   @IsString()
   @MaxLength(18, { message: 'cpfCnpj deve ter no máximo 18 caracteres.' })
   @Transform(sanitizeString)
+  @IsCpfOuCnpj({ message: 'Informe um CPF ou CNPJ valido.' })
   cpfCnpj?: string;
 
   @ApiPropertyOptional({ description: 'Nome da pessoa de contato na organização (máx. 150 caracteres)', maxLength: 150, example: 'João da Silva' })

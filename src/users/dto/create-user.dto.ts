@@ -1,6 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsString, IsOptional, IsEnum, IsNotEmpty } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { Role } from '@prisma/client';
+import { IsCpf } from '../../common/validators/documento.validator';
+
+const somenteDigitos = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.replace(/\D/g, '') : value;
 
 /**
  * DTO de criação de Usuário de Sistema (Staff).
@@ -17,6 +22,8 @@ export class CreateUserDto {
   @ApiProperty({ description: 'CPF do funcionário (único, sem formatação. Ex: 12345678901)' })
   @IsString()
   @IsNotEmpty()
+  @IsCpf({ message: 'Informe um CPF valido.' })
+  @Transform(somenteDigitos)
   cpf: string;
 
   @ApiPropertyOptional({ enum: Role, description: 'Perfil de acesso' })
