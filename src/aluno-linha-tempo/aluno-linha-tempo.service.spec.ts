@@ -45,7 +45,7 @@ describe('AlunoLinhaTempoService', () => {
   it('retorna resumo com totais e ultimas datas por grupo', async () => {
     const { prisma, service } = criarService();
     prisma.aluno.findFirst.mockResolvedValue({ id: 'aluno-1' });
-    prisma.eventoLinhaTempoAluno.count.mockResolvedValueOnce(1).mockResolvedValueOnce(4);
+    prisma.eventoLinhaTempoAluno.count.mockResolvedValue(4);
     prisma.eventoLinhaTempoAluno.findFirst
       .mockResolvedValueOnce({ dataEvento: new Date('2026-05-10T00:00:00.000Z') })
       .mockResolvedValueOnce({ dataEvento: new Date('2026-05-11T00:00:00.000Z') })

@@ -8,8 +8,9 @@ A linha do tempo do aluno registra fatos institucionais relevantes em uma tabela
 `EventoLinhaTempoAluno`.
 
 Desde maio de 2026, a timeline nao e mais montada dinamicamente a partir de varias tabelas no
-momento da leitura. Os eventos passam a ser materializados quando os modulos executam suas acoes e,
-para dados antigos, pelo script de backfill.
+momento da leitura. Os eventos passam a ser materializados quando os modulos executam suas acoes.
+Para dados antigos, o backfill existe apenas como script manual e nao roda automaticamente em
+consultas.
 
 Objetivos:
 
@@ -199,6 +200,10 @@ npm run timeline:backfill -- --alunoId=<uuid>
 O script consulta dados historicos, grava eventos via `EventoLinhaTempoService` e usa `upsert` por
 `chaveEvento`, portanto pode ser repetido sem duplicar eventos. Em bases grandes pode demorar e
 imprime resultado ao final.
+
+Importante: o backend nao dispara backfill ao abrir a tela ou consultar resumo da linha do tempo.
+Em bancos de teste ou planos pequenos, deixe o script sem executar e a timeline exibira apenas
+eventos novos gerados apos a implantacao.
 
 ---
 

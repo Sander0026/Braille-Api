@@ -13,7 +13,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LinhaTempoAlunoItem, LinhaTempoAlunoResumo } from './aluno-linha-tempo.types';
 import { CreateEventoLinhaTempoManualDto } from './dto/create-evento-linha-tempo-manual.dto';
 import { QueryLinhaTempoAlunoDto } from './dto/query-linha-tempo-aluno.dto';
-import { LinhaTempoBackfillService } from './linha-tempo-backfill.service';
 
 type Periodo = {
   inicio?: Date;
@@ -48,10 +47,7 @@ const TIPOS_ACAO_RISCO = [
 
 @Injectable()
 export class AlunoLinhaTempoService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly backfillService?: LinhaTempoBackfillService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findByAluno(alunoId: string, query: QueryLinhaTempoAlunoDto, user?: AuthenticatedUser) {
     const { page, limit, skip } = this.normalizarPaginacao(query.page, query.limit);
@@ -65,8 +61,6 @@ export class AlunoLinhaTempoService {
 
     if (!aluno) throw new NotFoundException('Aluno nao encontrado.');
     await this.garantirPermissao(alunoId, user);
-
-    await this.garantirEventosPersistidos(alunoId);
 
     const where: Prisma.EventoLinhaTempoAlunoWhereInput = {
       alunoId,
@@ -100,8 +94,6 @@ export class AlunoLinhaTempoService {
   async resumo(alunoId: string, user?: AuthenticatedUser): Promise<LinhaTempoAlunoResumo> {
     await this.buscarAlunoOuFalhar(alunoId);
     await this.garantirPermissao(alunoId, user);
-    await this.garantirEventosPersistidos(alunoId);
-
     const whereBase: Prisma.EventoLinhaTempoAlunoWhereInput = {
       alunoId,
       ...this.filtroPermissao(user),
@@ -249,12 +241,6 @@ export class AlunoLinhaTempoService {
 
     if (!turma) throw new NotFoundException('Turma nao encontrada para este aluno.');
     return turma;
-  }
-
-  private async garantirEventosPersistidos(alunoId: string): Promise<void> {
-    const totalAluno = await this.prisma.eventoLinhaTempoAluno.count({ where: { alunoId } });
-    if (totalAluno > 0) return;
-    await this.backfillService?.backfillAluno(alunoId);
   }
 
   private filtroPermissao(user?: AuthenticatedUser): Prisma.EventoLinhaTempoAlunoWhereInput {
