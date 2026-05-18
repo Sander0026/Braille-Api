@@ -5,8 +5,9 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { CreateAtestadoDto } from './dto/create-atestado.dto';
 import { UpdateAtestadoDto } from './dto/update-atestado.dto';
-import { StatusFrequencia, Aluno, AuditAcao } from '@prisma/client';
+import { StatusFrequencia, Aluno, AuditAcao, VisibilidadeEventoLinhaTempo } from '@prisma/client';
 import { ApiResponse } from '../common/dto/api-response.dto';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
 // ── Select de Frequência Vinculada ─────────────────────────────────────────────
 /** Select mínimo reutilizado nas queries de frequências vinculadas ao atestado. */
@@ -27,6 +28,7 @@ export class AtestadosService {
     private readonly prisma: PrismaService,
     private readonly uploadService: UploadService,
     private readonly auditService: AuditLogService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   // ── Métodos Públicos ────────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ export class AtestadosService {
     this.validarIntervaloData(inicio, fim);
 
     // $transaction garante ACID: se updateMany falhar, o create é revertido
-    const [atestado, frequenciasAtualizadas] = await this.prisma.$transaction(async (tx) => {
+    const [atestado, frequenciasAtualizadas, frequenciasJustificadas] = await this.prisma.$transaction(async (tx) => {
       const novoAtestado = await tx.atestado.create({
         data: {
           alunoId,
@@ -85,6 +87,22 @@ export class AtestadosService {
           motivo: dto.motivo,
           arquivoUrl: dto.arquivoUrl,
           registradoPorId: auditUser.sub,
+        },
+      });
+
+      const faltasParaJustificar = await tx.frequencia.findMany({
+        where: {
+          alunoId,
+          dataAula: { gte: inicio, lte: fim },
+          status: StatusFrequencia.FALTA,
+        },
+        select: {
+          id: true,
+          alunoId: true,
+          turmaId: true,
+          dataAula: true,
+          fechado: true,
+          turma: { select: { nome: true, professor: { select: { nome: true } } } },
         },
       });
 
@@ -100,7 +118,7 @@ export class AtestadosService {
         },
       });
 
-      return [novoAtestado, resultado] as const;
+      return [novoAtestado, resultado, faltasParaJustificar] as const;
     });
 
     this.registrarAuditoria({
@@ -110,6 +128,50 @@ export class AtestadosService {
       auditUser,
       newValue: { atestado, faltasJustificadas: frequenciasAtualizadas.count },
     });
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId,
+      usuarioId: auditUser.sub,
+      tipo: 'ATESTADO',
+      origem: 'ATESTADO',
+      origemId: atestado.id,
+      chaveEvento: `ATESTADO:${atestado.id}:CRIADO`,
+      dataEvento: atestado.criadoEm,
+      titulo: 'Atestado registrado',
+      descricao: `Periodo: ${this.formatarDataCurta(atestado.dataInicio)} a ${this.formatarDataCurta(atestado.dataFim)}. Motivo: ${atestado.motivo}.`,
+      usuarioNomeSnapshot: auditUser.nome,
+      metadata: {
+        dataInicio: atestado.dataInicio.toISOString(),
+        dataFim: atestado.dataFim.toISOString(),
+        faltasJustificadas: frequenciasAtualizadas.count,
+      },
+      visibilidade: VisibilidadeEventoLinhaTempo.RESTRITA,
+      sensivel: true,
+    });
+
+    for (const frequencia of frequenciasJustificadas) {
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: frequencia.alunoId,
+        turmaId: frequencia.turmaId,
+        usuarioId: auditUser.sub,
+        tipo: 'FREQUENCIA_FALTA_JUSTIFICADA',
+        origem: 'FREQUENCIA',
+        origemId: frequencia.id,
+        chaveEvento: `FREQUENCIA:${frequencia.id}:STATUS`,
+        dataEvento: frequencia.dataAula,
+        titulo: 'Falta justificada',
+        descricao: `Falta justificada por atestado na turma ${frequencia.turma.nome}.`,
+        turmaNomeSnapshot: frequencia.turma.nome,
+        professorNomeSnapshot: frequencia.turma.professor?.nome,
+        usuarioNomeSnapshot: auditUser.nome,
+        metadata: {
+          status: StatusFrequencia.FALTA_JUSTIFICADA,
+          fechado: frequencia.fechado,
+          justificadaPorAtestado: true,
+          atestadoId: atestado.id,
+        },
+      });
+    }
 
     return new ApiResponse(
       true,
@@ -284,5 +346,9 @@ export class AtestadosService {
     if (fim < inicio) {
       throw new BadRequestException('A data de fim não pode ser anterior à data de início.');
     }
+  }
+
+  private formatarDataCurta(date: Date): string {
+    return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
   }
 }

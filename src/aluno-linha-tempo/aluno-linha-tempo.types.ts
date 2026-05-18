@@ -1,22 +1,6 @@
-export type TipoEventoLinhaTempoAluno =
-  | 'CADASTRO'
-  | 'ATUALIZACAO_CADASTRO'
-  | 'MATRICULA_TURMA'
-  | 'ENCERRAMENTO_MATRICULA'
-  | 'FREQUENCIA_PRESENTE'
-  | 'FREQUENCIA_FALTA'
-  | 'FREQUENCIA_FALTA_JUSTIFICADA'
-  | 'ATENDIMENTO_INDIVIDUAL'
-  | 'FALTA_ATENDIMENTO'
-  | 'ATESTADO'
-  | 'LAUDO'
-  | 'CERTIFICADO'
-  | 'PDI_CRIADO'
-  | 'PDI_META_ATUALIZADA'
-  | 'PDI_EVOLUCAO'
-  | 'ACAO_RISCO_EVASAO'
-  | 'INATIVACAO'
-  | 'REATIVACAO';
+import type { TipoEventoLinhaTempoAluno } from '@prisma/client';
+
+export type { TipoEventoLinhaTempoAluno } from '@prisma/client';
 
 export interface LinhaTempoAlunoItem {
   id: string;
@@ -31,4 +15,12 @@ export interface LinhaTempoAlunoItem {
   professorNome?: string;
   usuarioNome?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface LinhaTempoAlunoResumo {
+  totalEventos: number;
+  ultimaFrequencia?: string;
+  ultimoAtendimento?: string;
+  ultimoPdi?: string;
+  ultimaAcaoRisco?: string;
 }

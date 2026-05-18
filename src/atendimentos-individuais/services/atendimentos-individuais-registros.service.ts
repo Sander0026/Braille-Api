@@ -15,6 +15,7 @@ import {
   AtendimentosIndividuaisSanitizerService,
   AtendimentoIndividualResponse,
 } from './atendimentos-individuais-sanitizer.service';
+import { EventoLinhaTempoService } from '../../aluno-linha-tempo/evento-linha-tempo.service';
 
 @Injectable()
 export class AtendimentosIndividuaisRegistrosService {
@@ -23,6 +24,7 @@ export class AtendimentosIndividuaisRegistrosService {
     private readonly policy: AtendimentosIndividuaisPolicy,
     private readonly sanitizer: AtendimentosIndividuaisSanitizerService,
     private readonly audit: AtendimentosIndividuaisAuditService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   async criar(
@@ -69,6 +71,8 @@ export class AtendimentosIndividuaisRegistrosService {
       tipoRegistro: atendimento.tipoRegistro,
       dataAtendimento: atendimento.dataAtendimento,
     });
+
+    await this.registrarEventoLinhaTempo(atendimento, acompanhamento.assuntoAtual, auditUser);
 
     return this.sanitizer.sanitizarAtendimento(atendimento);
   }
@@ -158,6 +162,8 @@ export class AtendimentosIndividuaisRegistrosService {
       campos: Object.keys(dto),
     });
 
+    await this.registrarEventoLinhaTempo(atualizado, atendimento.acompanhamento.assuntoAtual, auditUser);
+
     return this.sanitizer.sanitizarAtendimento(atualizado);
   }
 
@@ -171,6 +177,58 @@ export class AtendimentosIndividuaisRegistrosService {
     if (!acompanhamento) throw new NotFoundException('Acompanhamento individual nao encontrado.');
     this.policy.assertCanView(authUser, acompanhamento);
     return acompanhamento;
+  }
+
+  private async registrarEventoLinhaTempo(
+    atendimento: {
+      id: string;
+      alunoId: string;
+      professorId: string;
+      dataAtendimento: Date;
+      tipoRegistro: TipoRegistroAtendimentoIndividual;
+      assuntoDoDia: string | null;
+      evolucao: string | null;
+      observacao: string | null;
+      modalidade: string | null;
+      duracaoMinutos: number | null;
+      acompanhamentoId: string;
+    },
+    assuntoAtual: string,
+    auditUser: AuditUser,
+  ): Promise<void> {
+    const falta = atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA
+      || atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_NAO_JUSTIFICADA
+      || atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.CANCELADO;
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: atendimento.alunoId,
+      usuarioId: auditUser.sub,
+      tipo: falta ? 'FALTA_ATENDIMENTO' : 'ATENDIMENTO_INDIVIDUAL',
+      origem: 'ATENDIMENTO_INDIVIDUAL',
+      origemId: atendimento.id,
+      chaveEvento: `ATENDIMENTO_INDIVIDUAL:${atendimento.id}:REGISTRO`,
+      dataEvento: atendimento.dataAtendimento,
+      titulo: this.tituloEventoAtendimento(atendimento.tipoRegistro),
+      descricao: atendimento.assuntoDoDia || atendimento.evolucao || atendimento.observacao || assuntoAtual,
+      usuarioNomeSnapshot: auditUser.nome,
+      metadata: {
+        tipoRegistro: atendimento.tipoRegistro,
+        modalidade: atendimento.modalidade,
+        duracaoMinutos: atendimento.duracaoMinutos,
+        acompanhamentoId: atendimento.acompanhamentoId,
+        professorId: atendimento.professorId,
+      },
+    });
+  }
+
+  private tituloEventoAtendimento(tipoRegistro: TipoRegistroAtendimentoIndividual): string {
+    if (tipoRegistro === TipoRegistroAtendimentoIndividual.ATENDIMENTO_REALIZADO) {
+      return 'Atendimento individual realizado';
+    }
+    if (tipoRegistro === TipoRegistroAtendimentoIndividual.CANCELADO) {
+      return 'Atendimento individual cancelado';
+    }
+    return 'Falta em atendimento individual';
   }
 
   private validarRegraAtendimento(dto: CriarAtendimentoIndividualDto): void {

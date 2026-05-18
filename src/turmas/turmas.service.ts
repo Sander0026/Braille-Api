@@ -15,6 +15,7 @@ import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { AuthenticatedUser } from '../common/interfaces/authenticated-request.interface';
 import { calcularCargaHorariaTotal } from '../common/helpers/data.helper';
 import { EncerrarMatriculaDto, STATUS_ENCERRAMENTO_MATRICULA } from './dto/encerrar-matricula.dto';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
 // Transições permitidas de status
 const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
@@ -53,6 +54,7 @@ export class TurmasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   async create(createTurmaDto: CreateTurmaDto, auditUser: AuditUser) {
@@ -209,6 +211,13 @@ export class TurmasService {
     const statusMatricula = novoStatusTurma ? this.statusMatriculaPorStatus(novoStatusTurma) : null;
     const motivoEncerramento = novoStatusTurma ? this.motivoEncerramentoPorStatusTurma(novoStatusTurma) : null;
     const statusAtivoResolvido = novoStatusTurma ? this.statusAtivoPorStatus(novoStatusTurma) : undefined;
+    const encerradoEmLote = statusMatricula ? new Date() : null;
+    const matriculasParaLinhaTempo = statusMatricula
+      ? await this.prisma.matriculaOficina.findMany({
+          where: { turmaId: id, status: MatriculaStatus.ATIVA },
+          select: { id: true, alunoId: true, turmaId: true },
+        })
+      : [];
 
     try {
       const [turmaAtualizada] = await this.prisma.$transaction(async (tx) => {
@@ -235,7 +244,7 @@ export class TurmasService {
         });
 
         if (statusMatricula) {
-          const encerradoEm = new Date();
+          const encerradoEm = encerradoEmLote ?? new Date();
           await tx.matriculaOficina.updateMany({
             where: { turmaId: id, status: MatriculaStatus.ATIVA },
             data: {
@@ -265,6 +274,31 @@ export class TurmasService {
           newValue: turmaAtualizada,
         })
         .catch((e) => this.logger.warn(`Failure auditing Turma Update: ${e.message}`));
+
+      if (statusMatricula && encerradoEmLote) {
+        for (const matricula of matriculasParaLinhaTempo) {
+          await this.eventoLinhaTempo?.registrarEvento({
+            alunoId: matricula.alunoId,
+            turmaId: matricula.turmaId,
+            usuarioId: auditUser.sub,
+            tipo: 'ENCERRAMENTO_MATRICULA',
+            origem: 'MATRICULA_OFICINA',
+            origemId: matricula.id,
+            chaveEvento: `MATRICULA_OFICINA:${matricula.id}:ENCERRAMENTO_MATRICULA`,
+            dataEvento: encerradoEmLote,
+            titulo: `Matricula ${statusMatricula.toLowerCase()}`,
+            descricao: `Motivo: ${motivoEncerramento ?? 'Nao informado'}.`,
+            turmaNomeSnapshot: turmaAtualizada.nome,
+            usuarioNomeSnapshot: auditUser.nome,
+            metadata: {
+              status: statusMatricula,
+              motivoEncerramento,
+              origemEncerramento: 'TURMA',
+              statusTurma: novoStatusTurma,
+            },
+          });
+        }
+      }
 
       return turmaAtualizada;
     } catch (error: any) {
@@ -415,6 +449,24 @@ export class TurmasService {
         })
         .catch((e) => this.logger.warn(`Audit error: ${e.message}`));
 
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId,
+        turmaId,
+        usuarioId: auditUser.sub,
+        tipo: 'MATRICULA_TURMA',
+        origem: 'MATRICULA_OFICINA',
+        origemId: matriculaCriada.id,
+        chaveEvento: `MATRICULA_OFICINA:${matriculaCriada.id}:MATRICULA_TURMA`,
+        dataEvento: matriculaCriada.dataEntrada,
+        titulo: 'Matricula em turma',
+        descricao: `Aluno matriculado na turma ${turma.nome}.`,
+        turmaNomeSnapshot: turma.nome,
+        usuarioNomeSnapshot: auditUser.nome,
+        metadata: {
+          status: matriculaCriada.status,
+        },
+      });
+
       return matriculaCriada;
     } catch (err) {
       this.logger.error(`Tentativa corrompida de addAluno na turma ${turmaId}`, err);
@@ -496,6 +548,25 @@ export class TurmasService {
           },
         })
         .catch((e) => this.logger.warn(`Audit error: ${e.message}`));
+
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId,
+        turmaId,
+        usuarioId: auditUser.sub,
+        tipo: 'ENCERRAMENTO_MATRICULA',
+        origem: 'MATRICULA_OFICINA',
+        origemId: matriculaEncerrada.id,
+        chaveEvento: `MATRICULA_OFICINA:${matriculaEncerrada.id}:ENCERRAMENTO_MATRICULA`,
+        dataEvento: dataEncerramento,
+        titulo: `Matricula ${dto.status.toLowerCase()}`,
+        descricao: `Motivo: ${dto.motivoEncerramento}. ${observacao ?? ''}`.trim(),
+        turmaNomeSnapshot: vinculo.turma.nome,
+        usuarioNomeSnapshot: auditUser.nome,
+        metadata: {
+          status: dto.status,
+          motivoEncerramento: dto.motivoEncerramento,
+        },
+      });
 
       return matriculaEncerrada;
     } catch (err) {
@@ -739,6 +810,13 @@ export class TurmasService {
     const statusAtivo = this.statusAtivoPorStatus(novoStatus);
     const statusMatricula = this.statusMatriculaPorStatus(novoStatus);
     const motivoEncerramento = this.motivoEncerramentoPorStatusTurma(novoStatus);
+    const encerradoEmLote = statusMatricula ? new Date() : null;
+    const matriculasParaLinhaTempo = statusMatricula
+      ? await this.prisma.matriculaOficina.findMany({
+          where: { turmaId: turma.id, status: MatriculaStatus.ATIVA },
+          select: { id: true, alunoId: true, turmaId: true },
+        })
+      : [];
 
     try {
       const [result] = await this.prisma.$transaction(async (tx) => {
@@ -749,7 +827,7 @@ export class TurmasService {
         });
 
         if (statusMatricula) {
-          const encerradoEm = new Date();
+          const encerradoEm = encerradoEmLote ?? new Date();
           await tx.matriculaOficina.updateMany({
             where: { turmaId: turma.id, status: MatriculaStatus.ATIVA },
             data: {
@@ -779,6 +857,31 @@ export class TurmasService {
           newValue: { status: result.status, statusAtivo: result.statusAtivo },
         })
         .catch((e) => this.logger.warn(`Failure auditing Turma mudarStatus: ${e.message}`));
+
+      if (statusMatricula && encerradoEmLote) {
+        for (const matricula of matriculasParaLinhaTempo) {
+          await this.eventoLinhaTempo?.registrarEvento({
+            alunoId: matricula.alunoId,
+            turmaId: matricula.turmaId,
+            usuarioId: auditUser.sub,
+            tipo: 'ENCERRAMENTO_MATRICULA',
+            origem: 'MATRICULA_OFICINA',
+            origemId: matricula.id,
+            chaveEvento: `MATRICULA_OFICINA:${matricula.id}:ENCERRAMENTO_MATRICULA`,
+            dataEvento: encerradoEmLote,
+            titulo: `Matricula ${statusMatricula.toLowerCase()}`,
+            descricao: `Motivo: ${motivoEncerramento ?? 'Nao informado'}.`,
+            turmaNomeSnapshot: result.nome,
+            usuarioNomeSnapshot: auditUser.nome,
+            metadata: {
+              status: statusMatricula,
+              motivoEncerramento,
+              origemEncerramento: 'TURMA',
+              statusTurma: novoStatus,
+            },
+          });
+        }
+      }
 
       return result;
     } catch (err) {
