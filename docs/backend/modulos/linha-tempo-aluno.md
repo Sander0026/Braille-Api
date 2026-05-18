@@ -111,6 +111,19 @@ Resumo para cards da tela dedicada:
 }
 ```
 
+## GET `/beneficiaries/:id/linha-tempo/turmas`
+
+Lista apenas as turmas em que o aluno ja teve matricula. O frontend usa esse endpoint para evitar
+que o filtro avancado dependa de UUID digitado manualmente.
+
+Resposta:
+
+```json
+[
+  { "id": "uuid", "nome": "Braille Nivel 1" }
+]
+```
+
 ## POST `/beneficiaries/:id/linha-tempo/manual`
 
 Cria uma observacao institucional manual.
@@ -151,7 +164,7 @@ Modulos que registram eventos:
 
 | Modulo | Eventos |
 |---|---|
-| `BeneficiariesService` | cadastro, atualizacao, inativacao, reativacao |
+| `BeneficiariesService` | cadastro, atualizacao, inativacao, reativacao e encerramentos de matriculas causados pela inativacao |
 | `TurmasService` | matricula e encerramento de matricula |
 | `FrequenciasService` | presenca, falta, falta justificada |
 | `AtendimentosIndividuaisService` | atendimento e falta em atendimento |
@@ -232,6 +245,7 @@ O controller documenta:
 
 - `LinhaTempoAlunoResponseDto`;
 - `LinhaTempoAlunoResumoDto`;
+- `LinhaTempoAlunoTurmaResumoDto`;
 - `LinhaTempoAlunoItemDto`;
 - `CreateEventoLinhaTempoManualDto`.
 

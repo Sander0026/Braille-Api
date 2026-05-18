@@ -11,6 +11,7 @@ import {
   LinhaTempoAlunoItemDto,
   LinhaTempoAlunoResponseDto,
   LinhaTempoAlunoResumoDto,
+  LinhaTempoAlunoTurmaResumoDto,
 } from './dto/linha-tempo-aluno-response.dto';
 import { QueryLinhaTempoAlunoDto } from './dto/query-linha-tempo-aluno.dto';
 
@@ -51,6 +52,20 @@ export class AlunoLinhaTempoController {
   @ApiResponse({ status: 404, description: 'Aluno nao encontrado.' })
   resumo(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.linhaTempoService.resumo(id, req.user);
+  }
+
+  @Get(':id/linha-tempo/turmas')
+  @ApiOperation({
+    summary: 'Listar turmas do aluno para filtros da linha do tempo',
+    description:
+      'Retorna apenas turmas em que o aluno ja teve matricula, respeitando as mesmas permissoes da linha do tempo individual.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID do aluno' })
+  @ApiResponse({ status: 200, description: 'Turmas retornadas.', type: [LinhaTempoAlunoTurmaResumoDto] })
+  @ApiResponse({ status: 403, description: 'Perfil sem permissao ou professor sem vinculo com o aluno.' })
+  @ApiResponse({ status: 404, description: 'Aluno nao encontrado.' })
+  turmas(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.linhaTempoService.turmasDoAluno(id, req.user);
   }
 
   @Post(':id/linha-tempo/manual')

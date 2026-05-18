@@ -783,8 +783,31 @@ export class BeneficiariesService {
       });
 
       let matriculasEncerradas = { count: 0 };
+      let matriculasEncerradasDetalhes: {
+        id: string;
+        turmaId: string;
+        turma: { nome: string; professor: { nome: string } | null };
+      }[] = [];
 
       if (encerrarMatriculasAtivas) {
+        matriculasEncerradasDetalhes = await tx.matriculaOficina.findMany({
+          where: {
+            alunoId: id,
+            status: MatriculaStatus.ATIVA,
+          },
+          select: {
+            id: true,
+            turmaId: true,
+            turma: {
+              select: {
+                nome: true,
+                professor: { select: { nome: true } },
+              },
+            },
+          },
+          orderBy: { dataEntrada: 'asc' },
+        });
+
         matriculasEncerradas = await tx.matriculaOficina.updateMany({
           where: {
             alunoId: id,
@@ -829,16 +852,39 @@ export class BeneficiariesService {
         },
       });
 
-      return alunoInativado;
+      return { aluno: alunoInativado, matriculasEncerradasDetalhes };
     });
 
+    for (const matricula of result.matriculasEncerradasDetalhes) {
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: result.aluno.id,
+        turmaId: matricula.turmaId,
+        usuarioId: auditUser?.sub,
+        tipo: 'ENCERRAMENTO_MATRICULA',
+        origem: 'MATRICULA_OFICINA',
+        origemId: matricula.id,
+        chaveEvento: `MATRICULA_OFICINA:${matricula.id}:ENCERRAMENTO_MATRICULA`,
+        dataEvento: agora,
+        titulo: 'Matricula encerrada',
+        descricao: `Motivo: ${motivoEncerramentoMatricula}. ${observacaoInativacao ?? ''}`.trim(),
+        turmaNomeSnapshot: matricula.turma.nome,
+        professorNomeSnapshot: matricula.turma.professor?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          status: statusMatricula,
+          motivoEncerramento: motivoEncerramentoMatricula,
+          origemInativacaoAluno: true,
+        },
+      });
+    }
+
     await this.eventoLinhaTempo?.registrarEvento({
-      alunoId: result.id,
+      alunoId: result.aluno.id,
       usuarioId: auditUser?.sub,
       tipo: 'INATIVACAO',
       origem: 'ALUNO',
-      origemId: result.id,
-      chaveEvento: `ALUNO:${result.id}:INATIVACAO:${agora.toISOString()}`,
+      origemId: result.aluno.id,
+      chaveEvento: `ALUNO:${result.aluno.id}:INATIVACAO:${agora.toISOString()}`,
       dataEvento: agora,
       titulo: 'Aluno inativado',
       descricao: `Motivo: ${dto.motivoInativacao}. ${observacaoInativacao ?? ''}`.trim(),
@@ -851,7 +897,7 @@ export class BeneficiariesService {
       },
     });
 
-    return result;
+    return result.aluno;
   }
 
   async restore(id: string, auditUser?: AuditUser) {

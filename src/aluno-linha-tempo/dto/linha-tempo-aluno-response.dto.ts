@@ -80,3 +80,11 @@ export class LinhaTempoAlunoResumoDto {
   @ApiPropertyOptional({ example: '2026-05-16T17:00:00.000Z' })
   ultimaAcaoRisco?: string;
 }
+
+export class LinhaTempoAlunoTurmaResumoDto {
+  @ApiProperty({ example: 'b1b8f972-d17a-43c7-8d52-01a2efc6ab04' })
+  id: string;
+
+  @ApiProperty({ example: 'Braille Nivel 1' })
+  nome: string;
+}

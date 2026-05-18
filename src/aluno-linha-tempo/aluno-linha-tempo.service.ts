@@ -20,6 +20,11 @@ type Periodo = {
   fim?: Date;
 };
 
+export type LinhaTempoAlunoTurmaResumo = {
+  id: string;
+  nome: string;
+};
+
 const TIPOS_LINHA_TEMPO = Object.values(TipoEventoLinhaTempoAluno);
 const TIPOS_FREQUENCIA = [
   TipoEventoLinhaTempoAluno.FREQUENCIA_PRESENTE,
@@ -117,6 +122,34 @@ export class AlunoLinhaTempoService {
       ...(ultimoPdi && { ultimoPdi }),
       ...(ultimaAcaoRisco && { ultimaAcaoRisco }),
     };
+  }
+
+  async turmasDoAluno(alunoId: string, user?: AuthenticatedUser): Promise<LinhaTempoAlunoTurmaResumo[]> {
+    await this.buscarAlunoOuFalhar(alunoId);
+    await this.garantirPermissao(alunoId, user);
+
+    const matriculas = await this.prisma.matriculaOficina.findMany({
+      where: {
+        alunoId,
+        turma: { excluido: false },
+      },
+      select: {
+        turma: {
+          select: {
+            id: true,
+            nome: true,
+          },
+        },
+      },
+      orderBy: { dataEntrada: 'desc' },
+    });
+
+    const turmas = new Map<string, LinhaTempoAlunoTurmaResumo>();
+    for (const matricula of matriculas) {
+      turmas.set(matricula.turma.id, matricula.turma);
+    }
+
+    return [...turmas.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   }
 
   async createManual(

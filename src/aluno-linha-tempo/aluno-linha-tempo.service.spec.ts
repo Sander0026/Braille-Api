@@ -30,6 +30,9 @@ describe('AlunoLinhaTempoService', () => {
         create: jest.fn(),
         delete: jest.fn(),
       },
+      matriculaOficina: {
+        findMany: jest.fn(),
+      },
       $transaction: jest.fn(),
     };
 
@@ -114,6 +117,36 @@ describe('AlunoLinhaTempoService', () => {
         }),
       }),
     );
+  });
+
+  it('lista turmas do aluno sem duplicar para alimentar o filtro avancado', async () => {
+    const { prisma, service } = criarService();
+    prisma.aluno.findFirst.mockResolvedValue({ id: 'aluno-1' });
+    prisma.matriculaOficina.findMany.mockResolvedValue([
+      { turma: { id: 'turma-2', nome: 'Soroban' } },
+      { turma: { id: 'turma-1', nome: 'Braille Nivel 1' } },
+      { turma: { id: 'turma-1', nome: 'Braille Nivel 1' } },
+    ]);
+
+    await expect(service.turmasDoAluno('aluno-1', adminUser)).resolves.toEqual([
+      { id: 'turma-1', nome: 'Braille Nivel 1' },
+      { id: 'turma-2', nome: 'Soroban' },
+    ]);
+    expect(prisma.matriculaOficina.findMany).toHaveBeenCalledWith({
+      where: {
+        alunoId: 'aluno-1',
+        turma: { excluido: false },
+      },
+      select: {
+        turma: {
+          select: {
+            id: true,
+            nome: true,
+          },
+        },
+      },
+      orderBy: { dataEntrada: 'desc' },
+    });
   });
 
   it('bloqueia remocao de evento que nao seja manual', async () => {
