@@ -4,9 +4,10 @@ import { BeneficiariesController } from './beneficiaries.controller';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { UploadModule } from '../upload/upload.module';
 import { CertificadosModule } from '../certificados/certificados.module';
+import { AlunoLinhaTempoModule } from '../aluno-linha-tempo/aluno-linha-tempo.module';
 
 @Module({
-  imports: [AuditLogModule, UploadModule, CertificadosModule],
+  imports: [AuditLogModule, UploadModule, CertificadosModule, AlunoLinhaTempoModule],
   controllers: [BeneficiariesController],
   providers: [BeneficiariesService],
 })

@@ -140,7 +140,8 @@ A planilha pode usar valores em português legível:
 | `GET` | `/api/beneficiaries/check-documento` | `AuthGuard` | `ADMIN, SECRETARIA` | Verificar CPF/RG |
 | `GET` | `/api/beneficiaries/:id` | `AuthGuard` | Todos | Detalhe completo |
 | `PATCH` | `/api/beneficiaries/:id` | `AuthGuard` | `ADMIN, SECRETARIA` | Atualizar aluno |
-| `DELETE` | `/api/beneficiaries/:id` | `AuthGuard` | `ADMIN, SECRETARIA` | Inativar (soft delete) |
+| `PATCH` | `/api/beneficiaries/:id/inativar` | `AuthGuard` | `ADMIN, SECRETARIA` | Inativar aluno com motivo |
+| `DELETE` | `/api/beneficiaries/:id` | `AuthGuard` | `ADMIN, SECRETARIA` | LEGADO: inativar via DELETE com body |
 | `PATCH` | `/api/beneficiaries/:id/restaurar` | `AuthGuard` | `ADMIN` | Restaurar aluno inativo |
 | `DELETE` | `/api/beneficiaries/:id/hard` | `AuthGuard` | `ADMIN` | Arquivar permanentemente (LGPD) |
 | `POST` | `/api/beneficiaries/import` | `AuthGuard` | `ADMIN, SECRETARIA` | Importação via planilha (Server-side Parse) |

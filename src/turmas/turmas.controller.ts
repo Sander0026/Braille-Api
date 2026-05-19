@@ -15,6 +15,7 @@ import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { TurmasService } from './turmas.service';
 import { CreateTurmaDto } from './dto/create-turma.dto';
 import { UpdateTurmaDto } from './dto/update-turma.dto';
+import { EncerrarMatriculaDto } from './dto/encerrar-matricula.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -126,9 +127,22 @@ export class TurmasController {
     return this.turmasService.addAluno(id, alunoId, getAuditUser(req));
   }
 
+  @Patch(':id/alunos/:alunoId/encerrar')
+  @Roles('ADMIN', 'SECRETARIA')
+  @ApiOperation({ summary: 'Encerrar a participação de um aluno em uma turma com motivo estruturado' })
+  @ApiBody({ type: EncerrarMatriculaDto })
+  encerrarMatricula(
+    @Param('id') id: string,
+    @Param('alunoId') alunoId: string,
+    @Body() body: EncerrarMatriculaDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.turmasService.encerrarMatricula(id, alunoId, body, getAuditUser(req));
+  }
+
   @Delete(':id/alunos/:alunoId')
   @Roles('ADMIN', 'SECRETARIA')
-  @ApiOperation({ summary: 'Remover (desmatricular) um aluno de uma turma' })
+  @ApiOperation({ summary: 'Endpoint legado desativado. Use o encerramento de matrícula com motivo estruturado.' })
   removeAluno(@Param('id') id: string, @Param('alunoId') alunoId: string, @Req() req: AuthenticatedRequest) {
     return this.turmasService.removeAluno(id, alunoId, getAuditUser(req));
   }

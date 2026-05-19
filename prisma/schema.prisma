@@ -27,6 +27,36 @@ enum MatriculaStatus {
   CONCLUIDA
   EVADIDA
   CANCELADA
+  TRANSFERIDA
+}
+
+enum MotivoEncerramentoMatricula {
+  CONCLUSAO
+  EVASAO_SEM_JUSTIFICATIVA
+  MUDANCA_DE_TURNO
+  TRANSFERENCIA_DE_TURMA
+  MUDANCA_DE_CIDADE
+  DIFICULDADE_TRANSPORTE
+  PROBLEMA_SAUDE
+  PROBLEMA_FAMILIAR
+  INCOMPATIBILIDADE_HORARIO
+  FALTA_DE_CONTATO
+  DESISTENCIA_VOLUNTARIA
+  CANCELAMENTO_DA_TURMA
+  OUTRO
+}
+
+enum MotivoInativacaoAluno {
+  EVASAO_INSTITUCIONAL
+  MUDANCA_DE_CIDADE
+  PROBLEMA_SAUDE
+  PROBLEMA_FAMILIAR
+  DIFICULDADE_TRANSPORTE
+  FALECIMENTO
+  SOLICITACAO_DO_ALUNO
+  FALTA_DE_CONTATO
+  CADASTRO_DUPLICADO
+  OUTRO
 }
 
 enum DiaSemana {
@@ -105,6 +135,58 @@ enum AuditAcao {
   DOWNLOAD
 }
 
+enum NivelRiscoEvasao {
+  ALTO
+  MEDIO
+  BAIXO
+}
+
+enum StatusAcaoRiscoEvasao {
+  PENDENTE
+  EM_ANDAMENTO
+  RESOLVIDA
+  SEM_CONTATO
+  CANCELADA
+}
+
+enum TipoAcaoRiscoEvasao {
+  CONTATO_TELEFONICO
+  WHATSAPP
+  REUNIAO_PRESENCIAL
+  ENCAMINHAMENTO_ASSISTENCIAL
+  AJUSTE_DE_HORARIO
+  TRANSFERENCIA_DE_TURMA
+  JUSTIFICATIVA_DE_FALTA
+  VISITA_DOMICILIAR
+  OUTRO
+}
+
+enum StatusPdi {
+  ATIVO
+  CONCLUIDO
+  SUSPENSO
+  ARQUIVADO
+}
+
+enum AreaPdi {
+  BRAILLE
+  ORIENTACAO_MOBILIDADE
+  INFORMATICA_ACESSIVEL
+  AUTONOMIA
+  SOCIALIZACAO
+  ATIVIDADE_PEDAGOGICA
+  OUTRO
+}
+
+enum StatusMetaPdi {
+  NAO_INICIADA
+  EM_ANDAMENTO
+  ALCANCADA
+  PARCIALMENTE_ALCANCADA
+  NAO_ALCANCADA
+  CANCELADA
+}
+
 enum TipoApoiador {
   VOLUNTARIO
   EMPRESA
@@ -179,6 +261,52 @@ enum ModalidadeAtendimentoIndividual {
   OUTRO
 }
 
+enum TipoEventoLinhaTempoAluno {
+  CADASTRO
+  ATUALIZACAO_CADASTRO
+  MATRICULA_TURMA
+  ENCERRAMENTO_MATRICULA
+  FREQUENCIA_PRESENTE
+  FREQUENCIA_FALTA
+  FREQUENCIA_FALTA_JUSTIFICADA
+  ATENDIMENTO_INDIVIDUAL
+  FALTA_ATENDIMENTO
+  ATESTADO
+  LAUDO
+  CERTIFICADO
+  PDI_CRIADO
+  PDI_META_CRIADA
+  PDI_META_ATUALIZADA
+  PDI_EVOLUCAO
+  ACAO_RISCO_EVASAO
+  ACAO_RISCO_RESOLVIDA
+  INATIVACAO
+  REATIVACAO
+  OBSERVACAO_MANUAL
+}
+
+enum OrigemEventoLinhaTempo {
+  ALUNO
+  MATRICULA_OFICINA
+  FREQUENCIA
+  ATENDIMENTO_INDIVIDUAL
+  ATESTADO
+  LAUDO_MEDICO
+  CERTIFICADO
+  PDI
+  PDI_META
+  PDI_EVOLUCAO
+  ACAO_RISCO_EVASAO
+  AUDIT_LOG
+  MANUAL
+}
+
+enum VisibilidadeEventoLinhaTempo {
+  INTERNA
+  PROFESSOR
+  RESTRITA
+}
+
 // ================= MODELOS (Tabelas) =================
 
 model User {
@@ -205,21 +333,25 @@ model User {
   cidade      String?
   uf          String?
 
-  statusAtivo  Boolean       @default(true)
-  excluido     Boolean       @default(false)
-  criadoEm     DateTime      @default(now())
-  atualizadoEm DateTime      @updatedAt
-  turmas       Turma[]       @relation("TurmaProfessorPrincipal")
-  comunicados  Comunicado[]
-  sessoes      UserSession[]
-  acompanhamentosIndividuaisProfessor AcompanhamentoIndividual[]      @relation("AcompanhamentoIndividualProfessor")
-  acompanhamentosIndividuaisArquivados AcompanhamentoIndividual[]     @relation("AcompanhamentoIndividualArquivadoPor")
-  acompanhamentosIndividuaisDesarquivados AcompanhamentoIndividual[]  @relation("AcompanhamentoIndividualDesarquivadoPor")
-  atendimentosIndividuaisProfessor    AtendimentoIndividual[]          @relation("AtendimentoIndividualProfessor")
-  atendimentosIndividuaisCriados      AtendimentoIndividual[]          @relation("AtendimentoIndividualCriadoPor")
-  arquivosAtendimentoIndividual       ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoCriadoPor")
-  arquivosAtendimentoIndividualExcluidos ArquivoAtendimentoIndividual[] @relation("ArquivoAtendimentoExcluidoPor")
-  historicosAssuntoAcompanhamento     HistoricoAssuntoAcompanhamento[] @relation("HistoricoAssuntoAlteradoPor")
+  statusAtivo                             Boolean                          @default(true)
+  excluido                                Boolean                          @default(false)
+  criadoEm                                DateTime                         @default(now())
+  atualizadoEm                            DateTime                         @updatedAt
+  turmas                                  Turma[]                          @relation("TurmaProfessorPrincipal")
+  comunicados                             Comunicado[]
+  sessoes                                 UserSession[]
+  acompanhamentosIndividuaisProfessor     AcompanhamentoIndividual[]       @relation("AcompanhamentoIndividualProfessor")
+  acompanhamentosIndividuaisArquivados    AcompanhamentoIndividual[]       @relation("AcompanhamentoIndividualArquivadoPor")
+  acompanhamentosIndividuaisDesarquivados AcompanhamentoIndividual[]       @relation("AcompanhamentoIndividualDesarquivadoPor")
+  atendimentosIndividuaisProfessor        AtendimentoIndividual[]          @relation("AtendimentoIndividualProfessor")
+  atendimentosIndividuaisCriados          AtendimentoIndividual[]          @relation("AtendimentoIndividualCriadoPor")
+  arquivosAtendimentoIndividual           ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoCriadoPor")
+  arquivosAtendimentoIndividualExcluidos  ArquivoAtendimentoIndividual[]   @relation("ArquivoAtendimentoExcluidoPor")
+  historicosAssuntoAcompanhamento         HistoricoAssuntoAcompanhamento[] @relation("HistoricoAssuntoAlteradoPor")
+  acoesRiscoEvasaoResponsavel             AcaoRiscoEvasao[]                @relation("AcaoRiscoEvasaoResponsavel")
+  pdisResponsavel                         PdiAluno[]                       @relation("PdiProfessorResponsavel")
+  pdiEvolucoesRegistradas                 PdiEvolucao[]                    @relation("PdiEvolucaoRegistradoPor")
+  eventosLinhaTempoRegistrados            EventoLinhaTempoAluno[]
 
   @@index([statusAtivo, excluido])
   @@index([role])
@@ -308,21 +440,33 @@ model Aluno {
   prefAcessibilidade PreferenciaAcessibilidade?
 
   // Controles do sistema
-  statusAtivo  Boolean  @default(true)
-  excluido     Boolean  @default(false)
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  statusAtivo          Boolean                @default(true)
+  excluido             Boolean                @default(false)
+  motivoInativacao     MotivoInativacaoAluno?
+  observacaoInativacao String?
+  inativadoEm          DateTime?
+  inativadoPorId       String?
+  reativadoEm          DateTime?
+  reativadoPorId       String?
+  motivoReativacao     String?
+  criadoEm             DateTime               @default(now())
+  atualizadoEm         DateTime               @updatedAt
 
   // Relacionamentos
-  matriculasOficina    MatriculaOficina[]
-  frequencias          Frequencia[]
-  atestados            Atestado[]
-  laudos               LaudoMedico[]
-  certificadosEmitidos CertificadoEmitido[]
+  matriculasOficina          MatriculaOficina[]
+  frequencias                Frequencia[]
+  atestados                  Atestado[]
+  laudos                     LaudoMedico[]
+  certificadosEmitidos       CertificadoEmitido[]
   acompanhamentosIndividuais AcompanhamentoIndividual[]
   atendimentosIndividuais    AtendimentoIndividual[]
+  acoesRiscoEvasao           AcaoRiscoEvasao[]
+  pdis                       PdiAluno[]
+  eventosLinhaTempo          EventoLinhaTempoAluno[]
 
   @@index([statusAtivo, excluido]) // Listagem de alunos ativos/inativos
+  @@index([motivoInativacao])
+  @@index([inativadoPorId])
   @@index([nomeCompleto]) // Busca por nome
   @@index([matricula]) // Busca por número de matrícula
   @@index([cpf]) // Busca numérica frequente
@@ -336,7 +480,7 @@ model Turma {
   descricao        String?
   horario          String? // Campo legado textual; a grade oficial fica em GradeHoraria
   capacidadeMaxima Int?
-  statusAtivo      Boolean     @default(true)
+  statusAtivo      Boolean     @default(true) // Derivado do status: PREVISTA/ANDAMENTO=true; CONCLUIDA/CANCELADA=false
   excluido         Boolean     @default(false)
   status           TurmaStatus @default(PREVISTA) // Status acadêmico da turma
   criadoEm         DateTime    @default(now())
@@ -356,21 +500,68 @@ model Turma {
 
   // Certificados opcionais, ativados quando professor/admin configurar modelo
   modeloCertificadoId  String?
-  modeloCertificado    ModeloCertificado?   @relation(fields: [modeloCertificadoId], references: [id])
+  modeloCertificado    ModeloCertificado?      @relation(fields: [modeloCertificadoId], references: [id])
   certificadosEmitidos CertificadoEmitido[]
+  acoesRiscoEvasao     AcaoRiscoEvasao[]
+  eventosLinhaTempo    EventoLinhaTempoAluno[]
 
   @@index([statusAtivo, excluido])
   @@index([professorId])
 }
 
+model EventoLinhaTempoAluno {
+  id String @id @default(uuid())
+
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+
+  turmaId String?
+  turma   Turma?  @relation(fields: [turmaId], references: [id])
+
+  usuarioId String?
+  usuario   User?   @relation(fields: [usuarioId], references: [id])
+
+  tipo        TipoEventoLinhaTempoAluno
+  origem      OrigemEventoLinhaTempo
+  origemId    String?
+  chaveEvento String                    @unique
+
+  dataEvento DateTime
+  titulo     String
+  descricao  String?
+
+  turmaNomeSnapshot     String?
+  professorNomeSnapshot String?
+  usuarioNomeSnapshot   String?
+
+  metadata Json?
+
+  visibilidade VisibilidadeEventoLinhaTempo @default(INTERNA)
+  sensivel     Boolean                      @default(false)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([alunoId, dataEvento])
+  @@index([alunoId, tipo])
+  @@index([turmaId])
+  @@index([usuarioId])
+  @@index([origem, origemId])
+  @@index([dataEvento])
+  @@index([visibilidade])
+}
+
 model MatriculaOficina {
-  id               String          @id @default(uuid())
-  status           MatriculaStatus @default(ATIVA)
-  dataEntrada      DateTime        @default(now())
-  dataEncerramento DateTime? // Preenchida ao concluir, evadir ou cancelar
-  observacao       String? // Motivo do cancelamento/evasão etc.
-  criadoEm         DateTime        @default(now())
-  atualizadoEm     DateTime        @updatedAt
+  id                 String                       @id @default(uuid())
+  status             MatriculaStatus              @default(ATIVA)
+  dataEntrada        DateTime                     @default(now())
+  dataEncerramento   DateTime? // Preenchida ao concluir, evadir ou cancelar
+  motivoEncerramento MotivoEncerramentoMatricula?
+  observacao         String? // Complemento textual do encerramento
+  encerradoPorId     String?
+  encerradoEm        DateTime?
+  criadoEm           DateTime                     @default(now())
+  atualizadoEm       DateTime                     @updatedAt
 
   // Relacionamentos
   alunoId String
@@ -383,6 +574,118 @@ model MatriculaOficina {
   // Isso permite que o aluno volte à mesma turma após cancelamento/evasão.
   @@index([alunoId])
   @@index([turmaId, status])
+  @@index([motivoEncerramento])
+  @@index([encerradoPorId])
+}
+
+model AcaoRiscoEvasao {
+  id String @id @default(uuid())
+
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+
+  turmaId String?
+  turma   Turma?  @relation(fields: [turmaId], references: [id])
+
+  responsavelId String?
+  responsavel   User?   @relation("AcaoRiscoEvasaoResponsavel", fields: [responsavelId], references: [id])
+
+  nivel    NivelRiscoEvasao
+  tipoAcao TipoAcaoRiscoEvasao
+  status   StatusAcaoRiscoEvasao @default(PENDENTE)
+
+  motivoRisco String
+  descricao   String?
+  prazo       DateTime?
+  resultado   String?
+
+  criadoPorId  String?
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+  resolvidoEm  DateTime?
+
+  @@index([alunoId])
+  @@index([turmaId])
+  @@index([responsavelId])
+  @@index([status])
+  @@index([nivel])
+  @@index([prazo])
+}
+
+model PdiAluno {
+  id String @id @default(uuid())
+
+  alunoId String
+  aluno   Aluno  @relation(fields: [alunoId], references: [id])
+
+  professorResponsavelId String?
+  professorResponsavel   User?   @relation("PdiProfessorResponsavel", fields: [professorResponsavelId], references: [id])
+
+  titulo                     String
+  objetivoGeral              String
+  diagnosticoInicial         String?
+  necessidadesAcessibilidade String?
+  recursosUtilizados         String?
+  observacoesGerais          String?
+
+  dataInicio      DateTime  @default(now())
+  dataFimPrevista DateTime?
+  dataConclusao   DateTime?
+
+  status StatusPdi @default(ATIVO)
+
+  criadoPorId  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  metas     PdiMeta[]
+  evolucoes PdiEvolucao[]
+
+  @@index([alunoId])
+  @@index([professorResponsavelId])
+  @@index([status])
+}
+
+model PdiMeta {
+  id String @id @default(uuid())
+
+  pdiId String
+  pdi   PdiAluno @relation(fields: [pdiId], references: [id], onDelete: Cascade)
+
+  area       AreaPdi
+  descricao  String
+  estrategia String?
+  prazo      DateTime?
+  status     StatusMetaPdi @default(NAO_INICIADA)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([pdiId])
+  @@index([area])
+  @@index([status])
+}
+
+model PdiEvolucao {
+  id String @id @default(uuid())
+
+  pdiId String
+  pdi   PdiAluno @relation(fields: [pdiId], references: [id], onDelete: Cascade)
+
+  dataRegistro   DateTime @default(now())
+  descricao      String
+  dificuldades   String?
+  avancos        String?
+  proximosPassos String?
+
+  registradoPorId String?
+  registradoPor   User?   @relation("PdiEvolucaoRegistradoPor", fields: [registradoPorId], references: [id])
+
+  criadoEm DateTime @default(now())
+
+  @@index([pdiId])
+  @@index([registradoPorId])
+  @@index([dataRegistro])
 }
 
 // ── Grade Horária estruturada ─────────────────────────────────────
@@ -688,32 +991,32 @@ model CertificadoEmitido {
 }
 
 model AcompanhamentoIndividual {
-  id              String                         @id @default(uuid())
-  alunoId         String
-  professorId     String
-  assuntoAtual    String
-  descricao       String?
-  status          StatusAcompanhamentoIndividual @default(EM_ANDAMENTO)
-  arquivado       Boolean                        @default(false)
-  arquivadoEm     DateTime?
-  arquivadoPorId  String?
-  desarquivadoEm  DateTime?
-  desarquivadoPorId String?
+  id                    String                         @id @default(uuid())
+  alunoId               String
+  professorId           String
+  assuntoAtual          String
+  descricao             String?
+  status                StatusAcompanhamentoIndividual @default(EM_ANDAMENTO)
+  arquivado             Boolean                        @default(false)
+  arquivadoEm           DateTime?
+  arquivadoPorId        String?
+  desarquivadoEm        DateTime?
+  desarquivadoPorId     String?
   motivoArquivamento    String?
   motivoDesarquivamento String?
-  dataInicio      DateTime                       @default(now()) @db.Date
-  dataFinalizacao DateTime?                      @db.Date
-  resultadoFinal  String?
-  resumoFinal     String?
-  criadoEm        DateTime                       @default(now())
-  atualizadoEm    DateTime                       @updatedAt
-  excluidoEm      DateTime?
+  dataInicio            DateTime                       @default(now()) @db.Date
+  dataFinalizacao       DateTime?                      @db.Date
+  resultadoFinal        String?
+  resumoFinal           String?
+  criadoEm              DateTime                       @default(now())
+  atualizadoEm          DateTime                       @updatedAt
+  excluidoEm            DateTime?
 
-  aluno            Aluno                            @relation(fields: [alunoId], references: [id])
-  professor        User                             @relation("AcompanhamentoIndividualProfessor", fields: [professorId], references: [id])
-  arquivadoPor     User?                            @relation("AcompanhamentoIndividualArquivadoPor", fields: [arquivadoPorId], references: [id])
-  desarquivadoPor  User?                            @relation("AcompanhamentoIndividualDesarquivadoPor", fields: [desarquivadoPorId], references: [id])
-  atendimentos     AtendimentoIndividual[]
+  aluno             Aluno                            @relation(fields: [alunoId], references: [id])
+  professor         User                             @relation("AcompanhamentoIndividualProfessor", fields: [professorId], references: [id])
+  arquivadoPor      User?                            @relation("AcompanhamentoIndividualArquivadoPor", fields: [arquivadoPorId], references: [id])
+  desarquivadoPor   User?                            @relation("AcompanhamentoIndividualDesarquivadoPor", fields: [desarquivadoPorId], references: [id])
+  atendimentos      AtendimentoIndividual[]
   historicoAssuntos HistoricoAssuntoAcompanhamento[]
 
   @@index([alunoId, status])
@@ -728,27 +1031,27 @@ model AcompanhamentoIndividual {
 }
 
 model AtendimentoIndividual {
-  id               String                          @id @default(uuid())
-  acompanhamentoId String
-  alunoId          String
-  professorId      String
-  dataAtendimento  DateTime                        @db.Date
+  id                String                            @id @default(uuid())
+  acompanhamentoId  String
+  alunoId           String
+  professorId       String
+  dataAtendimento   DateTime                          @db.Date
   horaInicioMinutos Int?
   horaFimMinutos    Int?
-  duracaoMinutos   Int?
-  modalidade       ModalidadeAtendimentoIndividual?
-  localAtendimento String?
-  tipoRegistro     TipoRegistroAtendimentoIndividual
-  assuntoDoDia     String?
-  observacao       String?
-  evolucao         String?
-  dificuldades     String?
-  pendencias       String?
-  recomendacoes    String?
-  criadoPorId      String?
-  criadoEm         DateTime                        @default(now())
-  atualizadoEm     DateTime                        @updatedAt
-  excluidoEm       DateTime?
+  duracaoMinutos    Int?
+  modalidade        ModalidadeAtendimentoIndividual?
+  localAtendimento  String?
+  tipoRegistro      TipoRegistroAtendimentoIndividual
+  assuntoDoDia      String?
+  observacao        String?
+  evolucao          String?
+  dificuldades      String?
+  pendencias        String?
+  recomendacoes     String?
+  criadoPorId       String?
+  criadoEm          DateTime                          @default(now())
+  atualizadoEm      DateTime                          @updatedAt
+  excluidoEm        DateTime?
 
   acompanhamento AcompanhamentoIndividual       @relation(fields: [acompanhamentoId], references: [id])
   aluno          Aluno                          @relation(fields: [alunoId], references: [id])
@@ -765,23 +1068,23 @@ model AtendimentoIndividual {
 }
 
 model ArquivoAtendimentoIndividual {
-  id            String                               @id @default(uuid())
-  atendimentoId String
-  nomeOriginal  String
-  nomeArquivo   String
-  urlArquivo    String
-  tipoArquivo   String
-  tamanho       Int
-  categoria     CategoriaArquivoAtendimentoIndividual @default(OUTRO)
-  criadoPorId   String?
-  criadoEm      DateTime                             @default(now())
-  excluidoEm    DateTime?
-  excluidoPorId String?
+  id             String                                @id @default(uuid())
+  atendimentoId  String
+  nomeOriginal   String
+  nomeArquivo    String
+  urlArquivo     String
+  tipoArquivo    String
+  tamanho        Int
+  categoria      CategoriaArquivoAtendimentoIndividual @default(OUTRO)
+  criadoPorId    String?
+  criadoEm       DateTime                              @default(now())
+  excluidoEm     DateTime?
+  excluidoPorId  String?
   motivoExclusao String?
 
   atendimento AtendimentoIndividual @relation(fields: [atendimentoId], references: [id])
   criadoPor   User?                 @relation("ArquivoAtendimentoCriadoPor", fields: [criadoPorId], references: [id])
-  excluidoPor User?                  @relation("ArquivoAtendimentoExcluidoPor", fields: [excluidoPorId], references: [id])
+  excluidoPor User?                 @relation("ArquivoAtendimentoExcluidoPor", fields: [excluidoPorId], references: [id])
 
   @@index([atendimentoId])
   @@index([categoria])
@@ -800,7 +1103,7 @@ model HistoricoAssuntoAcompanhamento {
   criadoEm         DateTime @default(now())
 
   acompanhamento AcompanhamentoIndividual @relation(fields: [acompanhamentoId], references: [id])
-  alteradoPor     User?                    @relation("HistoricoAssuntoAlteradoPor", fields: [alteradoPorId], references: [id])
+  alteradoPor    User?                    @relation("HistoricoAssuntoAlteradoPor", fields: [alteradoPorId], references: [id])
 
   @@index([acompanhamentoId])
   @@index([alteradoPorId])

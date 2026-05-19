@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { UploadModule } from '../upload/upload.module';
+import { AlunoLinhaTempoModule } from '../aluno-linha-tempo/aluno-linha-tempo.module';
 import { AcompanhamentosIndividuaisController } from './controllers/acompanhamentos-individuais.controller';
 import { AtendimentosIndividuaisController } from './controllers/atendimentos-individuais.controller';
 import { RelatoriosAtendimentosIndividuaisController } from './controllers/relatorios-atendimentos-individuais.controller';
@@ -17,7 +18,7 @@ import { AtendimentosIndividuaisSanitizerService } from './services/atendimentos
 import { AtendimentosIndividuaisPolicy } from './policies/atendimentos-individuais.policy';
 
 @Module({
-  imports: [PrismaModule, AuditLogModule, UploadModule],
+  imports: [PrismaModule, AuditLogModule, UploadModule, AlunoLinhaTempoModule],
   controllers: [
     AcompanhamentosIndividuaisController,
     AtendimentosIndividuaisController,
