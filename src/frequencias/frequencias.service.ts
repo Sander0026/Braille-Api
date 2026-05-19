@@ -16,6 +16,7 @@ import { Role, AuditAcao, Prisma, StatusFrequencia } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { ConfigService } from '@nestjs/config';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
 @Injectable()
 export class FrequenciasService {
@@ -25,6 +26,7 @@ export class FrequenciasService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
     private readonly configService: ConfigService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -60,6 +62,18 @@ export class FrequenciasService {
     if (status) return status;
     if (typeof presente === 'boolean') return this.statusFromPresente(presente);
     throw new BadRequestException('Informe o status da frequência ou o campo legado presente.');
+  }
+
+  private tipoLinhaTempoPorStatus(status: StatusFrequencia) {
+    if (status === StatusFrequencia.PRESENTE) return 'FREQUENCIA_PRESENTE';
+    if (status === StatusFrequencia.FALTA_JUSTIFICADA) return 'FREQUENCIA_FALTA_JUSTIFICADA';
+    return 'FREQUENCIA_FALTA';
+  }
+
+  private tituloLinhaTempoPorStatus(status: StatusFrequencia): string {
+    if (status === StatusFrequencia.PRESENTE) return 'Presenca registrada';
+    if (status === StatusFrequencia.FALTA_JUSTIFICADA) return 'Falta justificada';
+    return 'Falta registrada';
   }
 
   /**
@@ -124,7 +138,7 @@ export class FrequenciasService {
       throw new ConflictException('A chamada para este aluno nesta oficina já foi registrada hoje.');
     }
 
-    return this.prisma.frequencia.create({
+    const frequencia = await this.prisma.frequencia.create({
       data: {
         dataAula: dataConvertida,
         alunoId: dto.alunoId,
@@ -133,7 +147,33 @@ export class FrequenciasService {
         status: statusResolvido,
         presente: this.presenteFromStatus(statusResolvido),
       },
+      include: {
+        turma: { select: { id: true, nome: true, professor: { select: { nome: true } } } },
+      },
     });
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: frequencia.alunoId,
+      turmaId: frequencia.turmaId,
+      usuarioId: auditUser?.sub,
+      tipo: this.tipoLinhaTempoPorStatus(frequencia.status),
+      origem: 'FREQUENCIA',
+      origemId: frequencia.id,
+      chaveEvento: `FREQUENCIA:${frequencia.id}:STATUS`,
+      dataEvento: frequencia.dataAula,
+      titulo: this.tituloLinhaTempoPorStatus(frequencia.status),
+      descricao: frequencia.observacao || `Registro de chamada na turma ${frequencia.turma.nome}.`,
+      turmaNomeSnapshot: frequencia.turma.nome,
+      professorNomeSnapshot: frequencia.turma.professor?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        status: frequencia.status,
+        fechado: frequencia.fechado,
+        justificadaPorAtestado: Boolean(frequencia.justificativaId),
+      },
+    });
+
+    return frequencia;
   }
 
   // ─── Lote Absoluto (Fase 23) ──────────────────────────────────────────────────
@@ -158,6 +198,19 @@ export class FrequenciasService {
     // Transação de Alta Performance: O(1) conexão vs O(N) conexões!
     try {
       const auditPayloads: any[] = [];
+      const turma = await this.prisma.turma.findUnique({
+        where: { id: dto.turmaId },
+        select: { id: true, nome: true, professor: { select: { nome: true } } },
+      });
+      const eventosLinhaTempo: {
+        id: string;
+        alunoId: string;
+        turmaId: string;
+        dataAula: Date;
+        status: StatusFrequencia;
+        fechado: boolean;
+        justificativaId: string | null;
+      }[] = [];
 
       await this.prisma.$transaction(
         async (tx) => {
@@ -248,6 +301,15 @@ export class FrequenciasService {
               oldValue,
               newValue: frequenciaFinal,
             });
+            eventosLinhaTempo.push({
+              id: frequenciaFinal.id,
+              alunoId: frequenciaFinal.alunoId,
+              turmaId: frequenciaFinal.turmaId,
+              dataAula: frequenciaFinal.dataAula,
+              status: frequenciaFinal.status,
+              fechado: frequenciaFinal.fechado,
+              justificativaId: frequenciaFinal.justificativaId,
+            });
           }
         },
         {
@@ -266,6 +328,29 @@ export class FrequenciasService {
           });
         }
       });
+
+      for (const frequencia of eventosLinhaTempo) {
+        await this.eventoLinhaTempo?.registrarEvento({
+          alunoId: frequencia.alunoId,
+          turmaId: frequencia.turmaId,
+          usuarioId: auditUser?.sub,
+          tipo: this.tipoLinhaTempoPorStatus(frequencia.status),
+          origem: 'FREQUENCIA',
+          origemId: frequencia.id,
+          chaveEvento: `FREQUENCIA:${frequencia.id}:STATUS`,
+          dataEvento: frequencia.dataAula,
+          titulo: this.tituloLinhaTempoPorStatus(frequencia.status),
+          descricao: turma ? `Registro de chamada na turma ${turma.nome}.` : 'Registro de chamada.',
+          turmaNomeSnapshot: turma?.nome,
+          professorNomeSnapshot: turma?.professor?.nome,
+          usuarioNomeSnapshot: auditUser?.nome,
+          metadata: {
+            status: frequencia.status,
+            fechado: frequencia.fechado,
+            justificadaPorAtestado: Boolean(frequencia.justificativaId),
+          },
+        });
+      }
 
       return {
         sucesso: true,
@@ -452,7 +537,36 @@ export class FrequenciasService {
       dadosParaAtualizar.justificativaId = statusResolvido === StatusFrequencia.FALTA_JUSTIFICADA ? dadosParaAtualizar.justificativaId : null;
     }
 
-    return this.prisma.frequencia.update({ where: { id }, data: dadosParaAtualizar });
+    const atualizado = await this.prisma.frequencia.update({
+      where: { id },
+      data: dadosParaAtualizar,
+      include: {
+        turma: { select: { id: true, nome: true, professor: { select: { nome: true } } } },
+      },
+    });
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: atualizado.alunoId,
+      turmaId: atualizado.turmaId,
+      usuarioId: auditUser?.sub,
+      tipo: this.tipoLinhaTempoPorStatus(atualizado.status),
+      origem: 'FREQUENCIA',
+      origemId: atualizado.id,
+      chaveEvento: `FREQUENCIA:${atualizado.id}:STATUS`,
+      dataEvento: atualizado.dataAula,
+      titulo: this.tituloLinhaTempoPorStatus(atualizado.status),
+      descricao: atualizado.observacao || `Registro de chamada na turma ${atualizado.turma.nome}.`,
+      turmaNomeSnapshot: atualizado.turma.nome,
+      professorNomeSnapshot: atualizado.turma.professor?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        status: atualizado.status,
+        fechado: atualizado.fechado,
+        justificadaPorAtestado: Boolean(atualizado.justificativaId),
+      },
+    });
+
+    return atualizado;
   }
 
   async remove(id: string, auditUser?: AuditUser) {

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { Prisma, AuditAcao } from '@prisma/client';
+import { Prisma, AuditAcao, MotivoEncerramentoMatricula } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 import { CreateCertificadoDto } from './dto/create-certificado.dto';
@@ -14,6 +14,7 @@ import { ImageProcessingService } from './image-processing.service';
 import { randomBytes } from 'node:crypto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
 export interface HonrariaPdfResult {
   pdfBuffer: Buffer;
@@ -45,6 +46,7 @@ export class CertificadosService {
     private readonly pdfService: PdfService,
     private readonly imageProcessing: ImageProcessingService,
     private readonly auditService: AuditLogService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   // ── Helpers Privados ───────────────────────────────────────────────────────
@@ -548,6 +550,7 @@ export class CertificadosService {
       where: { id: dto.turmaId },
       include: {
         modeloCertificado: true,
+        professor: { select: { nome: true } },
         matriculasOficina: { where: { alunoId: dto.alunoId } },
       },
     });
@@ -640,6 +643,26 @@ export class CertificadosService {
         data: { pdfUrl },
       });
       codigoFinal = certExistente.codigoValidacao;
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: aluno.id,
+        turmaId: turma.id,
+        usuarioId: auditUser?.sub,
+        tipo: 'CERTIFICADO',
+        origem: 'CERTIFICADO',
+        origemId: certExistente.id,
+        chaveEvento: `CERTIFICADO:${certExistente.id}:EMITIDO`,
+        dataEvento: certExistente.dataEmissao,
+        titulo: 'Certificado emitido',
+        descricao: turma.nome,
+        turmaNomeSnapshot: turma.nome,
+        professorNomeSnapshot: turma.professor?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          codigoValidacao: certExistente.codigoValidacao,
+          status: 'VALID',
+          modelo: turma.modeloCertificado.nome,
+        },
+      });
     } else {
       // Cria o registro pela primeira vez
       const certificadoEmitido = await this.prisma.certificadoEmitido.create({
@@ -664,6 +687,27 @@ export class CertificadosService {
         acao: AuditAcao.CRIAR,
         newValue: certificadoEmitido,
       });
+
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: aluno.id,
+        turmaId: turma.id,
+        usuarioId: auditUser?.sub,
+        tipo: 'CERTIFICADO',
+        origem: 'CERTIFICADO',
+        origemId: certificadoEmitido.id,
+        chaveEvento: `CERTIFICADO:${certificadoEmitido.id}:EMITIDO`,
+        dataEvento: certificadoEmitido.dataEmissao,
+        titulo: 'Certificado emitido',
+        descricao: turma.nome,
+        turmaNomeSnapshot: turma.nome,
+        professorNomeSnapshot: turma.professor?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          codigoValidacao: certificadoEmitido.codigoValidacao,
+          status: certificadoEmitido.status,
+          modelo: turma.modeloCertificado.nome,
+        },
+      });
     }
 
     return { pdfUrl, codigoValidacao: codigoFinal };
@@ -681,7 +725,14 @@ export class CertificadosService {
       }),
       this.prisma.turma.findFirst({
         where: { id: dto.turmaId, excluido: false },
-        select: { id: true, nome: true, cargaHoraria: true, dataInicio: true, dataFim: true },
+        select: {
+          id: true,
+          nome: true,
+          cargaHoraria: true,
+          dataInicio: true,
+          dataFim: true,
+          professor: { select: { nome: true } },
+        },
       }),
     ]);
 
@@ -761,6 +812,28 @@ export class CertificadosService {
       newValue: certificado,
     });
 
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: aluno.id,
+      turmaId: turma.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'CERTIFICADO',
+      origem: 'CERTIFICADO',
+      origemId: certificado.id,
+      chaveEvento: `CERTIFICADO:${certificado.id}:EMITIDO`,
+      dataEvento: certificado.dataEmissao,
+      titulo: 'Certificado emitido',
+      descricao: nomeCurso,
+      turmaNomeSnapshot: turma.nome,
+      professorNomeSnapshot: turma.professor?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        codigoValidacao: certificado.codigoValidacao,
+        status: certificado.status,
+        modelo: modelo.nome,
+        origem: 'CERTIFICADO_MANUAL_ACADEMICO',
+      },
+    });
+
     return { pdfUrl: uploaded.url, codigoValidacao: hashUnique, certificadoId: certificado.id };
   }
 
@@ -781,6 +854,9 @@ export class CertificadosService {
           data: {
             status: 'CONCLUIDA',
             dataEncerramento: new Date(),
+            motivoEncerramento: MotivoEncerramentoMatricula.CONCLUSAO,
+            encerradoEm: new Date(),
+            encerradoPorId: auditUser?.sub ?? null,
             observacao: 'Concluida automaticamente por emissao manual de certificado academico.',
           },
         } as never);
@@ -795,6 +871,9 @@ export class CertificadosService {
         status: 'CONCLUIDA',
         dataEntrada: new Date(),
         dataEncerramento: new Date(),
+        motivoEncerramento: MotivoEncerramentoMatricula.CONCLUSAO,
+        encerradoEm: new Date(),
+        encerradoPorId: auditUser?.sub ?? null,
         observacao: 'Historico criado automaticamente por emissao manual de certificado academico.',
       },
     } as never);
@@ -809,7 +888,13 @@ export class CertificadosService {
   }
 
   async cancelarCertificado(id: string, dto: CancelarCertificadoDto, auditUser?: AuditUser) {
-    const certificado = await this.prisma.certificadoEmitido.findUnique({ where: { id } });
+    const certificado = await this.prisma.certificadoEmitido.findUnique({
+      where: { id },
+      include: {
+        turma: { select: { id: true, nome: true, professor: { select: { nome: true } } } },
+        modelo: { select: { nome: true } },
+      },
+    });
     if (!certificado) throw new NotFoundException('Certificado nao encontrado.');
     if ((certificado as { status?: string }).status !== 'VALID') {
       throw new BadRequestException('Somente certificados validos podem ser cancelados.');
@@ -834,6 +919,30 @@ export class CertificadosService {
       newValue: atualizado,
     });
 
+    if (certificado.alunoId) {
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: certificado.alunoId,
+        turmaId: certificado.turmaId ?? undefined,
+        usuarioId: auditUser?.sub,
+        tipo: 'CERTIFICADO',
+        origem: 'CERTIFICADO',
+        origemId: certificado.id,
+        chaveEvento: `CERTIFICADO:${certificado.id}:CANCELADO`,
+        dataEvento: atualizado.canceledAt ?? new Date(),
+        titulo: 'Certificado cancelado',
+        descricao: dto.motivo,
+        turmaNomeSnapshot: certificado.turma?.nome,
+        professorNomeSnapshot: certificado.turma?.professor?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          codigoValidacao: certificado.codigoValidacao,
+          status: atualizado.status,
+          modelo: certificado.modelo?.nome,
+          motivo: dto.motivo,
+        },
+      });
+    }
+
     return atualizado;
   }
 
@@ -842,7 +951,7 @@ export class CertificadosService {
       where: { id },
       include: {
         aluno: { select: { id: true, nomeCompleto: true } },
-        turma: { include: { modeloCertificado: true } },
+        turma: { include: { modeloCertificado: true, professor: { select: { nome: true } } } },
         modelo: true,
       },
     });
@@ -919,6 +1028,28 @@ export class CertificadosService {
       acao: AuditAcao.CRIAR,
       oldValue: certificado,
       newValue: novoCertificado,
+    });
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: certificado.aluno.id,
+      turmaId: certificado.turma.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'CERTIFICADO',
+      origem: 'CERTIFICADO',
+      origemId: novoCertificado.id,
+      chaveEvento: `CERTIFICADO:${novoCertificado.id}:REEMITIDO`,
+      dataEvento: novoCertificado.dataEmissao,
+      titulo: 'Certificado reemitido',
+      descricao: certificado.turma.nome,
+      turmaNomeSnapshot: certificado.turma.nome,
+      professorNomeSnapshot: certificado.turma.professor?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        codigoValidacao: novoCertificado.codigoValidacao,
+        status: novoCertificado.status,
+        modelo: modeloCert.nome,
+        certificadoAnteriorId: id,
+      },
     });
 
     return { pdfUrl: uploaded.url, codigoValidacao: hashUnique, certificadoId: novoCertificado.id };

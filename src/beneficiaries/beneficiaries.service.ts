@@ -6,9 +6,10 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
-import { Prisma, AuditAcao } from '@prisma/client';
+import { Prisma, AuditAcao, MatriculaStatus, MotivoEncerramentoMatricula, MotivoInativacaoAluno } from '@prisma/client';
 import type { Response } from 'express';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
+import { InativarAlunoDto } from './dto/inativar-aluno.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryBeneficiaryDto } from './dto/query-beneficiary.dto';
@@ -17,6 +18,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { UploadService } from '../upload/upload.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { CertificadosService } from '../certificados/certificados.service';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 import * as ExcelJS from 'exceljs';
 
 // ── Selects Cirúrgicos — fonte única de verdade ────────────────────────────
@@ -85,6 +87,22 @@ const ALUNO_EXISTENCIA_SELECT = { id: true } as const;
 /** Select para update: fotoPerfil e termoLgpdUrl para cleanup Cloudinary; nomeCompleto para detectar mudança de cache */
 const ALUNO_MUTATION_SELECT = { id: true, fotoPerfil: true, termoLgpdUrl: true, nomeCompleto: true } as const;
 
+const MOTIVO_INATIVACAO_PARA_ENCERRAMENTO_MATRICULA: Record<
+  MotivoInativacaoAluno,
+  MotivoEncerramentoMatricula
+> = {
+  [MotivoInativacaoAluno.EVASAO_INSTITUCIONAL]: MotivoEncerramentoMatricula.EVASAO_SEM_JUSTIFICATIVA,
+  [MotivoInativacaoAluno.MUDANCA_DE_CIDADE]: MotivoEncerramentoMatricula.MUDANCA_DE_CIDADE,
+  [MotivoInativacaoAluno.PROBLEMA_SAUDE]: MotivoEncerramentoMatricula.PROBLEMA_SAUDE,
+  [MotivoInativacaoAluno.PROBLEMA_FAMILIAR]: MotivoEncerramentoMatricula.PROBLEMA_FAMILIAR,
+  [MotivoInativacaoAluno.DIFICULDADE_TRANSPORTE]: MotivoEncerramentoMatricula.DIFICULDADE_TRANSPORTE,
+  [MotivoInativacaoAluno.FALECIMENTO]: MotivoEncerramentoMatricula.OUTRO,
+  [MotivoInativacaoAluno.SOLICITACAO_DO_ALUNO]: MotivoEncerramentoMatricula.DESISTENCIA_VOLUNTARIA,
+  [MotivoInativacaoAluno.FALTA_DE_CONTATO]: MotivoEncerramentoMatricula.FALTA_DE_CONTATO,
+  [MotivoInativacaoAluno.CADASTRO_DUPLICADO]: MotivoEncerramentoMatricula.OUTRO,
+  [MotivoInativacaoAluno.OUTRO]: MotivoEncerramentoMatricula.OUTRO,
+};
+
 @Injectable()
 export class BeneficiariesService {
   private readonly logger = new Logger(BeneficiariesService.name);
@@ -98,6 +116,7 @@ export class BeneficiariesService {
     private readonly auditService: AuditLogService,
     private readonly uploadService: UploadService,
     private readonly certificadosService: CertificadosService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   // ── Helpers Privados ───────────────────────────────────────────────────────
@@ -359,6 +378,19 @@ export class BeneficiariesService {
       newValue: alunoNovo,
     });
 
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: alunoNovo.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'CADASTRO',
+      origem: 'ALUNO',
+      origemId: alunoNovo.id,
+      chaveEvento: `ALUNO:${alunoNovo.id}:CADASTRO`,
+      dataEvento: alunoNovo.criadoEm,
+      titulo: 'Aluno cadastrado',
+      descricao: `Cadastro de ${alunoNovo.nomeCompleto} realizado no sistema.`,
+      usuarioNomeSnapshot: auditUser?.nome,
+    });
+
     return alunoNovo;
   }
 
@@ -376,8 +408,23 @@ export class BeneficiariesService {
 
     const result = await this.prisma.aluno.update({
       where: { id },
-      data: { statusAtivo: true, excluido: false, matricula },
-      select: { id: true, nomeCompleto: true, cpf: true, rg: true, matricula: true, statusAtivo: true, criadoEm: true },
+      data: {
+        statusAtivo: true,
+        excluido: false,
+        matricula,
+        reativadoEm: new Date(),
+        reativadoPorId: auditUser?.sub ?? null,
+      },
+      select: {
+        id: true,
+        nomeCompleto: true,
+        cpf: true,
+        rg: true,
+        matricula: true,
+        statusAtivo: true,
+        criadoEm: true,
+        reativadoEm: true,
+      },
     });
 
     this.auditService.registrar({
@@ -387,6 +434,19 @@ export class BeneficiariesService {
       acao: AuditAcao.RESTAURAR,
       oldValue: { statusAtivo: false },
       newValue: { statusAtivo: true },
+    });
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: result.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'REATIVACAO',
+      origem: 'ALUNO',
+      origemId: result.id,
+      chaveEvento: `ALUNO:${result.id}:REATIVACAO:${result.reativadoEm?.toISOString() ?? new Date().toISOString()}`,
+      dataEvento: result.reativadoEm ?? new Date(),
+      titulo: 'Aluno reativado',
+      descricao: 'Aluno reativado na instituicao.',
+      usuarioNomeSnapshot: auditUser?.nome,
     });
 
     return result;
@@ -634,6 +694,22 @@ export class BeneficiariesService {
       newValue: alunoAtualizado,
     });
 
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: alunoAtualizado.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'ATUALIZACAO_CADASTRO',
+      origem: 'ALUNO',
+      origemId: alunoAtualizado.id,
+      chaveEvento: `ALUNO:${alunoAtualizado.id}:ATUALIZACAO_CADASTRO:${alunoAtualizado.atualizadoEm.toISOString()}`,
+      dataEvento: alunoAtualizado.atualizadoEm,
+      titulo: 'Cadastro atualizado',
+      descricao: 'Dados cadastrais do aluno foram atualizados.',
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        camposAlterados: Object.keys(dto),
+      },
+    });
+
     // Fase 3 — Invalidação de cache: se o nome mudou, regenera PDFs em background
     if (dto.nomeCompleto && dto.nomeCompleto !== dadosAtuais.nomeCompleto) {
       setImmediate(() => {
@@ -649,23 +725,191 @@ export class BeneficiariesService {
 
   // ── Inativar / Restaurar / Excluir ─────────────────────────────────────────
 
-  async remove(id: string, auditUser?: AuditUser) {
-    await this.assertExists(id);
-    const result = await this.prisma.aluno.update({ where: { id }, data: { statusAtivo: false } });
-    this.auditService.registrar({
-      ...this.toAuditMeta(auditUser),
-      entidade: 'Aluno',
-      registroId: id,
-      acao: AuditAcao.EXCLUIR,
-      oldValue: { statusAtivo: true },
-      newValue: { statusAtivo: false },
+  async remove(id: string, dto: InativarAlunoDto, auditUser?: AuditUser) {
+    if (!dto?.motivoInativacao) {
+      throw new BadRequestException('Informe o motivo da inativação do aluno.');
+    }
+
+    const agora = new Date();
+    const encerrarMatriculasAtivas = dto.encerrarMatriculasAtivas ?? true;
+    const observacaoInativacao = dto.observacao?.trim() || null;
+    const statusMatricula = dto.statusMatricula ?? MatriculaStatus.EVADIDA;
+    const motivoEncerramentoMatricula =
+      dto.motivoEncerramentoMatricula ??
+      MOTIVO_INATIVACAO_PARA_ENCERRAMENTO_MATRICULA[dto.motivoInativacao] ??
+      MotivoEncerramentoMatricula.OUTRO;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const alunoAtual = await tx.aluno.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          statusAtivo: true,
+          motivoInativacao: true,
+          observacaoInativacao: true,
+          inativadoEm: true,
+          inativadoPorId: true,
+        },
+      });
+
+      if (!alunoAtual) {
+        throw new NotFoundException('Beneficiário não encontrado.');
+      }
+
+      if (!encerrarMatriculasAtivas) {
+        const matriculasAtivas = await tx.matriculaOficina.count({
+          where: {
+            alunoId: id,
+            status: MatriculaStatus.ATIVA,
+          },
+        });
+
+        if (matriculasAtivas > 0) {
+          throw new BadRequestException(
+            'Não é possível inativar aluno com matrículas ativas sem encerrá-las.',
+          );
+        }
+      }
+
+      const alunoInativado = await tx.aluno.update({
+        where: { id },
+        data: {
+          statusAtivo: false,
+          motivoInativacao: dto.motivoInativacao,
+          observacaoInativacao,
+          inativadoEm: agora,
+          inativadoPorId: auditUser?.sub ?? null,
+        },
+      });
+
+      let matriculasEncerradas = { count: 0 };
+      let matriculasEncerradasDetalhes: {
+        id: string;
+        turmaId: string;
+        turma: { nome: string; professor: { nome: string } | null };
+      }[] = [];
+
+      if (encerrarMatriculasAtivas) {
+        matriculasEncerradasDetalhes = await tx.matriculaOficina.findMany({
+          where: {
+            alunoId: id,
+            status: MatriculaStatus.ATIVA,
+          },
+          select: {
+            id: true,
+            turmaId: true,
+            turma: {
+              select: {
+                nome: true,
+                professor: { select: { nome: true } },
+              },
+            },
+          },
+          orderBy: { dataEntrada: 'asc' },
+        });
+
+        matriculasEncerradas = await tx.matriculaOficina.updateMany({
+          where: {
+            alunoId: id,
+            status: MatriculaStatus.ATIVA,
+          },
+          data: {
+            status: statusMatricula,
+            dataEncerramento: agora,
+            motivoEncerramento: motivoEncerramentoMatricula,
+            ...(observacaoInativacao ? { observacao: observacaoInativacao } : {}),
+            encerradoEm: agora,
+            encerradoPorId: auditUser?.sub ?? null,
+          },
+        });
+      }
+
+      const auditMeta = this.toAuditMeta(auditUser);
+      const newValue = {
+        statusAtivo: false,
+        motivoInativacao: dto.motivoInativacao,
+        observacaoInativacao,
+        inativadoEm: agora,
+        inativadoPorId: auditUser?.sub ?? null,
+        encerrarMatriculasAtivas,
+        matriculasAtivasEncerradas: matriculasEncerradas.count,
+        statusMatricula: encerrarMatriculasAtivas ? statusMatricula : null,
+        motivoEncerramentoMatricula: encerrarMatriculasAtivas ? motivoEncerramentoMatricula : null,
+      };
+
+      await tx.auditLog.create({
+        data: {
+          entidade: 'Aluno',
+          registroId: id,
+          acao: AuditAcao.EXCLUIR,
+          autorId: auditMeta.autorId,
+          autorNome: auditMeta.autorNome,
+          autorRole: auditMeta.autorRole,
+          ip: auditMeta.ip,
+          userAgent: auditMeta.userAgent,
+          oldValue: AuditLogService.serializarSeguro(alunoAtual) ?? undefined,
+          newValue: AuditLogService.serializarSeguro(newValue) ?? undefined,
+        },
+      });
+
+      return { aluno: alunoInativado, matriculasEncerradasDetalhes };
     });
-    return result;
+
+    for (const matricula of result.matriculasEncerradasDetalhes) {
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: result.aluno.id,
+        turmaId: matricula.turmaId,
+        usuarioId: auditUser?.sub,
+        tipo: 'ENCERRAMENTO_MATRICULA',
+        origem: 'MATRICULA_OFICINA',
+        origemId: matricula.id,
+        chaveEvento: `MATRICULA_OFICINA:${matricula.id}:ENCERRAMENTO_MATRICULA`,
+        dataEvento: agora,
+        titulo: 'Matricula encerrada',
+        descricao: `Motivo: ${motivoEncerramentoMatricula}. ${observacaoInativacao ?? ''}`.trim(),
+        turmaNomeSnapshot: matricula.turma.nome,
+        professorNomeSnapshot: matricula.turma.professor?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          status: statusMatricula,
+          motivoEncerramento: motivoEncerramentoMatricula,
+          origemInativacaoAluno: true,
+        },
+      });
+    }
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: result.aluno.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'INATIVACAO',
+      origem: 'ALUNO',
+      origemId: result.aluno.id,
+      chaveEvento: `ALUNO:${result.aluno.id}:INATIVACAO:${agora.toISOString()}`,
+      dataEvento: agora,
+      titulo: 'Aluno inativado',
+      descricao: `Motivo: ${dto.motivoInativacao}. ${observacaoInativacao ?? ''}`.trim(),
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        motivoInativacao: dto.motivoInativacao,
+        encerrarMatriculasAtivas,
+        statusMatricula,
+        motivoEncerramentoMatricula,
+      },
+    });
+
+    return result.aluno;
   }
 
   async restore(id: string, auditUser?: AuditUser) {
     await this.assertExists(id);
-    const result = await this.prisma.aluno.update({ where: { id }, data: { statusAtivo: true } });
+    const result = await this.prisma.aluno.update({
+      where: { id },
+      data: {
+        statusAtivo: true,
+        reativadoEm: new Date(),
+        reativadoPorId: auditUser?.sub ?? null,
+      },
+    });
     this.auditService.registrar({
       ...this.toAuditMeta(auditUser),
       entidade: 'Aluno',
@@ -673,6 +917,18 @@ export class BeneficiariesService {
       acao: AuditAcao.RESTAURAR,
       oldValue: { statusAtivo: false },
       newValue: { statusAtivo: true },
+    });
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: result.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'REATIVACAO',
+      origem: 'ALUNO',
+      origemId: result.id,
+      chaveEvento: `ALUNO:${result.id}:REATIVACAO:${result.reativadoEm?.toISOString() ?? new Date().toISOString()}`,
+      dataEvento: result.reativadoEm ?? new Date(),
+      titulo: 'Aluno reativado',
+      descricao: 'Aluno reativado na instituicao.',
+      usuarioNomeSnapshot: auditUser?.nome,
     });
     return result;
   }

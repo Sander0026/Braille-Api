@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { AuditAcao } from '@prisma/client';
+import { AuditAcao, MatriculaStatus, MotivoEncerramentoMatricula, MotivoInativacaoAluno, Role } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CertificadosService } from '../certificados/certificados.service';
@@ -31,6 +31,10 @@ describe('BeneficiariesService', () => {
     regenerarCertificadosAluno: jest.fn(),
   };
 
+  const eventoLinhaTempoService = {
+    registrarEvento: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     service = new BeneficiariesService(
@@ -38,6 +42,7 @@ describe('BeneficiariesService', () => {
       auditService as unknown as AuditLogService,
       uploadService as unknown as UploadService,
       certificadosService as unknown as CertificadosService,
+      eventoLinhaTempoService as never,
     );
   });
 
@@ -64,6 +69,167 @@ describe('BeneficiariesService', () => {
         acao: AuditAcao.ARQUIVAR,
       }),
     );
+  });
+
+  it('deve inativar aluno com motivo e encerrar matriculas ativas na mesma transacao', async () => {
+    const tx = {
+      aluno: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'aluno-1',
+          statusAtivo: true,
+          motivoInativacao: null,
+          observacaoInativacao: null,
+          inativadoEm: null,
+          inativadoPorId: null,
+        }),
+        update: jest.fn().mockResolvedValue({
+          id: 'aluno-1',
+          statusAtivo: false,
+          motivoInativacao: MotivoInativacaoAluno.MUDANCA_DE_CIDADE,
+        }),
+      },
+      matriculaOficina: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'matricula-1',
+            turmaId: 'turma-1',
+            turma: { nome: 'Braille Nivel 1', professor: { nome: 'Professor' } },
+          },
+          {
+            id: 'matricula-2',
+            turmaId: 'turma-2',
+            turma: { nome: 'Soroban', professor: null },
+          },
+        ]),
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+    };
+
+    prisma.$transaction.mockImplementationOnce(async (callback: (txArg: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    );
+
+    await service.remove(
+      'aluno-1',
+      {
+        motivoInativacao: MotivoInativacaoAluno.MUDANCA_DE_CIDADE,
+        observacao: ' Mudou de cidade ',
+        encerrarMatriculasAtivas: true,
+        statusMatricula: MatriculaStatus.TRANSFERIDA,
+      },
+      {
+        sub: 'user-1',
+        nome: 'Secretaria',
+        role: Role.SECRETARIA,
+      },
+    );
+
+    expect(tx.aluno.update).toHaveBeenCalledWith({
+      where: { id: 'aluno-1' },
+      data: expect.objectContaining({
+        statusAtivo: false,
+        motivoInativacao: MotivoInativacaoAluno.MUDANCA_DE_CIDADE,
+        observacaoInativacao: 'Mudou de cidade',
+        inativadoPorId: 'user-1',
+      }),
+    });
+    expect(tx.matriculaOficina.findMany).toHaveBeenCalledWith({
+      where: {
+        alunoId: 'aluno-1',
+        status: MatriculaStatus.ATIVA,
+      },
+      select: {
+        id: true,
+        turmaId: true,
+        turma: {
+          select: {
+            nome: true,
+            professor: { select: { nome: true } },
+          },
+        },
+      },
+      orderBy: { dataEntrada: 'asc' },
+    });
+    expect(tx.matriculaOficina.updateMany).toHaveBeenCalledWith({
+      where: {
+        alunoId: 'aluno-1',
+        status: MatriculaStatus.ATIVA,
+      },
+      data: expect.objectContaining({
+        status: MatriculaStatus.TRANSFERIDA,
+        motivoEncerramento: MotivoEncerramentoMatricula.MUDANCA_DE_CIDADE,
+        observacao: 'Mudou de cidade',
+        encerradoPorId: 'user-1',
+      }),
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        entidade: 'Aluno',
+        registroId: 'aluno-1',
+        acao: AuditAcao.EXCLUIR,
+        autorId: 'user-1',
+      }),
+    });
+    expect(eventoLinhaTempoService.registrarEvento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alunoId: 'aluno-1',
+        turmaId: 'turma-1',
+        tipo: 'ENCERRAMENTO_MATRICULA',
+        origem: 'MATRICULA_OFICINA',
+        origemId: 'matricula-1',
+        chaveEvento: 'MATRICULA_OFICINA:matricula-1:ENCERRAMENTO_MATRICULA',
+        turmaNomeSnapshot: 'Braille Nivel 1',
+        professorNomeSnapshot: 'Professor',
+      }),
+    );
+    expect(eventoLinhaTempoService.registrarEvento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alunoId: 'aluno-1',
+        tipo: 'INATIVACAO',
+        origem: 'ALUNO',
+      }),
+    );
+  });
+
+  it('deve bloquear inativacao sem encerramento quando houver matriculas ativas', async () => {
+    const tx = {
+      aluno: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'aluno-1',
+          statusAtivo: true,
+          motivoInativacao: null,
+          observacaoInativacao: null,
+          inativadoEm: null,
+          inativadoPorId: null,
+        }),
+        update: jest.fn(),
+      },
+      matriculaOficina: {
+        count: jest.fn().mockResolvedValue(1),
+        updateMany: jest.fn(),
+      },
+      auditLog: {
+        create: jest.fn(),
+      },
+    };
+
+    prisma.$transaction.mockImplementationOnce(async (callback: (txArg: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    );
+
+    await expect(
+      service.remove('aluno-1', {
+        motivoInativacao: MotivoInativacaoAluno.OUTRO,
+        encerrarMatriculasAtivas: false,
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(tx.aluno.update).not.toHaveBeenCalled();
+    expect(tx.matriculaOficina.updateMany).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
   });
 
   it('deve auditar importacao usando o id real do aluno criado', async () => {

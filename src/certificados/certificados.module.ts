@@ -8,11 +8,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { ImageProcessingService } from './image-processing.service';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { AlunoLinhaTempoModule } from '../aluno-linha-tempo/aluno-linha-tempo.module';
 
 @Module({
   // ConfigModule importado localmente para garantir ConfigService no PdfService
   // sem depender de isGlobal no AppModule.
-  imports: [UploadModule, AuditLogModule, ConfigModule],
+  imports: [UploadModule, AuditLogModule, ConfigModule, AlunoLinhaTempoModule],
   controllers: [CertificadosController, CertificadosPublicoController],
   providers: [CertificadosService, PrismaService, PdfService, ImageProcessingService],
   exports: [PdfService, CertificadosService],
