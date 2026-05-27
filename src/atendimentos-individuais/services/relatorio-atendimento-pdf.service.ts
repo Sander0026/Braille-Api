@@ -77,7 +77,7 @@ export class RelatorioAtendimentoPdfService {
 
       page.drawCircle({ x: x + 22, y: logoY - 16, size: 21, color: theme.accent });
       page.drawCircle({ x: x + 22, y: logoY - 16, size: 17, color: theme.white });
-      page.drawText('ILB', { x: x + 9, y: logoY - 22, size: 12, font: fontBold, color: theme.title });
+      page.drawText('ILBES', { x: x + 6, y: logoY - 21, size: 9.5, font: fontBold, color: theme.title });
     };
 
     const drawHeader = () => {
