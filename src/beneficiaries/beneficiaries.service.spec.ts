@@ -31,6 +31,10 @@ describe('BeneficiariesService', () => {
     regenerarCertificadosAluno: jest.fn(),
   };
 
+  const eventoLinhaTempoService = {
+    registrarEvento: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     service = new BeneficiariesService(
@@ -38,6 +42,7 @@ describe('BeneficiariesService', () => {
       auditService as unknown as AuditLogService,
       uploadService as unknown as UploadService,
       certificadosService as unknown as CertificadosService,
+      eventoLinhaTempoService as never,
     );
   });
 
@@ -84,6 +89,18 @@ describe('BeneficiariesService', () => {
         }),
       },
       matriculaOficina: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'matricula-1',
+            turmaId: 'turma-1',
+            turma: { nome: 'Braille Nivel 1', professor: { nome: 'Professor' } },
+          },
+          {
+            id: 'matricula-2',
+            turmaId: 'turma-2',
+            turma: { nome: 'Soroban', professor: null },
+          },
+        ]),
         updateMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
       auditLog: {
@@ -119,6 +136,23 @@ describe('BeneficiariesService', () => {
         inativadoPorId: 'user-1',
       }),
     });
+    expect(tx.matriculaOficina.findMany).toHaveBeenCalledWith({
+      where: {
+        alunoId: 'aluno-1',
+        status: MatriculaStatus.ATIVA,
+      },
+      select: {
+        id: true,
+        turmaId: true,
+        turma: {
+          select: {
+            nome: true,
+            professor: { select: { nome: true } },
+          },
+        },
+      },
+      orderBy: { dataEntrada: 'asc' },
+    });
     expect(tx.matriculaOficina.updateMany).toHaveBeenCalledWith({
       where: {
         alunoId: 'aluno-1',
@@ -139,6 +173,25 @@ describe('BeneficiariesService', () => {
         autorId: 'user-1',
       }),
     });
+    expect(eventoLinhaTempoService.registrarEvento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alunoId: 'aluno-1',
+        turmaId: 'turma-1',
+        tipo: 'ENCERRAMENTO_MATRICULA',
+        origem: 'MATRICULA_OFICINA',
+        origemId: 'matricula-1',
+        chaveEvento: 'MATRICULA_OFICINA:matricula-1:ENCERRAMENTO_MATRICULA',
+        turmaNomeSnapshot: 'Braille Nivel 1',
+        professorNomeSnapshot: 'Professor',
+      }),
+    );
+    expect(eventoLinhaTempoService.registrarEvento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alunoId: 'aluno-1',
+        tipo: 'INATIVACAO',
+        origem: 'ALUNO',
+      }),
+    );
   });
 
   it('deve bloquear inativacao sem encerramento quando houver matriculas ativas', async () => {

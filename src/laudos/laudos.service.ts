@@ -3,8 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateLaudoDto } from './dto/create-laudo.dto';
 import { UpdateLaudoDto } from './dto/update-laudo.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { AuditAcao } from '@prisma/client';
+import { AuditAcao, VisibilidadeEventoLinhaTempo } from '@prisma/client';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
 @Injectable()
 export class LaudosService {
@@ -13,6 +14,7 @@ export class LaudosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   async criar(alunoId: string, dto: CreateLaudoDto, auditUser: AuditUser) {
@@ -41,6 +43,25 @@ export class LaudosService {
         acao: AuditAcao.CRIAR,
         auditUser,
         newValue: laudo,
+      });
+
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: laudo.alunoId,
+        usuarioId: auditUser.sub,
+        tipo: 'LAUDO',
+        origem: 'LAUDO_MEDICO',
+        origemId: laudo.id,
+        chaveEvento: `LAUDO_MEDICO:${laudo.id}:CRIADO`,
+        dataEvento: laudo.criadoEm,
+        titulo: 'Laudo medico registrado',
+        descricao: laudo.descricao || `Data de emissao: ${this.formatarDataCurta(laudo.dataEmissao)}.`,
+        usuarioNomeSnapshot: auditUser.nome,
+        metadata: {
+          dataEmissao: laudo.dataEmissao.toISOString(),
+          medicoResponsavel: laudo.medicoResponsavel,
+        },
+        visibilidade: VisibilidadeEventoLinhaTempo.RESTRITA,
+        sensivel: true,
       });
 
       return laudo;
@@ -112,6 +133,25 @@ export class LaudosService {
         newValue: laudoRevogado,
       });
 
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: laudo.alunoId,
+        usuarioId: auditUser.sub,
+        tipo: 'LAUDO',
+        origem: 'LAUDO_MEDICO',
+        origemId: laudo.id,
+        chaveEvento: `LAUDO_MEDICO:${laudo.id}:REMOVIDO:${laudoRevogado.excluidoEm?.toISOString() ?? new Date().toISOString()}`,
+        dataEvento: laudoRevogado.excluidoEm ?? new Date(),
+        titulo: 'Laudo medico removido',
+        descricao: 'Laudo removido da listagem e preservado no historico medico.',
+        usuarioNomeSnapshot: auditUser.nome,
+        metadata: {
+          laudoId: laudo.id,
+          excluidoPorId: auditUser.sub,
+        },
+        visibilidade: VisibilidadeEventoLinhaTempo.RESTRITA,
+        sensivel: true,
+      });
+
       return { message: 'Laudo removido da listagem e preservado no historico medico.' };
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : JSON.stringify(error);
@@ -160,5 +200,9 @@ export class LaudosService {
         const msg = error instanceof Error ? error.message : JSON.stringify(error);
         this.logger.warn(`Falha na auditoria do laudo ${registroId}: ${msg}`);
       });
+  }
+
+  private formatarDataCurta(date: Date): string {
+    return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
   }
 }

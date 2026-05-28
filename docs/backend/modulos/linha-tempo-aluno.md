@@ -4,33 +4,88 @@
 
 # 1. Visao Geral
 
-A linha do tempo do aluno entrega uma visao unica dos fatos relevantes que aconteceram com o aluno
-dentro da instituicao. Ela nao cria uma tabela nova nesta fase: o endpoint monta a resposta lendo as
-tabelas existentes e normalizando tudo para um formato comum.
+A linha do tempo do aluno registra fatos institucionais relevantes em uma tabela propria:
+`EventoLinhaTempoAluno`.
 
-Essa escolha evita duplicacao de dados e reduz risco de inconsistencias. Se o volume crescer, o
-proximo passo natural e criar uma tabela/cache de eventos materializados.
+Desde maio de 2026, a timeline nao e mais montada dinamicamente a partir de varias tabelas no
+momento da leitura. Os eventos passam a ser materializados quando os modulos executam suas acoes.
+Para dados antigos, o backfill existe apenas como script manual e nao roda automaticamente em
+consultas.
 
----
+Objetivos:
 
-# 2. Onde Fica Cada Coisa
-
-| Area | Arquivo | Papel |
-|---|---|---|
-| Modulo Nest | `src/aluno-linha-tempo/aluno-linha-tempo.module.ts` | Registra controller e service |
-| Controller | `src/aluno-linha-tempo/aluno-linha-tempo.controller.ts` | Expoe `GET /beneficiaries/:id/linha-tempo` |
-| Service | `src/aluno-linha-tempo/aluno-linha-tempo.service.ts` | Consulta tabelas existentes, aplica permissoes, ordena e pagina |
-| DTO | `src/aluno-linha-tempo/dto/query-linha-tempo-aluno.dto.ts` | Filtros de data, tipo, turma e paginacao |
-| Tipos | `src/aluno-linha-tempo/aluno-linha-tempo.types.ts` | `TipoEventoLinhaTempoAluno` e `LinhaTempoAlunoItem` |
-| Registro global | `src/app.module.ts` | Importa `AlunoLinhaTempoModule` |
+- preservar historico confiavel e auditavel do aluno;
+- reduzir custo e complexidade das consultas;
+- centralizar permissao e mascaramento LGPD;
+- permitir eventos manuais institucionais;
+- manter o endpoint interno ja usado pelo frontend.
 
 ---
 
-# 3. Endpoint
+# 2. Banco de Dados
 
-Base:
+Model principal: `EventoLinhaTempoAluno`.
 
-`GET /api/beneficiaries/:id/linha-tempo`
+Campos mais importantes:
+
+| Campo | Uso |
+|---|---|
+| `alunoId` | Aluno dono do evento |
+| `turmaId` | Turma relacionada, quando existir |
+| `usuarioId` | Usuario que causou ou registrou o evento |
+| `tipo` | Classificacao funcional do evento |
+| `origem` / `origemId` | Fonte de negocio que gerou o evento |
+| `chaveEvento` | Chave unica usada no `upsert` para evitar duplicidade |
+| `dataEvento` | Data real do fato, usada na ordenacao |
+| `titulo` / `descricao` | Texto exibido na timeline |
+| `turmaNomeSnapshot`, `professorNomeSnapshot`, `usuarioNomeSnapshot` | Snapshots para preservar leitura historica |
+| `metadata` | Dados complementares sanitizados |
+| `visibilidade` | `INTERNA`, `PROFESSOR` ou `RESTRITA` |
+| `sensivel` | Marca eventos que exigem mascaramento |
+
+Enums:
+
+- `TipoEventoLinhaTempoAluno`
+- `OrigemEventoLinhaTempo`
+- `VisibilidadeEventoLinhaTempo`
+
+Relacoes:
+
+- `Aluno.eventosLinhaTempo`
+- `Turma.eventosLinhaTempo`
+- `User.eventosLinhaTempoRegistrados`
+
+Migration:
+
+`prisma/migrations/20260518110000_create_eventos_linha_tempo_aluno`
+
+---
+
+# 3. Arquivos
+
+| Area | Arquivo |
+|---|---|
+| Modulo Nest | `src/aluno-linha-tempo/aluno-linha-tempo.module.ts` |
+| Controller | `src/aluno-linha-tempo/aluno-linha-tempo.controller.ts` |
+| Consulta e permissoes | `src/aluno-linha-tempo/aluno-linha-tempo.service.ts` |
+| Registro persistido | `src/aluno-linha-tempo/evento-linha-tempo.service.ts` |
+| Backfill service | `src/aluno-linha-tempo/linha-tempo-backfill.service.ts` |
+| Query DTO | `src/aluno-linha-tempo/dto/query-linha-tempo-aluno.dto.ts` |
+| Evento manual DTO | `src/aluno-linha-tempo/dto/create-evento-linha-tempo-manual.dto.ts` |
+| Swagger DTOs | `src/aluno-linha-tempo/dto/linha-tempo-aluno-response.dto.ts` |
+| Script CLI | `prisma/scripts/backfill-linha-tempo.ts` |
+
+---
+
+# 4. Endpoints
+
+Base com prefixo global:
+
+`/api/beneficiaries/:id/linha-tempo`
+
+## GET `/beneficiaries/:id/linha-tempo`
+
+Lista eventos persistidos e paginados.
 
 Query params:
 
@@ -43,48 +98,174 @@ Query params:
 | `page` | Pagina da timeline |
 | `limit` | Itens por pagina, maximo 100 |
 
+## GET `/beneficiaries/:id/linha-tempo/resumo`
+
+Resumo para cards da tela dedicada:
+
+```json
+{
+  "totalEventos": 84,
+  "ultimaFrequencia": "2026-05-18T11:00:00.000Z",
+  "ultimoAtendimento": "2026-05-12T13:30:00.000Z",
+  "ultimoPdi": "2026-05-10T09:00:00.000Z",
+  "ultimaAcaoRisco": "2026-05-16T17:00:00.000Z"
+}
+```
+
+## GET `/beneficiaries/:id/linha-tempo/turmas`
+
+Lista apenas as turmas em que o aluno ja teve matricula. O frontend usa esse endpoint para evitar
+que o filtro avancado dependa de UUID digitado manualmente.
+
+Resposta:
+
+```json
+[
+  { "id": "uuid", "nome": "Braille Nivel 1" }
+]
+```
+
+## POST `/beneficiaries/:id/linha-tempo/manual`
+
+Cria uma observacao institucional manual.
+
+Usos esperados:
+
+- reuniao com familia;
+- entrega de material;
+- orientacao avulsa;
+- contato com responsavel;
+- encaminhamento externo.
+
+Payload:
+
+```json
+{
+  "tipo": "OBSERVACAO_MANUAL",
+  "dataEvento": "2026-05-18",
+  "titulo": "Reuniao com familia",
+  "descricao": "Responsavel recebeu orientacoes da secretaria.",
+  "turmaId": "uuid",
+  "sensivel": false
+}
+```
+
+## DELETE `/beneficiaries/:id/linha-tempo/:eventoId`
+
+Remove apenas eventos manuais (`OBSERVACAO_MANUAL` + origem `MANUAL`). Eventos automaticos nao sao
+apagados por esse endpoint; devem ser corrigidos no modulo de origem.
+
 ---
 
-# 4. Fontes de Eventos
+# 5. Registro Automatico
 
-O service agrega:
+O `EventoLinhaTempoService.registrarEvento()` usa `upsert` por `chaveEvento`.
 
-- `Aluno`: cadastro, inativacao e reativacao;
-- `AuditLog`: atualizacoes cadastrais;
-- `MatriculaOficina`: entrada e encerramento de matricula;
-- `Frequencia`: presenca, falta e falta justificada;
-- `AtendimentoIndividual`: atendimento realizado e falta em atendimento;
-- `Atestado`: documento registrado e periodo coberto;
-- `LaudoMedico`: laudo registrado, com detalhes sensiveis restritos;
-- `CertificadoEmitido`: certificados academicos emitidos;
-- `PdiAluno`, `PdiMeta`, `PdiEvolucao`: criacao de PDI, metas e evolucoes;
-- `AcaoRiscoEvasao`: intervencoes criadas para risco de evasao.
+Modulos que registram eventos:
 
-Todos os eventos sao normalizados para `LinhaTempoAlunoItem`, ordenados do mais recente para o mais
-antigo e paginados em memoria.
+| Modulo | Eventos |
+|---|---|
+| `BeneficiariesService` | cadastro, atualizacao, inativacao, reativacao e encerramentos de matriculas causados pela inativacao |
+| `TurmasService` | matricula e encerramento de matricula |
+| `FrequenciasService` | presenca, falta, falta justificada |
+| `AtendimentosIndividuaisService` | atendimento e falta em atendimento |
+| `PdiService` | PDI criado, meta criada/atualizada, evolucao, conclusao |
+| `RiscoEvasaoService` | acao criada, resolvida ou cancelada |
+| `AtestadosService` | atestado e faltas justificadas por atestado |
+| `LaudosService` | laudo criado/removido |
+| `CertificadosService` | certificados emitidos |
 
----
+Padrao de `chaveEvento`:
 
-# 5. Permissoes
-
-Roles permitidas:
-
-- `ADMIN`
-- `SECRETARIA`
-- `PROFESSOR`
-
-`COMUNICACAO` nao acessa linha do tempo individual.
-
-Regras:
-
-- Admin e Secretaria veem tudo.
-- Professor so acessa alunos vinculados a suas turmas, atendimentos, acompanhamentos ou PDI sob sua responsabilidade.
-- Laudos aparecem para professor apenas como evento sensivel, sem descricao clinica ou metadados detalhados.
+```text
+ORIGEM:ID_DA_ORIGEM:ACAO
+```
 
 ---
 
-# 6. Cuidados para Evolucao
+# 6. Backfill
 
-- Se adicionar nova fonte de dados, crie um tipo em `aluno-linha-tempo.types.ts` e adicione o mapper no service.
-- Evite retornar CPF, RG, endereco completo, URLs de laudo ou observacoes clinicas no `metadata`.
-- Para volumes grandes, substitua a montagem em memoria por tabela materializada de eventos ou por queries paginadas por fonte com merge incremental.
+Script:
+
+```bash
+npm run timeline:backfill
+```
+
+Backfill de um aluno especifico:
+
+```bash
+npm run timeline:backfill -- --alunoId=<uuid>
+```
+
+O script consulta dados historicos, grava eventos via `EventoLinhaTempoService` e usa `upsert` por
+`chaveEvento`, portanto pode ser repetido sem duplicar eventos. Em bases grandes pode demorar e
+imprime resultado ao final.
+
+Importante: o backend nao dispara backfill ao abrir a tela ou consultar resumo da linha do tempo.
+Em bancos de teste ou planos pequenos, deixe o script sem executar e a timeline exibira apenas
+eventos novos gerados apos a implantacao.
+
+---
+
+# 7. Permissoes e LGPD
+
+| Role | Regra |
+|---|---|
+| `ADMIN` | Ve tudo |
+| `SECRETARIA` | Ve tudo |
+| `PROFESSOR` | Ve apenas alunos vinculados a turmas, atendimentos, acompanhamentos ou PDI sob sua responsabilidade |
+| `COMUNICACAO` | Nao acessa linha do tempo individual |
+
+Eventos sensiveis:
+
+- `LAUDO`;
+- `ATESTADO`;
+- observacoes clinicas;
+- dados medicos;
+- observacoes manuais marcadas com `sensivel: true`.
+
+Para professor, eventos sensiveis podem aparecer como existencia institucional, mas sem conteudo
+detalhado:
+
+```json
+{
+  "tipo": "LAUDO",
+  "titulo": "Laudo medico registrado.",
+  "descricao": "Detalhes restritos a secretaria e administracao.",
+  "metadata": {
+    "sensivel": true,
+    "restrito": true
+  }
+}
+```
+
+Nunca retornar URLs de laudos, dados clinicos, CID, medico responsavel ou descricao medica para
+professor via timeline.
+
+---
+
+# 8. Swagger
+
+O controller documenta:
+
+- `LinhaTempoAlunoResponseDto`;
+- `LinhaTempoAlunoResumoDto`;
+- `LinhaTempoAlunoTurmaResumoDto`;
+- `LinhaTempoAlunoItemDto`;
+- `CreateEventoLinhaTempoManualDto`.
+
+A documentacao fica disponivel no Swagger global da API.
+
+---
+
+# 9. Checklist de Evolucao
+
+Ao adicionar novo evento:
+
+1. Confirmar se o tipo ja existe em `TipoEventoLinhaTempoAluno`.
+2. Registrar pelo modulo de origem usando `EventoLinhaTempoService`.
+3. Definir `chaveEvento` deterministica.
+4. Definir `visibilidade` e `sensivel`.
+5. Atualizar `LinhaTempoBackfillService` para eventos antigos.
+6. Revisar mascaramento LGPD se houver dados pessoais ou medicos.
+7. Atualizar esta documentacao e, se necessario, o frontend.

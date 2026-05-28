@@ -10,6 +10,7 @@ import { CreatePdiMetaDto } from './dto/create-pdi-meta.dto';
 import { QueryPdiDto } from './dto/query-pdi.dto';
 import { UpdatePdiDto } from './dto/update-pdi.dto';
 import { UpdatePdiMetaDto } from './dto/update-pdi-meta.dto';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
 const PDI_INCLUDE = {
   aluno: { select: { id: true, nomeCompleto: true, matricula: true, statusAtivo: true } },
@@ -28,6 +29,7 @@ export class PdiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   async findAll(query: QueryPdiDto, user?: AuthenticatedUser) {
@@ -120,6 +122,23 @@ export class PdiService {
     });
 
     await this.registrarAuditoria(pdi.id, AuditAcao.CRIAR, auditUser, undefined, pdi);
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: pdi.alunoId,
+      usuarioId: auditUser?.sub || user?.sub,
+      tipo: 'PDI_CRIADO',
+      origem: 'PDI',
+      origemId: pdi.id,
+      chaveEvento: `PDI:${pdi.id}:CRIADO`,
+      dataEvento: pdi.criadoEm,
+      titulo: 'PDI criado',
+      descricao: pdi.objetivoGeral,
+      professorNomeSnapshot: pdi.professorResponsavel?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        status: pdi.status,
+        titulo: pdi.titulo,
+      },
+    });
     return pdi;
   }
 
@@ -166,6 +185,25 @@ export class PdiService {
     });
 
     await this.registrarAuditoria(id, AuditAcao.ATUALIZAR, auditUser, atual, atualizado);
+    if (dto.status === StatusPdi.CONCLUIDO && atual.status !== StatusPdi.CONCLUIDO) {
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: atualizado.alunoId,
+        usuarioId: auditUser?.sub || user?.sub,
+        tipo: 'PDI_EVOLUCAO',
+        origem: 'PDI',
+        origemId: atualizado.id,
+        chaveEvento: `PDI:${atualizado.id}:CONCLUIDO`,
+        dataEvento: atualizado.dataConclusao ?? atualizado.atualizadoEm,
+        titulo: 'PDI concluido',
+        descricao: atualizado.objetivoGeral,
+        professorNomeSnapshot: atualizado.professorResponsavel?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          status: atualizado.status,
+          titulo: atualizado.titulo,
+        },
+      });
+    }
     return atualizado;
   }
 
@@ -194,6 +232,25 @@ export class PdiService {
     });
 
     await this.registrarAuditoria(meta.id, AuditAcao.CRIAR, auditUser, undefined, meta);
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: pdi.alunoId,
+      usuarioId: auditUser?.sub || user?.sub,
+      tipo: 'PDI_META_CRIADA',
+      origem: 'PDI_META',
+      origemId: meta.id,
+      chaveEvento: `PDI_META:${meta.id}:CRIADA`,
+      dataEvento: meta.criadoEm,
+      titulo: 'Meta do PDI criada',
+      descricao: meta.descricao,
+      professorNomeSnapshot: pdi.professorResponsavel?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        area: meta.area,
+        status: meta.status,
+        pdiId: pdi.id,
+        prazo: meta.prazo?.toISOString(),
+      },
+    });
     return meta;
   }
 
@@ -204,7 +261,7 @@ export class PdiService {
     user?: AuthenticatedUser,
     auditUser?: AuditUser,
   ) {
-    await this.buscarPdiEditavelOuFalhar(id, user);
+    const pdi = await this.buscarPdiEditavelOuFalhar(id, user);
     const atual = await this.buscarMetaOuFalhar(id, metaId);
 
     const meta = await this.prisma.pdiMeta.update({
@@ -221,6 +278,25 @@ export class PdiService {
     });
 
     await this.registrarAuditoria(metaId, AuditAcao.ATUALIZAR, auditUser, atual, meta);
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: pdi.alunoId,
+      usuarioId: auditUser?.sub || user?.sub,
+      tipo: 'PDI_META_ATUALIZADA',
+      origem: 'PDI_META',
+      origemId: meta.id,
+      chaveEvento: `PDI_META:${meta.id}:ATUALIZADA:${meta.atualizadoEm.toISOString()}`,
+      dataEvento: meta.atualizadoEm,
+      titulo: 'Meta do PDI atualizada',
+      descricao: meta.descricao,
+      professorNomeSnapshot: pdi.professorResponsavel?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        area: meta.area,
+        status: meta.status,
+        pdiId: pdi.id,
+        prazo: meta.prazo?.toISOString(),
+      },
+    });
     return meta;
   }
 
@@ -253,6 +329,22 @@ export class PdiService {
     });
 
     await this.registrarAuditoria(evolucao.id, AuditAcao.CRIAR, auditUser, undefined, evolucao);
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: pdi.alunoId,
+      usuarioId: auditUser?.sub || user?.sub,
+      tipo: 'PDI_EVOLUCAO',
+      origem: 'PDI_EVOLUCAO',
+      origemId: evolucao.id,
+      chaveEvento: `PDI_EVOLUCAO:${evolucao.id}:CRIADA`,
+      dataEvento: evolucao.dataRegistro,
+      titulo: 'Evolucao registrada no PDI',
+      descricao: evolucao.avancos || evolucao.descricao,
+      professorNomeSnapshot: pdi.professorResponsavel?.nome,
+      usuarioNomeSnapshot: auditUser?.nome || evolucao.registradoPor?.nome,
+      metadata: {
+        pdiId: pdi.id,
+      },
+    });
     return evolucao;
   }
 

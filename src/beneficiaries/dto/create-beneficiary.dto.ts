@@ -13,6 +13,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { TipoDeficiencia, CausaDeficiencia, PreferenciaAcessibilidade, CorRaca } from '@prisma/client';
+import { IsCpf } from '../../common/validators/documento.validator';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.replaceAll('\0', '').trim() : value;
@@ -31,9 +32,10 @@ export class CreateBeneficiaryDto {
   dataNascimento: string;
 
   @ApiPropertyOptional({ description: 'CPF do beneficiário' })
-  @ValidateIf((o) => !o.rg)
+  @ValidateIf((o) => !o.rg || !!o.cpf)
   @IsString()
   @IsNotEmpty({ message: 'É obrigatório informar o CPF ou o RG.' })
+  @IsCpf({ message: 'Informe um CPF valido.' })
   @MaxLength(14)
   @Transform(trim)
   cpf?: string;

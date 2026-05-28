@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateAcaoRiscoEvasaoDto } from './dto/create-acao-risco-evasao.dto';
 import { QueryAcoesRiscoEvasaoDto } from './dto/query-acoes-risco-evasao.dto';
 import { UpdateAcaoRiscoEvasaoDto } from './dto/update-acao-risco-evasao.dto';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
 const STATUS_ACAO_ABERTA = [
   StatusAcaoRiscoEvasao.PENDENTE,
@@ -51,6 +52,7 @@ export class RiscoEvasaoService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   async findAll(query: QueryAcoesRiscoEvasaoDto, user?: AuthenticatedUser) {
@@ -143,6 +145,27 @@ export class RiscoEvasaoService {
     });
 
     await this.registrarAuditoria(acao.id, AuditAcao.CRIAR, auditUser, undefined, acao);
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: acao.alunoId,
+      turmaId: acao.turmaId ?? undefined,
+      usuarioId: auditUser?.sub || user?.sub,
+      tipo: 'ACAO_RISCO_EVASAO',
+      origem: 'ACAO_RISCO_EVASAO',
+      origemId: acao.id,
+      chaveEvento: `ACAO_RISCO_EVASAO:${acao.id}:CRIADA`,
+      dataEvento: acao.criadoEm,
+      titulo: 'Acao de risco de evasao criada',
+      descricao: acao.descricao || acao.motivoRisco,
+      turmaNomeSnapshot: acao.turma?.nome,
+      professorNomeSnapshot: acao.turma?.professor?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        nivel: acao.nivel,
+        status: acao.status,
+        tipoAcao: acao.tipoAcao,
+        prazo: acao.prazo?.toISOString(),
+      },
+    });
     return this.mapearAcao(acao);
   }
 
@@ -176,6 +199,33 @@ export class RiscoEvasaoService {
     });
 
     await this.registrarAuditoria(id, AuditAcao.ATUALIZAR, auditUser, atual, atualizado);
+    if (atualizado.status === StatusAcaoRiscoEvasao.RESOLVIDA && atual.status !== StatusAcaoRiscoEvasao.RESOLVIDA) {
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: atualizado.alunoId,
+        turmaId: atualizado.turmaId ?? undefined,
+        usuarioId: auditUser?.sub,
+        tipo: 'ACAO_RISCO_RESOLVIDA',
+        origem: 'ACAO_RISCO_EVASAO',
+        origemId: atualizado.id,
+        chaveEvento: `ACAO_RISCO_EVASAO:${atualizado.id}:RESOLVIDA`,
+        dataEvento: atualizado.resolvidoEm ?? atualizado.atualizadoEm,
+        titulo: 'Acao de risco de evasao resolvida',
+        descricao: atualizado.resultado || atualizado.descricao || atualizado.motivoRisco,
+        turmaNomeSnapshot: atualizado.turma?.nome,
+        professorNomeSnapshot: atualizado.turma?.professor?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          nivel: atualizado.nivel,
+          status: atualizado.status,
+          tipoAcao: atualizado.tipoAcao,
+          prazo: atualizado.prazo?.toISOString(),
+        },
+      });
+    }
+
+    if (atualizado.status === StatusAcaoRiscoEvasao.CANCELADA && atual.status !== StatusAcaoRiscoEvasao.CANCELADA) {
+      await this.registrarEventoCancelamentoRisco(atualizado, auditUser);
+    }
     return this.mapearAcao(atualizado);
   }
 
@@ -205,7 +255,35 @@ export class RiscoEvasaoService {
     });
 
     await this.registrarAuditoria(id, AuditAcao.EXCLUIR, auditUser, atual, cancelada);
+    await this.registrarEventoCancelamentoRisco(cancelada, auditUser);
     return this.mapearAcao(cancelada);
+  }
+
+  private async registrarEventoCancelamentoRisco(
+    acao: AcaoRiscoComRelacoes,
+    auditUser?: AuditUser,
+  ): Promise<void> {
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: acao.alunoId,
+      turmaId: acao.turmaId ?? undefined,
+      usuarioId: auditUser?.sub,
+      tipo: 'ACAO_RISCO_EVASAO',
+      origem: 'ACAO_RISCO_EVASAO',
+      origemId: acao.id,
+      chaveEvento: `ACAO_RISCO_EVASAO:${acao.id}:CANCELADA`,
+      dataEvento: acao.atualizadoEm,
+      titulo: 'Acao de risco de evasao cancelada',
+      descricao: acao.resultado || acao.descricao || acao.motivoRisco,
+      turmaNomeSnapshot: acao.turma?.nome,
+      professorNomeSnapshot: acao.turma?.professor?.nome,
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        nivel: acao.nivel,
+        status: acao.status,
+        tipoAcao: acao.tipoAcao,
+        prazo: acao.prazo?.toISOString(),
+      },
+    });
   }
 
   private montarWhere(query: QueryAcoesRiscoEvasaoDto, user?: AuthenticatedUser): Prisma.AcaoRiscoEvasaoWhereInput {

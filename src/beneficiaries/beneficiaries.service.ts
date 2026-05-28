@@ -18,6 +18,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { UploadService } from '../upload/upload.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { CertificadosService } from '../certificados/certificados.service';
+import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 import * as ExcelJS from 'exceljs';
 
 // ── Selects Cirúrgicos — fonte única de verdade ────────────────────────────
@@ -115,6 +116,7 @@ export class BeneficiariesService {
     private readonly auditService: AuditLogService,
     private readonly uploadService: UploadService,
     private readonly certificadosService: CertificadosService,
+    private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
   // ── Helpers Privados ───────────────────────────────────────────────────────
@@ -376,6 +378,19 @@ export class BeneficiariesService {
       newValue: alunoNovo,
     });
 
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: alunoNovo.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'CADASTRO',
+      origem: 'ALUNO',
+      origemId: alunoNovo.id,
+      chaveEvento: `ALUNO:${alunoNovo.id}:CADASTRO`,
+      dataEvento: alunoNovo.criadoEm,
+      titulo: 'Aluno cadastrado',
+      descricao: `Cadastro de ${alunoNovo.nomeCompleto} realizado no sistema.`,
+      usuarioNomeSnapshot: auditUser?.nome,
+    });
+
     return alunoNovo;
   }
 
@@ -400,7 +415,16 @@ export class BeneficiariesService {
         reativadoEm: new Date(),
         reativadoPorId: auditUser?.sub ?? null,
       },
-      select: { id: true, nomeCompleto: true, cpf: true, rg: true, matricula: true, statusAtivo: true, criadoEm: true },
+      select: {
+        id: true,
+        nomeCompleto: true,
+        cpf: true,
+        rg: true,
+        matricula: true,
+        statusAtivo: true,
+        criadoEm: true,
+        reativadoEm: true,
+      },
     });
 
     this.auditService.registrar({
@@ -410,6 +434,19 @@ export class BeneficiariesService {
       acao: AuditAcao.RESTAURAR,
       oldValue: { statusAtivo: false },
       newValue: { statusAtivo: true },
+    });
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: result.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'REATIVACAO',
+      origem: 'ALUNO',
+      origemId: result.id,
+      chaveEvento: `ALUNO:${result.id}:REATIVACAO:${result.reativadoEm?.toISOString() ?? new Date().toISOString()}`,
+      dataEvento: result.reativadoEm ?? new Date(),
+      titulo: 'Aluno reativado',
+      descricao: 'Aluno reativado na instituicao.',
+      usuarioNomeSnapshot: auditUser?.nome,
     });
 
     return result;
@@ -657,6 +694,22 @@ export class BeneficiariesService {
       newValue: alunoAtualizado,
     });
 
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: alunoAtualizado.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'ATUALIZACAO_CADASTRO',
+      origem: 'ALUNO',
+      origemId: alunoAtualizado.id,
+      chaveEvento: `ALUNO:${alunoAtualizado.id}:ATUALIZACAO_CADASTRO:${alunoAtualizado.atualizadoEm.toISOString()}`,
+      dataEvento: alunoAtualizado.atualizadoEm,
+      titulo: 'Cadastro atualizado',
+      descricao: 'Dados cadastrais do aluno foram atualizados.',
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        camposAlterados: Object.keys(dto),
+      },
+    });
+
     // Fase 3 — Invalidação de cache: se o nome mudou, regenera PDFs em background
     if (dto.nomeCompleto && dto.nomeCompleto !== dadosAtuais.nomeCompleto) {
       setImmediate(() => {
@@ -730,8 +783,31 @@ export class BeneficiariesService {
       });
 
       let matriculasEncerradas = { count: 0 };
+      let matriculasEncerradasDetalhes: {
+        id: string;
+        turmaId: string;
+        turma: { nome: string; professor: { nome: string } | null };
+      }[] = [];
 
       if (encerrarMatriculasAtivas) {
+        matriculasEncerradasDetalhes = await tx.matriculaOficina.findMany({
+          where: {
+            alunoId: id,
+            status: MatriculaStatus.ATIVA,
+          },
+          select: {
+            id: true,
+            turmaId: true,
+            turma: {
+              select: {
+                nome: true,
+                professor: { select: { nome: true } },
+              },
+            },
+          },
+          orderBy: { dataEntrada: 'asc' },
+        });
+
         matriculasEncerradas = await tx.matriculaOficina.updateMany({
           where: {
             alunoId: id,
@@ -776,10 +852,52 @@ export class BeneficiariesService {
         },
       });
 
-      return alunoInativado;
+      return { aluno: alunoInativado, matriculasEncerradasDetalhes };
     });
 
-    return result;
+    for (const matricula of result.matriculasEncerradasDetalhes) {
+      await this.eventoLinhaTempo?.registrarEvento({
+        alunoId: result.aluno.id,
+        turmaId: matricula.turmaId,
+        usuarioId: auditUser?.sub,
+        tipo: 'ENCERRAMENTO_MATRICULA',
+        origem: 'MATRICULA_OFICINA',
+        origemId: matricula.id,
+        chaveEvento: `MATRICULA_OFICINA:${matricula.id}:ENCERRAMENTO_MATRICULA`,
+        dataEvento: agora,
+        titulo: 'Matricula encerrada',
+        descricao: `Motivo: ${motivoEncerramentoMatricula}. ${observacaoInativacao ?? ''}`.trim(),
+        turmaNomeSnapshot: matricula.turma.nome,
+        professorNomeSnapshot: matricula.turma.professor?.nome,
+        usuarioNomeSnapshot: auditUser?.nome,
+        metadata: {
+          status: statusMatricula,
+          motivoEncerramento: motivoEncerramentoMatricula,
+          origemInativacaoAluno: true,
+        },
+      });
+    }
+
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: result.aluno.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'INATIVACAO',
+      origem: 'ALUNO',
+      origemId: result.aluno.id,
+      chaveEvento: `ALUNO:${result.aluno.id}:INATIVACAO:${agora.toISOString()}`,
+      dataEvento: agora,
+      titulo: 'Aluno inativado',
+      descricao: `Motivo: ${dto.motivoInativacao}. ${observacaoInativacao ?? ''}`.trim(),
+      usuarioNomeSnapshot: auditUser?.nome,
+      metadata: {
+        motivoInativacao: dto.motivoInativacao,
+        encerrarMatriculasAtivas,
+        statusMatricula,
+        motivoEncerramentoMatricula,
+      },
+    });
+
+    return result.aluno;
   }
 
   async restore(id: string, auditUser?: AuditUser) {
@@ -799,6 +917,18 @@ export class BeneficiariesService {
       acao: AuditAcao.RESTAURAR,
       oldValue: { statusAtivo: false },
       newValue: { statusAtivo: true },
+    });
+    await this.eventoLinhaTempo?.registrarEvento({
+      alunoId: result.id,
+      usuarioId: auditUser?.sub,
+      tipo: 'REATIVACAO',
+      origem: 'ALUNO',
+      origemId: result.id,
+      chaveEvento: `ALUNO:${result.id}:REATIVACAO:${result.reativadoEm?.toISOString() ?? new Date().toISOString()}`,
+      dataEvento: result.reativadoEm ?? new Date(),
+      titulo: 'Aluno reativado',
+      descricao: 'Aluno reativado na instituicao.',
+      usuarioNomeSnapshot: auditUser?.nome,
     });
     return result;
   }

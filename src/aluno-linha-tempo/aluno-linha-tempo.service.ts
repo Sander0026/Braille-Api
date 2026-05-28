@@ -1,42 +1,49 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  AuditAcao,
-  MatriculaStatus,
   Prisma,
+  EventoLinhaTempoAluno,
+  OrigemEventoLinhaTempo,
   Role,
-  StatusFrequencia,
-  TipoRegistroAtendimentoIndividual,
+  TipoEventoLinhaTempoAluno,
+  VisibilidadeEventoLinhaTempo,
 } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import type { AuthenticatedUser } from '../common/interfaces/authenticated-request.interface';
 import { PrismaService } from '../prisma/prisma.service';
-import { LinhaTempoAlunoItem, TipoEventoLinhaTempoAluno } from './aluno-linha-tempo.types';
+import { LinhaTempoAlunoItem, LinhaTempoAlunoResumo } from './aluno-linha-tempo.types';
+import { CreateEventoLinhaTempoManualDto } from './dto/create-evento-linha-tempo-manual.dto';
 import { QueryLinhaTempoAlunoDto } from './dto/query-linha-tempo-aluno.dto';
-
-const TIPOS_LINHA_TEMPO: readonly TipoEventoLinhaTempoAluno[] = [
-  'CADASTRO',
-  'ATUALIZACAO_CADASTRO',
-  'MATRICULA_TURMA',
-  'ENCERRAMENTO_MATRICULA',
-  'FREQUENCIA_PRESENTE',
-  'FREQUENCIA_FALTA',
-  'FREQUENCIA_FALTA_JUSTIFICADA',
-  'ATENDIMENTO_INDIVIDUAL',
-  'FALTA_ATENDIMENTO',
-  'ATESTADO',
-  'LAUDO',
-  'CERTIFICADO',
-  'PDI_CRIADO',
-  'PDI_META_ATUALIZADA',
-  'PDI_EVOLUCAO',
-  'ACAO_RISCO_EVASAO',
-  'INATIVACAO',
-  'REATIVACAO',
-] as const;
 
 type Periodo = {
   inicio?: Date;
   fim?: Date;
 };
+
+export type LinhaTempoAlunoTurmaResumo = {
+  id: string;
+  nome: string;
+};
+
+const TIPOS_LINHA_TEMPO = Object.values(TipoEventoLinhaTempoAluno);
+const TIPOS_FREQUENCIA = [
+  TipoEventoLinhaTempoAluno.FREQUENCIA_PRESENTE,
+  TipoEventoLinhaTempoAluno.FREQUENCIA_FALTA,
+  TipoEventoLinhaTempoAluno.FREQUENCIA_FALTA_JUSTIFICADA,
+] as const;
+const TIPOS_ATENDIMENTO = [
+  TipoEventoLinhaTempoAluno.ATENDIMENTO_INDIVIDUAL,
+  TipoEventoLinhaTempoAluno.FALTA_ATENDIMENTO,
+] as const;
+const TIPOS_PDI = [
+  TipoEventoLinhaTempoAluno.PDI_CRIADO,
+  TipoEventoLinhaTempoAluno.PDI_META_CRIADA,
+  TipoEventoLinhaTempoAluno.PDI_META_ATUALIZADA,
+  TipoEventoLinhaTempoAluno.PDI_EVOLUCAO,
+] as const;
+const TIPOS_ACAO_RISCO = [
+  TipoEventoLinhaTempoAluno.ACAO_RISCO_EVASAO,
+  TipoEventoLinhaTempoAluno.ACAO_RISCO_RESOLVIDA,
+] as const;
 
 @Injectable()
 export class AlunoLinhaTempoService {
@@ -49,297 +56,32 @@ export class AlunoLinhaTempoService {
 
     const aluno = await this.prisma.aluno.findFirst({
       where: { id: alunoId, excluido: false },
-      select: {
-        id: true,
-        nomeCompleto: true,
-        criadoEm: true,
-        atualizadoEm: true,
-        statusAtivo: true,
-        motivoInativacao: true,
-        observacaoInativacao: true,
-        inativadoEm: true,
-        reativadoEm: true,
-        motivoReativacao: true,
-      },
+      select: { id: true },
     });
 
     if (!aluno) throw new NotFoundException('Aluno nao encontrado.');
     await this.garantirPermissao(alunoId, user);
 
-    const [
-      matriculas,
-      frequencias,
-      atendimentos,
-      atestados,
-      laudos,
-      certificados,
-      pdis,
-      acoesRisco,
-      auditoriasCadastro,
-    ] = await Promise.all([
-      this.buscarMatriculas(alunoId, query.turmaId),
-      this.buscarFrequencias(alunoId, query.turmaId, periodo),
-      this.buscarAtendimentos(alunoId, periodo),
-      this.buscarAtestados(alunoId, periodo),
-      this.buscarLaudos(alunoId, periodo),
-      this.buscarCertificados(alunoId, query.turmaId, periodo),
-      this.buscarPdis(alunoId, periodo),
-      this.buscarAcoesRisco(alunoId, query.turmaId, periodo),
-      this.buscarAuditoriasCadastro(alunoId, periodo),
+    const where: Prisma.EventoLinhaTempoAlunoWhereInput = {
+      alunoId,
+      ...(tipos && { tipo: { in: tipos } }),
+      ...(query.turmaId && { turmaId: query.turmaId }),
+      dataEvento: this.periodoWhere(periodo),
+      ...this.filtroPermissao(user),
+    };
+
+    const [total, eventos] = await this.prisma.$transaction([
+      this.prisma.eventoLinhaTempoAluno.count({ where }),
+      this.prisma.eventoLinhaTempoAluno.findMany({
+        where,
+        orderBy: { dataEvento: 'desc' },
+        skip,
+        take: limit,
+      }),
     ]);
 
-    const eventos: LinhaTempoAlunoItem[] = [];
-
-    this.pushEvento(eventos, {
-      id: `cadastro-${aluno.id}`,
-      tipo: 'CADASTRO',
-      data: aluno.criadoEm,
-      titulo: 'Aluno cadastrado',
-      descricao: `Cadastro de ${aluno.nomeCompleto} realizado no sistema.`,
-      origem: 'Aluno',
-      alunoId,
-    }, periodo, tipos);
-
-    if (aluno.inativadoEm) {
-      this.pushEvento(eventos, {
-        id: `inativacao-${aluno.id}`,
-        tipo: 'INATIVACAO',
-        data: aluno.inativadoEm,
-        titulo: 'Aluno inativado',
-        descricao: `Motivo: ${this.formatarEnum(aluno.motivoInativacao) || 'Nao informado'}. ${aluno.observacaoInativacao || ''}`.trim(),
-        origem: 'Aluno',
-        alunoId,
-        metadata: { motivoInativacao: aluno.motivoInativacao },
-      }, periodo, tipos);
-    }
-
-    if (aluno.reativadoEm) {
-      this.pushEvento(eventos, {
-        id: `reativacao-${aluno.id}`,
-        tipo: 'REATIVACAO',
-        data: aluno.reativadoEm,
-        titulo: 'Aluno reativado',
-        descricao: aluno.motivoReativacao || 'Aluno reativado na instituicao.',
-        origem: 'Aluno',
-        alunoId,
-      }, periodo, tipos);
-    }
-
-    for (const audit of auditoriasCadastro) {
-      this.pushEvento(eventos, {
-        id: `audit-aluno-${audit.id}`,
-        tipo: 'ATUALIZACAO_CADASTRO',
-        data: audit.criadoEm,
-        titulo: 'Cadastro atualizado',
-        descricao: 'Dados cadastrais do aluno foram atualizados.',
-        origem: 'AuditLog',
-        alunoId,
-        usuarioNome: audit.autorNome || undefined,
-        metadata: { acao: audit.acao },
-      }, periodo, tipos);
-    }
-
-    for (const matricula of matriculas) {
-      this.pushEvento(eventos, {
-        id: `matricula-${matricula.id}`,
-        tipo: 'MATRICULA_TURMA',
-        data: matricula.dataEntrada,
-        titulo: 'Matricula em turma',
-        descricao: `Aluno matriculado na turma ${matricula.turma.nome}.`,
-        origem: 'MatriculaOficina',
-        alunoId,
-        turmaId: matricula.turma.id,
-        turmaNome: matricula.turma.nome,
-        professorNome: matricula.turma.professor?.nome,
-        metadata: { status: matricula.status },
-      }, periodo, tipos);
-
-      if (matricula.status !== MatriculaStatus.ATIVA && (matricula.dataEncerramento || matricula.encerradoEm)) {
-        this.pushEvento(eventos, {
-          id: `encerramento-${matricula.id}`,
-          tipo: 'ENCERRAMENTO_MATRICULA',
-          data: matricula.dataEncerramento || matricula.encerradoEm,
-          titulo: `Matricula ${this.formatarEnum(matricula.status).toLowerCase()}`,
-          descricao: `Motivo: ${this.formatarEnum(matricula.motivoEncerramento) || 'Nao informado'}. ${matricula.observacao || ''}`.trim(),
-          origem: 'MatriculaOficina',
-          alunoId,
-          turmaId: matricula.turma.id,
-          turmaNome: matricula.turma.nome,
-          professorNome: matricula.turma.professor?.nome,
-          metadata: {
-            status: matricula.status,
-            motivoEncerramento: matricula.motivoEncerramento,
-          },
-        }, periodo, tipos);
-      }
-    }
-
-    for (const frequencia of frequencias) {
-      const tipo = this.tipoFrequencia(frequencia.status);
-      this.pushEvento(eventos, {
-        id: `frequencia-${frequencia.id}`,
-        tipo,
-        data: frequencia.dataAula,
-        titulo: this.tituloFrequencia(frequencia.status),
-        descricao: frequencia.observacao || `Registro de chamada na turma ${frequencia.turma.nome}.`,
-        origem: 'Frequencia',
-        alunoId,
-        turmaId: frequencia.turma.id,
-        turmaNome: frequencia.turma.nome,
-        professorNome: frequencia.turma.professor?.nome,
-        metadata: {
-          status: frequencia.status,
-          fechado: frequencia.fechado,
-          justificadaPorAtestado: Boolean(frequencia.justificativaId),
-        },
-      }, periodo, tipos);
-    }
-
-    for (const atendimento of atendimentos) {
-      const falta = atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_JUSTIFICADA
-        || atendimento.tipoRegistro === TipoRegistroAtendimentoIndividual.FALTA_NAO_JUSTIFICADA;
-      this.pushEvento(eventos, {
-        id: `atendimento-${atendimento.id}`,
-        tipo: falta ? 'FALTA_ATENDIMENTO' : 'ATENDIMENTO_INDIVIDUAL',
-        data: atendimento.dataAtendimento,
-        titulo: falta ? 'Falta em atendimento individual' : 'Atendimento individual realizado',
-        descricao: atendimento.assuntoDoDia || atendimento.evolucao || atendimento.observacao || atendimento.acompanhamento.assuntoAtual,
-        origem: 'AtendimentoIndividual',
-        alunoId,
-        professorNome: atendimento.professor?.nome,
-        usuarioNome: atendimento.criadoPor?.nome,
-        metadata: {
-          tipoRegistro: atendimento.tipoRegistro,
-          modalidade: atendimento.modalidade,
-          duracaoMinutos: atendimento.duracaoMinutos,
-          acompanhamentoId: atendimento.acompanhamentoId,
-        },
-      }, periodo, tipos);
-    }
-
-    for (const atestado of atestados) {
-      this.pushEvento(eventos, {
-        id: `atestado-${atestado.id}`,
-        tipo: 'ATESTADO',
-        data: atestado.criadoEm,
-        titulo: 'Atestado registrado',
-        descricao: `Periodo: ${this.formatarDataCurta(atestado.dataInicio)} a ${this.formatarDataCurta(atestado.dataFim)}. Motivo: ${atestado.motivo}.`,
-        origem: 'Atestado',
-        alunoId,
-        metadata: {
-          dataInicio: atestado.dataInicio.toISOString(),
-          dataFim: atestado.dataFim.toISOString(),
-          faltasJustificadas: atestado.frequencias.length,
-        },
-      }, periodo, tipos);
-    }
-
-    const podeVerDetalheSensivel = user?.role === Role.ADMIN || user?.role === Role.SECRETARIA;
-    for (const laudo of laudos) {
-      this.pushEvento(eventos, {
-        id: `laudo-${laudo.id}`,
-        tipo: 'LAUDO',
-        data: laudo.criadoEm,
-        titulo: 'Laudo medico registrado',
-        descricao: podeVerDetalheSensivel
-          ? (laudo.descricao || `Data de emissao: ${this.formatarDataCurta(laudo.dataEmissao)}.`)
-          : 'Documento sensivel registrado. Detalhes restritos a secretaria e administracao.',
-        origem: 'LaudoMedico',
-        alunoId,
-        metadata: podeVerDetalheSensivel
-          ? { dataEmissao: laudo.dataEmissao.toISOString(), medicoResponsavel: laudo.medicoResponsavel }
-          : { sensivel: true },
-      }, periodo, tipos);
-    }
-
-    for (const certificado of certificados) {
-      this.pushEvento(eventos, {
-        id: `certificado-${certificado.id}`,
-        tipo: 'CERTIFICADO',
-        data: certificado.dataEmissao,
-        titulo: 'Certificado emitido',
-        descricao: certificado.cursoImpresso || certificado.turma?.nome || certificado.modelo.nome,
-        origem: 'CertificadoEmitido',
-        alunoId,
-        turmaId: certificado.turma?.id,
-        turmaNome: certificado.turma?.nome,
-        metadata: {
-          codigoValidacao: certificado.codigoValidacao,
-          status: certificado.status,
-          modelo: certificado.modelo.nome,
-        },
-      }, periodo, tipos);
-    }
-
-    for (const pdi of pdis) {
-      this.pushEvento(eventos, {
-        id: `pdi-${pdi.id}`,
-        tipo: 'PDI_CRIADO',
-        data: pdi.criadoEm,
-        titulo: 'PDI criado',
-        descricao: pdi.objetivoGeral,
-        origem: 'PdiAluno',
-        alunoId,
-        professorNome: pdi.professorResponsavel?.nome,
-        metadata: { status: pdi.status, titulo: pdi.titulo },
-      }, periodo, tipos);
-
-      for (const meta of pdi.metas) {
-        this.pushEvento(eventos, {
-          id: `pdi-meta-${meta.id}`,
-          tipo: 'PDI_META_ATUALIZADA',
-          data: meta.atualizadoEm,
-          titulo: 'Meta do PDI atualizada',
-          descricao: meta.descricao,
-          origem: 'PdiMeta',
-          alunoId,
-          professorNome: pdi.professorResponsavel?.nome,
-          metadata: { area: meta.area, status: meta.status, pdiId: pdi.id },
-        }, periodo, tipos);
-      }
-
-      for (const evolucao of pdi.evolucoes) {
-        this.pushEvento(eventos, {
-          id: `pdi-evolucao-${evolucao.id}`,
-          tipo: 'PDI_EVOLUCAO',
-          data: evolucao.dataRegistro,
-          titulo: 'Evolucao registrada no PDI',
-          descricao: evolucao.avancos || evolucao.descricao,
-          origem: 'PdiEvolucao',
-          alunoId,
-          professorNome: pdi.professorResponsavel?.nome,
-          usuarioNome: evolucao.registradoPor?.nome,
-          metadata: { pdiId: pdi.id },
-        }, periodo, tipos);
-      }
-    }
-
-    for (const acao of acoesRisco) {
-      this.pushEvento(eventos, {
-        id: `acao-risco-${acao.id}`,
-        tipo: 'ACAO_RISCO_EVASAO',
-        data: acao.criadoEm,
-        titulo: 'Acao de risco de evasao criada',
-        descricao: acao.resultado || acao.descricao || acao.motivoRisco,
-        origem: 'AcaoRiscoEvasao',
-        alunoId,
-        turmaId: acao.turma?.id,
-        turmaNome: acao.turma?.nome,
-        usuarioNome: acao.responsavel?.nome,
-        metadata: {
-          nivel: acao.nivel,
-          status: acao.status,
-          tipoAcao: acao.tipoAcao,
-          prazo: acao.prazo?.toISOString(),
-        },
-      }, periodo, tipos);
-    }
-
-    eventos.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-
-    const total = eventos.length;
     return {
-      data: eventos.slice(skip, skip + limit),
+      data: eventos.map((evento) => this.mapearEvento(evento, user)),
       meta: {
         page,
         limit,
@@ -349,151 +91,171 @@ export class AlunoLinhaTempoService {
     };
   }
 
-  private buscarMatriculas(alunoId: string, turmaId?: string) {
-    return this.prisma.matriculaOficina.findMany({
-      where: { alunoId, ...(turmaId && { turmaId }) },
-      include: {
+  async resumo(alunoId: string, user?: AuthenticatedUser): Promise<LinhaTempoAlunoResumo> {
+    await this.buscarAlunoOuFalhar(alunoId);
+    await this.garantirPermissao(alunoId, user);
+    const whereBase: Prisma.EventoLinhaTempoAlunoWhereInput = {
+      alunoId,
+      ...this.filtroPermissao(user),
+    };
+
+    const [totalEventos, ultimaFrequencia, ultimoAtendimento, ultimoPdi, ultimaAcaoRisco] = await Promise.all([
+      this.prisma.eventoLinhaTempoAluno.count({ where: whereBase }),
+      this.buscarUltimaData(whereBase, [...TIPOS_FREQUENCIA]),
+      this.buscarUltimaData(whereBase, [...TIPOS_ATENDIMENTO]),
+      this.buscarUltimaData(whereBase, [...TIPOS_PDI]),
+      this.buscarUltimaData(whereBase, [...TIPOS_ACAO_RISCO]),
+    ]);
+
+    return {
+      totalEventos,
+      ...(ultimaFrequencia && { ultimaFrequencia }),
+      ...(ultimoAtendimento && { ultimoAtendimento }),
+      ...(ultimoPdi && { ultimoPdi }),
+      ...(ultimaAcaoRisco && { ultimaAcaoRisco }),
+    };
+  }
+
+  async turmasDoAluno(alunoId: string, user?: AuthenticatedUser): Promise<LinhaTempoAlunoTurmaResumo[]> {
+    await this.buscarAlunoOuFalhar(alunoId);
+    await this.garantirPermissao(alunoId, user);
+
+    const matriculas = await this.prisma.matriculaOficina.findMany({
+      where: {
+        alunoId,
+        turma: { excluido: false },
+      },
+      select: {
         turma: {
           select: {
             id: true,
             nome: true,
-            professorId: true,
-            professorAuxiliarId: true,
-            professor: { select: { id: true, nome: true } },
           },
         },
       },
-      take: 300,
       orderBy: { dataEntrada: 'desc' },
     });
+
+    const turmas = new Map<string, LinhaTempoAlunoTurmaResumo>();
+    for (const matricula of matriculas) {
+      turmas.set(matricula.turma.id, matricula.turma);
+    }
+
+    return [...turmas.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   }
 
-  private buscarFrequencias(alunoId: string, turmaId: string | undefined, periodo: Periodo) {
-    return this.prisma.frequencia.findMany({
-      where: {
+  async createManual(
+    alunoId: string,
+    dto: CreateEventoLinhaTempoManualDto,
+    user?: AuthenticatedUser,
+  ): Promise<LinhaTempoAlunoItem> {
+    this.garantirUsuarioAutenticado(user);
+    await this.buscarAlunoOuFalhar(alunoId);
+
+    const titulo = this.normalizarTextoObrigatorio(dto.titulo, 'Informe o titulo do evento manual.');
+    const descricao = this.normalizarTextoOpcional(dto.descricao);
+    const dataEvento = dto.dataEvento ? new Date(dto.dataEvento) : new Date();
+    if (Number.isNaN(dataEvento.getTime())) throw new BadRequestException('Data do evento invalida.');
+
+    const turma = dto.turmaId ? await this.buscarTurmaDoAlunoOuFalhar(alunoId, dto.turmaId) : null;
+    const evento = await this.prisma.eventoLinhaTempoAluno.create({
+      data: {
         alunoId,
-        ...(turmaId && { turmaId }),
-        dataAula: this.periodoWhere(periodo),
-      },
-      include: {
-        turma: {
-          select: {
-            id: true,
-            nome: true,
-            professorId: true,
-            professorAuxiliarId: true,
-            professor: { select: { id: true, nome: true } },
-          },
+        turmaId: dto.turmaId,
+        usuarioId: user?.sub,
+        tipo: TipoEventoLinhaTempoAluno.OBSERVACAO_MANUAL,
+        origem: OrigemEventoLinhaTempo.MANUAL,
+        chaveEvento: `MANUAL:${randomUUID()}`,
+        dataEvento,
+        titulo,
+        descricao,
+        turmaNomeSnapshot: turma?.nome,
+        professorNomeSnapshot: turma?.professor?.nome,
+        usuarioNomeSnapshot: user?.nome ?? user?.email,
+        metadata: {
+          manual: true,
         },
+        visibilidade: dto.sensivel ? VisibilidadeEventoLinhaTempo.RESTRITA : VisibilidadeEventoLinhaTempo.INTERNA,
+        sensivel: dto.sensivel ?? false,
       },
-      take: 500,
-      orderBy: { dataAula: 'desc' },
     });
+
+    return this.mapearEvento(evento);
   }
 
-  private buscarAtendimentos(alunoId: string, periodo: Periodo) {
-    return this.prisma.atendimentoIndividual.findMany({
+  async removeEventoManual(alunoId: string, eventoId: string, user?: AuthenticatedUser): Promise<LinhaTempoAlunoItem> {
+    this.garantirUsuarioAutenticado(user);
+    await this.buscarAlunoOuFalhar(alunoId);
+
+    const evento = await this.prisma.eventoLinhaTempoAluno.findFirst({
+      where: { id: eventoId, alunoId },
+    });
+    if (!evento) throw new NotFoundException('Evento da linha do tempo nao encontrado.');
+    if (evento.tipo !== TipoEventoLinhaTempoAluno.OBSERVACAO_MANUAL || evento.origem !== OrigemEventoLinhaTempo.MANUAL) {
+      throw new BadRequestException('Apenas eventos manuais podem ser removidos por este endpoint.');
+    }
+
+    const removido = await this.prisma.eventoLinhaTempoAluno.delete({ where: { id: evento.id } });
+    return this.mapearEvento(removido);
+  }
+
+  private async buscarUltimaData(
+    whereBase: Prisma.EventoLinhaTempoAlunoWhereInput,
+    tipos: TipoEventoLinhaTempoAluno[],
+  ): Promise<string | undefined> {
+    const evento = await this.prisma.eventoLinhaTempoAluno.findFirst({
       where: {
-        alunoId,
-        excluidoEm: null,
-        dataAtendimento: this.periodoWhere(periodo),
+        AND: [whereBase, { tipo: { in: tipos } }],
       },
-      include: {
-        professor: { select: { id: true, nome: true } },
-        criadoPor: { select: { id: true, nome: true } },
-        acompanhamento: { select: { id: true, assuntoAtual: true } },
-      },
-      take: 300,
-      orderBy: { dataAtendimento: 'desc' },
+      orderBy: { dataEvento: 'desc' },
+      select: { dataEvento: true },
     });
+
+    return evento?.dataEvento.toISOString();
   }
 
-  private buscarAtestados(alunoId: string, periodo: Periodo) {
-    return this.prisma.atestado.findMany({
-      where: { alunoId, criadoEm: this.periodoWhere(periodo) },
-      include: { frequencias: { select: { id: true } } },
-      take: 120,
-      orderBy: { criadoEm: 'desc' },
+  private async buscarAlunoOuFalhar(alunoId: string): Promise<void> {
+    const aluno = await this.prisma.aluno.findFirst({
+      where: { id: alunoId, excluido: false },
+      select: { id: true },
     });
+
+    if (!aluno) throw new NotFoundException('Aluno nao encontrado.');
   }
 
-  private buscarLaudos(alunoId: string, periodo: Periodo) {
-    return this.prisma.laudoMedico.findMany({
-      where: { alunoId, excluidoEm: null, criadoEm: this.periodoWhere(periodo) },
-      take: 120,
-      orderBy: { criadoEm: 'desc' },
-    });
-  }
-
-  private buscarCertificados(alunoId: string, turmaId: string | undefined, periodo: Periodo) {
-    return this.prisma.certificadoEmitido.findMany({
+  private async buscarTurmaDoAlunoOuFalhar(alunoId: string, turmaId: string) {
+    const turma = await this.prisma.turma.findFirst({
       where: {
-        alunoId,
-        ...(turmaId && { turmaId }),
-        dataEmissao: this.periodoWhere(periodo),
-      },
-      include: {
-        turma: { select: { id: true, nome: true } },
-        modelo: { select: { id: true, nome: true, tipo: true } },
-      },
-      take: 200,
-      orderBy: { dataEmissao: 'desc' },
-    });
-  }
-
-  private buscarPdis(alunoId: string, periodo: Periodo) {
-    return this.prisma.pdiAluno.findMany({
-      where: { alunoId },
-      include: {
-        professorResponsavel: { select: { id: true, nome: true } },
-        metas: {
-          where: { atualizadoEm: this.periodoWhere(periodo) },
-          orderBy: { atualizadoEm: 'desc' },
+        id: turmaId,
+        excluido: false,
+        matriculasOficina: {
+          some: { alunoId },
         },
-        evolucoes: {
-          where: { dataRegistro: this.periodoWhere(periodo) },
-          include: { registradoPor: { select: { id: true, nome: true } } },
-          orderBy: { dataRegistro: 'desc' },
-        },
-      },
-      take: 100,
-      orderBy: { criadoEm: 'desc' },
-    });
-  }
-
-  private buscarAcoesRisco(alunoId: string, turmaId: string | undefined, periodo: Periodo) {
-    return this.prisma.acaoRiscoEvasao.findMany({
-      where: {
-        alunoId,
-        ...(turmaId && { turmaId }),
-        criadoEm: this.periodoWhere(periodo),
-      },
-      include: {
-        turma: { select: { id: true, nome: true } },
-        responsavel: { select: { id: true, nome: true } },
-      },
-      take: 200,
-      orderBy: { criadoEm: 'desc' },
-    });
-  }
-
-  private buscarAuditoriasCadastro(alunoId: string, periodo: Periodo) {
-    return this.prisma.auditLog.findMany({
-      where: {
-        entidade: 'Aluno',
-        registroId: alunoId,
-        acao: AuditAcao.ATUALIZAR,
-        criadoEm: this.periodoWhere(periodo),
       },
       select: {
         id: true,
-        acao: true,
-        autorNome: true,
-        criadoEm: true,
+        nome: true,
+        professor: { select: { nome: true } },
       },
-      take: 80,
-      orderBy: { criadoEm: 'desc' },
     });
+
+    if (!turma) throw new NotFoundException('Turma nao encontrada para este aluno.');
+    return turma;
+  }
+
+  private filtroPermissao(user?: AuthenticatedUser): Prisma.EventoLinhaTempoAlunoWhereInput {
+    if (!user) throw new ForbiddenException('Usuario nao autenticado.');
+    if (user.role === Role.ADMIN || user.role === Role.SECRETARIA) return {};
+
+    return {
+      visibilidade: {
+        in: [
+          VisibilidadeEventoLinhaTempo.INTERNA,
+          VisibilidadeEventoLinhaTempo.PROFESSOR,
+          VisibilidadeEventoLinhaTempo.RESTRITA,
+        ],
+      },
+    };
   }
 
   private async garantirPermissao(alunoId: string, user?: AuthenticatedUser): Promise<void> {
@@ -526,20 +288,66 @@ export class AlunoLinhaTempoService {
     if (!vinculo) throw new ForbiddenException('Professor sem vinculo com este aluno.');
   }
 
-  private pushEvento(
-    eventos: LinhaTempoAlunoItem[],
-    evento: Omit<LinhaTempoAlunoItem, 'data'> & { data?: Date | null },
-    periodo: Periodo,
-    tipos: Set<TipoEventoLinhaTempoAluno> | null,
-  ): void {
-    if (!evento.data) return;
-    if (tipos && !tipos.has(evento.tipo)) return;
-    if (!this.dataDentroDoPeriodo(evento.data, periodo)) return;
+  private garantirUsuarioAutenticado(user?: AuthenticatedUser): asserts user is AuthenticatedUser {
+    if (!user) throw new ForbiddenException('Usuario nao autenticado.');
+  }
 
-    eventos.push({
-      ...evento,
-      data: evento.data.toISOString(),
-    });
+  private mapearEvento(evento: EventoLinhaTempoAluno, user?: AuthenticatedUser): LinhaTempoAlunoItem {
+    if (this.deveMascararEvento(evento, user)) {
+      return this.mapearEventoMascarado(evento);
+    }
+
+    return {
+      id: evento.id,
+      tipo: evento.tipo,
+      data: evento.dataEvento.toISOString(),
+      titulo: evento.titulo,
+      descricao: evento.descricao || undefined,
+      origem: evento.origem,
+      alunoId: evento.alunoId,
+      turmaId: evento.turmaId || undefined,
+      turmaNome: evento.turmaNomeSnapshot || undefined,
+      professorNome: evento.professorNomeSnapshot || undefined,
+      usuarioNome: evento.usuarioNomeSnapshot || undefined,
+      metadata: this.mapearMetadata(evento.metadata),
+    };
+  }
+
+  private mapearEventoMascarado(evento: EventoLinhaTempoAluno): LinhaTempoAlunoItem {
+    return {
+      id: evento.id,
+      tipo: evento.tipo,
+      data: evento.dataEvento.toISOString(),
+      titulo: this.tituloEventoSensivel(evento),
+      descricao: 'Detalhes restritos a secretaria e administracao.',
+      origem: evento.origem,
+      alunoId: evento.alunoId,
+      turmaId: evento.turmaId || undefined,
+      turmaNome: evento.turmaNomeSnapshot || undefined,
+      professorNome: evento.professorNomeSnapshot || undefined,
+      usuarioNome: evento.usuarioNomeSnapshot || undefined,
+      metadata: {
+        sensivel: true,
+        restrito: true,
+      },
+    };
+  }
+
+  private deveMascararEvento(evento: EventoLinhaTempoAluno, user?: AuthenticatedUser): boolean {
+    if (user?.role !== Role.PROFESSOR) return false;
+    return evento.sensivel || evento.tipo === TipoEventoLinhaTempoAluno.LAUDO || evento.tipo === TipoEventoLinhaTempoAluno.ATESTADO;
+  }
+
+  private tituloEventoSensivel(evento: EventoLinhaTempoAluno): string {
+    if (evento.tipo === TipoEventoLinhaTempoAluno.LAUDO) return 'Laudo medico registrado.';
+    if (evento.tipo === TipoEventoLinhaTempoAluno.ATESTADO) return 'Atestado registrado.';
+    if (evento.tipo === TipoEventoLinhaTempoAluno.OBSERVACAO_MANUAL) return 'Observacao manual registrada.';
+    return evento.titulo;
+  }
+
+  private mapearMetadata(metadata: Prisma.JsonValue): Record<string, unknown> | undefined {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+    return metadata as Record<string, unknown>;
   }
 
   private periodoWhere(periodo: Periodo): Prisma.DateTimeFilter | undefined {
@@ -550,20 +358,16 @@ export class AlunoLinhaTempoService {
     };
   }
 
-  private dataDentroDoPeriodo(data: Date, periodo: Periodo): boolean {
-    if (periodo.inicio && data < periodo.inicio) return false;
-    if (periodo.fim && data > periodo.fim) return false;
-    return true;
-  }
-
   private normalizarPeriodo(dataInicio?: string, dataFim?: string): Periodo {
     const inicio = dataInicio ? this.inicioDoDia(new Date(dataInicio)) : undefined;
     const fim = dataFim ? this.fimDoDia(new Date(dataFim)) : undefined;
+    if (inicio && Number.isNaN(inicio.getTime())) throw new BadRequestException('Data inicial invalida.');
+    if (fim && Number.isNaN(fim.getTime())) throw new BadRequestException('Data final invalida.');
     if (inicio && fim && inicio > fim) throw new BadRequestException('Data inicial nao pode ser maior que a data final.');
     return { inicio, fim };
   }
 
-  private normalizarTipos(tipo?: string): Set<TipoEventoLinhaTempoAluno> | null {
+  private normalizarTipos(tipo?: string): TipoEventoLinhaTempoAluno[] | null {
     if (!tipo?.trim()) return null;
     const tipos = tipo
       .split(',')
@@ -571,7 +375,7 @@ export class AlunoLinhaTempoService {
       .filter(Boolean);
     const invalidos = tipos.filter((item) => !TIPOS_LINHA_TEMPO.includes(item as TipoEventoLinhaTempoAluno));
     if (invalidos.length) throw new BadRequestException(`Tipo de evento invalido: ${invalidos.join(', ')}.`);
-    return new Set(tipos as TipoEventoLinhaTempoAluno[]);
+    return tipos as TipoEventoLinhaTempoAluno[];
   }
 
   private normalizarPaginacao(pageValue?: number, limitValue?: number) {
@@ -580,29 +384,15 @@ export class AlunoLinhaTempoService {
     return { page, limit, skip: (page - 1) * limit };
   }
 
-  private tipoFrequencia(status: StatusFrequencia): TipoEventoLinhaTempoAluno {
-    if (status === StatusFrequencia.PRESENTE) return 'FREQUENCIA_PRESENTE';
-    if (status === StatusFrequencia.FALTA_JUSTIFICADA) return 'FREQUENCIA_FALTA_JUSTIFICADA';
-    return 'FREQUENCIA_FALTA';
+  private normalizarTextoObrigatorio(value: string | undefined, mensagem: string): string {
+    const texto = value?.trim();
+    if (!texto) throw new BadRequestException(mensagem);
+    return texto;
   }
 
-  private tituloFrequencia(status: StatusFrequencia): string {
-    if (status === StatusFrequencia.PRESENTE) return 'Presenca registrada';
-    if (status === StatusFrequencia.FALTA_JUSTIFICADA) return 'Falta justificada';
-    return 'Falta registrada';
-  }
-
-  private formatarEnum(value?: string | null): string {
-    if (!value) return '';
-    return value
-      .toLowerCase()
-      .split('_')
-      .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
-      .join(' ');
-  }
-
-  private formatarDataCurta(date: Date): string {
-    return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+  private normalizarTextoOpcional(value?: string | null): string | undefined {
+    const texto = value?.trim();
+    return texto || undefined;
   }
 
   private inicioDoDia(date: Date): Date {
