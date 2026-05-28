@@ -16,12 +16,11 @@ import { AuthenticatedUser } from '../common/interfaces/authenticated-request.in
 import { calcularCargaHorariaTotal } from '../common/helpers/data.helper';
 import { EncerrarMatriculaDto, STATUS_ENCERRAMENTO_MATRICULA } from './dto/encerrar-matricula.dto';
 
-// Transições permitidas de status
 const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
   PREVISTA: ['ANDAMENTO', 'CANCELADA'],
-  ANDAMENTO: ['CONCLUIDA', 'CANCELADA'],
-  CONCLUIDA: [],
-  CANCELADA: ['PREVISTA'], // Cancela → pode reativar como Prevista
+  ANDAMENTO: ['CONCLUIDA', 'CANCELADA', 'PREVISTA'],
+  CONCLUIDA: ['ANDAMENTO', 'PREVISTA', 'CANCELADA'],
+  CANCELADA: ['PREVISTA', 'ANDAMENTO'], // Cancela → pode reativar
 };
 
 const STATUS_TURMA_EM_OPERACAO: TurmaStatus[] = [TurmaStatus.PREVISTA, TurmaStatus.ANDAMENTO];
@@ -290,7 +289,7 @@ export class TurmasService {
       return this.mudarStatus(id, TurmaStatus.PREVISTA, auditUser);
     }
     if (turma.status === TurmaStatus.CONCLUIDA) {
-      throw new BadRequestException('Turma concluida nao pode ser restaurada; mantenha o historico ou crie nova turma.');
+      return this.mudarStatus(id, TurmaStatus.ANDAMENTO, auditUser);
     }
     if (turma.statusAtivo && !turma.excluido) throw new BadRequestException('A turma já está ativa.');
 
