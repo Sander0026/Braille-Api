@@ -19,9 +19,9 @@ import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo
 
 const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
   PREVISTA: ['ANDAMENTO', 'CANCELADA'],
-  ANDAMENTO: ['CONCLUIDA', 'CANCELADA', 'PREVISTA'],
-  CONCLUIDA: ['ANDAMENTO', 'PREVISTA', 'CANCELADA'],
-  CANCELADA: ['PREVISTA', 'ANDAMENTO'], // Cancela → pode reativar
+  ANDAMENTO: ['CONCLUIDA', 'CANCELADA'],
+  CONCLUIDA: [],
+  CANCELADA: ['PREVISTA'], // Cancela → pode reativar como Prevista
 };
 
 const STATUS_TURMA_EM_OPERACAO: TurmaStatus[] = [TurmaStatus.PREVISTA, TurmaStatus.ANDAMENTO];
@@ -323,7 +323,7 @@ export class TurmasService {
       return this.mudarStatus(id, TurmaStatus.PREVISTA, auditUser);
     }
     if (turma.status === TurmaStatus.CONCLUIDA) {
-      return this.mudarStatus(id, TurmaStatus.ANDAMENTO, auditUser);
+      throw new BadRequestException('Esta turma já está concluída.');
     }
     if (turma.statusAtivo && !turma.excluido) throw new BadRequestException('A turma já está ativa.');
 
@@ -776,6 +776,9 @@ export class TurmasService {
    * PREVISTA → ANDAMENTO/CANCELADA; ANDAMENTO → CONCLUIDA/CANCELADA; CANCELADA → PREVISTA
    */
   private validarTransicaoStatus(statusAtual: TurmaStatus, novoStatus: TurmaStatus): void {
+    if (statusAtual === TurmaStatus.CONCLUIDA) {
+      throw new BadRequestException('Esta turma já está concluída.');
+    }
     const permitidos = TRANSICOES_VALIDAS[statusAtual];
     if (!permitidos.includes(novoStatus)) {
       throw new BadRequestException(
