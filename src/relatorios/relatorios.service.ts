@@ -28,6 +28,7 @@ import {
 import { FiltroRelatorioTurmasDto } from './dto/filtro-relatorio-turmas.dto';
 import { RelatorioInstitucionalPdfService } from './exporters/relatorio-institucional-pdf.service';
 import { RelatorioInstitucionalXlsxService } from './exporters/relatorio-institucional-xlsx.service';
+import { RelatorioTurmasPdfService, RelatorioTurmasPdfData } from './exporters/relatorio-turmas-pdf.service';
 
 type PeriodoRelatorio = {
   inicio?: Date;
@@ -247,6 +248,7 @@ export class RelatoriosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pdfExporter: RelatorioInstitucionalPdfService,
+    private readonly relatorioTurmasPdfService: RelatorioTurmasPdfService,
     private readonly xlsxExporter: RelatorioInstitucionalXlsxService,
     private readonly auditLogService: AuditLogService,
   ) {}
@@ -1047,6 +1049,120 @@ export class RelatoriosService {
       porStatus,
       data,
     };
+  }
+
+  async turmasPdf(filtro: FiltroRelatorioTurmasDto, authUser: AuthenticatedUser): Promise<Buffer> {
+    const relatorio = await this.turmas(filtro, authUser, { limiteDetalhes: 1000 });
+    const turmaIds = relatorio.data.map((t) => t.id);
+
+    const frequencias = await this.prisma.frequencia.findMany({
+      where: {
+        turmaId: { in: turmaIds },
+      },
+      select: {
+        turmaId: true,
+        alunoId: true,
+        status: true,
+      },
+    });
+
+    const frequenciasPorTurmaEAluno = new Map<string, typeof frequencias>();
+    frequencias.forEach((f) => {
+      const key = `${f.turmaId}-${f.alunoId}`;
+      const list = frequenciasPorTurmaEAluno.get(key) || [];
+      list.push(f);
+      frequenciasPorTurmaEAluno.set(key, list);
+    });
+
+    let totalPresencas = 0;
+    let totalFaltas = 0;
+
+    const turmasFormatadas = relatorio.data.map((turma) => {
+      const alunos = turma.matriculasOficina.map((matricula) => {
+        const freqs = frequenciasPorTurmaEAluno.get(`${turma.id}-${matricula.aluno.id}`) || [];
+        const presencas = freqs.filter(f => f.status === StatusFrequencia.PRESENTE).length;
+        const faltas = freqs.filter(f => f.status === StatusFrequencia.FALTA).length;
+        const faltasJustificadas = freqs.filter(f => f.status === StatusFrequencia.FALTA_JUSTIFICADA).length;
+        const total = freqs.length;
+        const frequenciaPercentual = total ? Math.round((presencas / total) * 100) : 0;
+
+        totalPresencas += presencas;
+        totalFaltas += (faltas + faltasJustificadas);
+
+        return {
+          nome: matricula.aluno.nomeCompleto,
+          matricula: matricula.aluno.matricula || '-',
+          statusMatricula: this.formatarEnumRelatorio(matricula.status),
+          presencas,
+          faltas,
+          faltasJustificadas,
+          frequenciaPercentual,
+        };
+      }).sort((a, b) => a.nome.localeCompare(b.nome));
+
+      return {
+        nome: turma.nome,
+        professor: turma.professor?.nome || 'Não atribuído',
+        status: this.formatarEnumRelatorio(turma.status),
+        periodo: this.formatarPeriodoTurma(turma.dataInicio, turma.dataFim),
+        horario: '-', 
+        diasDaSemana: '-',
+        cargaHoraria: turma.cargaHoraria || 'Não informada',
+        totalAlunos: alunos.length,
+        alunos,
+      };
+    });
+
+    const data: RelatorioTurmasPdfData = {
+      emitidoEm: new Date(),
+      filtrosDescricao: this.descreverFiltrosTurmas(filtro),
+      emissorNome: authUser?.nome || 'Usuário',
+      resumo: {
+        totalTurmas: relatorio.indicadores.totalTurmas,
+        ativas: relatorio.indicadores.andamento,
+        concluidas: relatorio.indicadores.concluidas,
+        arquivadas: relatorio.indicadores.arquivadas,
+        totalAlunosMatriculados: relatorio.data.reduce((acc, t) => acc + t.metricas.totalMatriculas, 0),
+        totalPresencas,
+        totalFaltas,
+      },
+      turmas: turmasFormatadas,
+    };
+
+    await this.auditLogService.registrar({
+      entidade: 'Relatorio',
+      acao: AuditAcao.DOWNLOAD,
+      autorId: authUser.sub,
+      autorNome: authUser.nome,
+      autorRole: authUser.role,
+      newValue: { tipo: 'TURMAS_PDF', filtros: filtro },
+    });
+
+    return this.relatorioTurmasPdfService.gerar(data);
+  }
+
+  private descreverFiltrosTurmas(filtros: any): string {
+    const chaves = ['dataInicio', 'dataFim', 'statusTurma', 'professorId'];
+    const entries = Object.entries(filtros).filter(
+      ([key, value]) => chaves.includes(key) && value !== undefined && value !== null && value !== '',
+    );
+    if (!entries.length) return 'Filtros: todos os registros permitidos';
+    return `Filtros: ${entries.map(([key, value]) => `${key}=${value}`).join('; ')}`;
+  }
+
+  private formatarEnumRelatorio(value?: string | null): string {
+    if (!value) return 'Não informado';
+    return value
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private formatarPeriodoTurma(inicio?: Date | null, fim?: Date | null): string {
+    const fInicio = inicio ? new Date(inicio).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+    const fFim = fim ? new Date(fim).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+    return `${fInicio} a ${fFim}`;
   }
 
   async evasoes(

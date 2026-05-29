@@ -68,17 +68,21 @@ describe('RelatoriosService', () => {
     const xlsxExporter = {
       gerar: jest.fn().mockResolvedValue(Buffer.from('xlsx-test')),
     };
+    const relatorioTurmasPdfService = {
+      gerar: jest.fn().mockResolvedValue(Buffer.from('pdf-turmas-test')),
+    };
     const auditLogService = {
       registrar: jest.fn().mockResolvedValue(undefined),
     };
     const service = new RelatoriosService(
       prisma as never,
       pdfExporter as never,
+      relatorioTurmasPdfService as never,
       xlsxExporter as never,
       auditLogService as never,
     );
 
-    return { service, prisma, pdfExporter, xlsxExporter, auditLogService };
+    return { service, prisma, pdfExporter, relatorioTurmasPdfService, xlsxExporter, auditLogService };
   };
 
   it('conta alunos, turmas por status e calcula evasao, conclusao e permanencia no resumo', async () => {

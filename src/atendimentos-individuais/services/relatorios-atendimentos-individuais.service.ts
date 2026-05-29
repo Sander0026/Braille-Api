@@ -45,6 +45,7 @@ export class RelatoriosAtendimentosIndividuaisService {
 
     const whereAtendimento: Prisma.AtendimentoIndividualWhereInput = {
       excluidoEm: null,
+      ...(query.atendimentoId && { id: query.atendimentoId }),
       ...(query.tipoRegistro && { tipoRegistro: query.tipoRegistro }),
       ...(query.modalidade && { modalidade: query.modalidade }),
       ...(query.dataInicio || query.dataFim
@@ -57,7 +58,7 @@ export class RelatoriosAtendimentosIndividuaisService {
         : {}),
     };
 
-    if (query.tipoRegistro || query.modalidade || query.dataInicio || query.dataFim) {
+    if (query.tipoRegistro || query.modalidade || query.dataInicio || query.dataFim || query.atendimentoId) {
       whereAcompanhamento.atendimentos = { some: whereAtendimento };
     }
 
