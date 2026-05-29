@@ -17,6 +17,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditUser } from '../common/interfaces/audit-user.interface';
 import { ConfigService } from '@nestjs/config';
 import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
+import { FrequenciaPdfService } from './exporters/frequencia-pdf.service';
 
 @Injectable()
 export class FrequenciasService {
@@ -26,6 +27,7 @@ export class FrequenciasService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditLogService,
     private readonly configService: ConfigService,
+    private readonly pdfService: FrequenciaPdfService,
     private readonly eventoLinhaTempo?: EventoLinhaTempoService,
   ) {}
 
@@ -640,5 +642,67 @@ export class FrequenciasService {
     });
 
     return { mensagem: 'Diário reaberto para retificação.', turmaId, dataAula };
+  }
+
+  // ─── Exportação ─────────────────────────────────────────────────────────────
+
+  async gerarPdfChamada(turmaId: string, dataAula: string, auditUser: AuditUser): Promise<Buffer> {
+    const data = new Date(dataAula);
+
+    const [turma, frequencias] = await Promise.all([
+      this.prisma.turma.findUnique({
+        where: { id: turmaId },
+        include: { professor: { select: { nome: true } } }
+      }),
+      this.prisma.frequencia.findMany({
+        where: { turmaId, dataAula: data },
+        include: { aluno: { select: { nomeCompleto: true, matricula: true } } },
+        orderBy: { aluno: { nomeCompleto: 'asc' } }
+      })
+    ]);
+
+    if (!turma) throw new NotFoundException('Turma não encontrada.');
+
+    let presentes = 0;
+    let faltas = 0;
+    let faltasJustificadas = 0;
+
+    const alunosMapeados = frequencias.map((f) => {
+      let status: 'Presente' | 'Falta' | 'Falta Justificada' = 'Falta';
+      if (f.status === StatusFrequencia.PRESENTE) {
+        status = 'Presente';
+        presentes++;
+      } else if (f.status === StatusFrequencia.FALTA_JUSTIFICADA) {
+        status = 'Falta Justificada';
+        faltasJustificadas++;
+      } else {
+        faltas++;
+      }
+
+      return {
+        nome: f.aluno.nomeCompleto,
+        matricula: f.aluno.matricula || '---',
+        status,
+        observacao: f.observacao || '',
+      };
+    });
+
+    const isFechado = frequencias.length > 0 && frequencias.some(f => f.fechado);
+
+    return this.pdfService.gerar({
+      turmaNome: turma.nome,
+      professorNome: turma.professor?.nome,
+      dataAula: data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      emitidoEm: new Date(),
+      emissorNome: auditUser.nome,
+      resumo: {
+        totalAlunos: frequencias.length,
+        presentes,
+        faltas,
+        faltasJustificadas,
+        diarioFechado: isFechado,
+      },
+      alunos: alunosMapeados,
+    });
   }
 }
