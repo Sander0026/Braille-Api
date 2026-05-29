@@ -82,6 +82,20 @@ export class RelatoriosController {
     return this.relatoriosService.turmas(query, req.user);
   }
 
+  @Get('turmas/pdf')
+  @ApiOperation({ summary: 'Exportar relatorio de turmas em PDF' })
+  @ApiResponse({ status: 200, description: 'PDF de turmas gerado.' })
+  async turmasPdf(@Query() query: FiltroRelatorioTurmasDto, @Req() req: AuthenticatedRequest, @Res() res: Response) {
+    const buffer = await this.relatoriosService.turmasPdf(query, req.user!);
+    const date = new Date().toISOString().slice(0, 10);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="relatorio_turmas_${date}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.send(buffer);
+  }
+
   @Get('evasoes')
   @ApiOperation({ summary: 'Relatorio de encerramentos e evasoes de matriculas' })
   @ApiResponse({ status: 200, description: 'Relatorio de encerramentos gerado.' })
