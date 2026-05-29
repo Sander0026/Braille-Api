@@ -19,6 +19,11 @@ export class FiltroRelatorioAtendimentoDto {
   @IsUUID()
   professorId?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  atendimentoId?: string;
+
   @ApiPropertyOptional({ example: '2026-05-01' })
   @IsOptional()
   @IsDateString()
