@@ -17,7 +17,6 @@ import { calcularCargaHorariaTotal } from '../common/helpers/data.helper';
 import { EncerrarMatriculaDto, STATUS_ENCERRAMENTO_MATRICULA } from './dto/encerrar-matricula.dto';
 import { EventoLinhaTempoService } from '../aluno-linha-tempo/evento-linha-tempo.service';
 
-// Transições permitidas de status
 const TRANSICOES_VALIDAS: Record<TurmaStatus, TurmaStatus[]> = {
   PREVISTA: ['ANDAMENTO', 'CANCELADA'],
   ANDAMENTO: ['CONCLUIDA', 'CANCELADA'],
@@ -324,7 +323,7 @@ export class TurmasService {
       return this.mudarStatus(id, TurmaStatus.PREVISTA, auditUser);
     }
     if (turma.status === TurmaStatus.CONCLUIDA) {
-      throw new BadRequestException('Turma concluida nao pode ser restaurada; mantenha o historico ou crie nova turma.');
+      throw new BadRequestException('Esta turma já está concluída.');
     }
     if (turma.statusAtivo && !turma.excluido) throw new BadRequestException('A turma já está ativa.');
 
@@ -777,6 +776,9 @@ export class TurmasService {
    * PREVISTA → ANDAMENTO/CANCELADA; ANDAMENTO → CONCLUIDA/CANCELADA; CANCELADA → PREVISTA
    */
   private validarTransicaoStatus(statusAtual: TurmaStatus, novoStatus: TurmaStatus): void {
+    if (statusAtual === TurmaStatus.CONCLUIDA) {
+      throw new BadRequestException('Esta turma já está concluída.');
+    }
     const permitidos = TRANSICOES_VALIDAS[statusAtual];
     if (!permitidos.includes(novoStatus)) {
       throw new BadRequestException(
