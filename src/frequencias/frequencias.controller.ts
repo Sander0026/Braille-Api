@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { FrequenciasService } from './frequencias.service';
 import { CreateFrequenciaDto } from './dto/create-frequencia.dto';
 import { UpdateFrequenciaDto } from './dto/update-frequencia.dto';
@@ -133,5 +134,32 @@ export class FrequenciasController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.frequenciasService.reabrirDiario(turmaId, dataAula, getAuditUser(req));
+  }
+
+  // ─── Exportação ─────────────────────────────────────────────────────────────
+
+  @Get('relatorio/turma/:turmaId/data/:dataAula/pdf')
+  @Roles(Role.ADMIN, Role.SECRETARIA, Role.PROFESSOR)
+  @ApiOperation({ summary: 'Gerar PDF com os detalhes de uma chamada/histórico' })
+  @ApiParam({ name: 'turmaId', description: 'UUID da turma' })
+  @ApiParam({ name: 'dataAula', description: 'Data da aula no formato YYYY-MM-DD', example: '2026-03-20' })
+  @ApiResponse({ status: 200, description: 'Arquivo PDF retornado com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Turma ou chamada não encontrada.' })
+  async gerarPdfChamada(
+    @Param('turmaId') turmaId: string,
+    @Param('dataAula') dataAula: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const pdfBuffer = await this.frequenciasService.gerarPdfChamada(turmaId, dataAula, getAuditUser(req));
+    const filename = `frequencia_${dataAula}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    res.send(pdfBuffer);
   }
 }
